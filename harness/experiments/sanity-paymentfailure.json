@@ -1,0 +1,13 @@
+{
+  "name": "sanity-paymentfailure",
+  "version": 2,
+  "scenario": "paymentFailure",
+  "hypothesis": "Sanity check of the harness end to end on a known-easy scenario: the run completes, the flag is restored, records and the index are written, verify passes and the trajectories pack. Not a finding.",
+  "run": {"client": "cli", "provider": null, "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 2, "seed": null},
+  "arms": {
+    "noskill": {"prompt": "noskill", "image": "jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981", "tools": true}
+  },
+  "baseline_arm": null,
+  "thresholds": {},
+  "status": "CONFIRMED: sanity check, not a finding"
+}

@@ -45,7 +45,7 @@ Everything a batch does is set in one checked-in file, `harness/experiments/<nam
 
 ## Requirements
 
-- Python 3, standard library only
+- Python 3.11 or newer, standard library only
 - One agent client, chosen by `run.client`: `api` (`ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` and `OPENAI_BASE_URL` for provider `openai`), `cli` (the Claude Code CLI, logged in) or `codex` (the OpenAI Codex CLI)
 - Docker and Docker Compose running the OpenTelemetry Demo 3.0.0 with the overlay in `fixture/`, locally or on a remote host over ssh
 
