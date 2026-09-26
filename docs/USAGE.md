@@ -21,6 +21,9 @@ variable of the same name wins over the file. Nothing in it changes what a run d
 required except `run.client_version`; an unknown or missing key is refused before anything
 touches the fixture.
 
+For your own runs, copy an experiment file under a new name: records are grouped by experiment
+name, and `desc-change-sep28` is pre-registered.
+
 ```json
 {
   "name": "desc-change-sep28", "version": 2, "scenario": "paymentFailure",
@@ -74,7 +77,7 @@ Changing any setting means editing the file, which changes its sha256. Record th
 
 Run everything from the repository root.
 
-1. Bring the fixture up and check it per fixture/FIXTURE.md.
+1. Bring the fixture up and check it per fixture/FIXTURE.md (`make up` does both on this machine).
 2. `python3 harness/bench.py soak paymentFailure` samples load, unhealthy containers and the
    root-cause service's trace rate 30 times, 60 s apart, into
    `$RUNS_DIR/paymentFailure/soak-<UTC>.log`. Exit 0 pass, 5 after two bad samples in a row.

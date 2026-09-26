@@ -1,15 +1,19 @@
 # jaeger-mcp-evals
 
-Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreachable); one experiment is configured (desc-change-sep28); no batch is recorded under records/ yet.
+Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreachable); the pre-registered experiment desc-change-sep28 is recorded and judged under records/.
 
 A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
 
 ## Quick Start
 
 ```bash
-cp fixture.env.example fixture.env      # where the demo runs, API keys
-python3 harness/bench.py run harness/experiments/desc-change-sep28.json --dry-run  # pre-flight, planned order
-python3 harness/bench.py run harness/experiments/desc-change-sep28.json            # flip, trials, scoring, records
+make fixture   # fixture.env, the OpenTelemetry Demo 3.0.0 checkout and the overlay (fixture/FIXTURE.md)
+make up        # bring the demo up, wait until pre-flight passes
+make smoke     # one paid agent trial of harness/experiments/smoke-paymentfailure.json
+make phoenix   # optional: the Phoenix trajectory store
+# your own experiment: copy an experiment file to harness/experiments/<name>.json
+python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # pre-flight, planned order
+python3 harness/bench.py run harness/experiments/<name>.json            # flip, trials, scoring, records
 python3 harness/bench.py verify         # re-score from raw files, check records/INDEX.md
 python3 harness/bench.py export runs/<scenario>/<batch-id>  # optional: trajectories to Phoenix
 ```

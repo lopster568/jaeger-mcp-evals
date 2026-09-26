@@ -3,6 +3,7 @@
 OpenTelemetry Demo 3.0.0 (tag `3.0.0`, commit `1755859a`) with Jaeger 2.20.0 in place of the demo's 2.19.0, since 2.20.0 is the first release serving MCP tools in-process (`jaeger_query.ai.enable_mcp`) with the built-in skills. MCP endpoint: `http://localhost:16686/jaeger/ui/api/ai/mcp/` (streamable HTTP, 9 tools including `read_skill`).
 Faults are the demo's own feature flags in `src/flagd/demo.flagd.json`, the only file a run edits.
 By default the demo runs on this machine and every command below runs locally; for a separate host see Remote host.
+The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and the trajectory store (`make phoenix`) for the local case.
 
 ## The four overlay files
 
@@ -22,8 +23,9 @@ The ports it publishes must match `JAEGER_UI_PORT` and `OFREP_PORT` in fixture.e
 Clone into `FIXTURE_DEMO_DIR` (default `~/otel-demo-3.0.0`) and add the overlay:
 
 ```
-git clone --branch 3.0.0 https://github.com/open-telemetry/opentelemetry-demo ~/otel-demo-3.0.0
+git clone --branch 3.0.0 --depth 1 https://github.com/open-telemetry/opentelemetry-demo ~/otel-demo-3.0.0
 cd ~/otel-demo-3.0.0
+git rev-parse HEAD      # starts with 1755859a
 mkdir overlay
 cp <this repo>/fixture/env.override .env.override
 cp <this repo>/fixture/compose.overlay.yaml <this repo>/fixture/jaeger-config.yml \
@@ -49,8 +51,10 @@ Compare against `sha256sum` of the repo copies; the demo listing also includes `
 cd ~/otel-demo-3.0.0
 docker compose --env-file .env --env-file .env.override \
   -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml \
-  up -d --remove-orphans
+  up -d
 ```
+
+No `--remove-orphans`: whether it removes a running Phoenix container (profile `store`, not active here) depends on the Compose version, and removing the store silently is worse than leaving an orphan.
 
 The same flags with `down` stop it, but `down` empties Jaeger's store, so avoid it between batches. Give the load generator a few minutes to fill Jaeger.
 

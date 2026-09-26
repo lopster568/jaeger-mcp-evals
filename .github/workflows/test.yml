@@ -22,3 +22,7 @@ jobs:
             name=$(basename "$f" .json)
             python3 harness/bench.py readiness "$name"
           done
+      - name: makefile parses
+        run: |
+          make -n fixture up phoenix smoke
+          make test
