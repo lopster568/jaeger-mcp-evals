@@ -67,9 +67,8 @@ docker compose --env-file .env --env-file .env.override \
 
 Phoenix answers about one to two minutes after start (database migrations, then app startup).
 UI and OTLP HTTP share host port 16006 (`PHOENIX_PORT` in fixture.env); its data lives in the
-named volume `phoenix-data`. To open the UI from another machine, tunnel the port
-(`ssh -N -L 16006:localhost:16006 <user>@<host>`) and browse http://localhost:16006.
-After a batch, `python3 harness/bench.py export <batch_dir>` sends
+named volume `phoenix-data`. The UI is at http://localhost:16006 on the machine running the
+demo. After a batch, `python3 harness/bench.py export <batch_dir>` sends
 its trajectories there (docs/USAGE.md, Export to Phoenix).
 
 ## Health checks
