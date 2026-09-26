@@ -7,8 +7,8 @@ Tune a run by editing its experiment file, `harness/experiments/<name>.json` (do
 |---|---|---|
 | Client and provider | `run.client` (api, cli, codex); `run.provider` (api only: anthropic, openai) | `client`, `provider`; `client_argv` |
 | Model | `run.model` (the api client refuses aliases; the CLI accepts one such as `sonnet`) | `model_requested`; `observed.model` from the init event; `model_asserted` in scores.jsonl |
-| Effort | `run.effort` (low, medium, high, xhigh, max); it changes which tools the agent calls, not only how long it thinks | `effort` in meta.json, manifest.json and scores.jsonl; the stream carries no effort value, so it is the request, not an observation |
-| Thinking | api: fixed at adaptive with summaries; cli and codex: not controllable | api: `agent_loop.thinking` and `reasoning.jsonl`; cli: thinking blocks in `stream.jsonl` |
+| Effort | `run.effort` (low, medium, high, xhigh, max); it changes which tools the agent calls, not only how long it thinks: with the CLI, xhigh puts `read_skill` in the first turn and unset, medium and high do not (records/probes/) | `effort` in meta.json, manifest.json and scores.jsonl; the stream carries no effort value, so it is the request, not an observation |
+| Thinking | api: fixed at adaptive with summaries; cli and codex: not controllable | api: `agent_loop.thinking` and `reasoning.jsonl`; cli: none visible. `stream.jsonl` carries thinking blocks with a signature and empty text (46 blocks, all empty, in the 20 desc-change-sep28 runs) |
 | Temperature | Not settable: the model rejects it, the CLI has no flag, the loop refuses to send it | Nothing to record |
 | Prompt | `arms.<arm>.prompt`, a `harness/prompts/<name>.txt` file | `prompt_name`, `prompt_sha256`; trial `prompt.txt`; manifest `file_hashes_sha256` |
 | System prompt | `harness/system-prompt.txt` | `system_prompt_sha256`; trial `system-prompt.txt` |
@@ -22,11 +22,11 @@ Tune a run by editing its experiment file, `harness/experiments/<name>.json` (do
 | OTel Demo ref and overlay | The fixture's demo checkout and the overlay files in `fixture/` | `otel_demo_ref`, `fixture_overlay_sha256` |
 | Scenario and fault activation | `scenario`, naming `harness/scenarios/<name>.json` (`flag`, `activation`) | `scenario`, `scenario_sha256`, `scenario_version`, `fault` (flag, activation, flip time, OFREP confirmation, fault traces seen) |
 | Client version | The installed `claude` or `codex`, which can self-update between batches; for api, the loop's code. Optional `run.client_version` pins it: a batch refuses to start on any other version | `client_version_pre`, `observed.client_version`; `client_version` in preflight.json; manifest `file_hashes_sha256` |
-| Trials, seed and cell order | `run.n_per_arm`; `run.seed` (null draws one), which shuffles all cells of all arms together | `n_per_arm`, `seed`, `order_index`, `trial_index`; manifest `seed` and `order` |
+| Trials, seed and cell order | `run.n_per_arm`; `run.seed` (null draws one), which shuffles all cells of the arms in one batch together | `n_per_arm`, `seed`, `order_index`, `trial_index`; manifest `seed` and `order` |
 
 Numbers do not compare across clients or providers: `num_turns` and cost are counted differently by each.
 
 Arms compared with each other, and batches compared across dates, must run at the same effort. An unset effort is the CLI's own default and is not recorded, so always set `run.effort`.
 
 The model these runs use rejects a temperature parameter and the CLI has no flag for it; the substitutes are effort, the model id and the trial count.
-Instead, every arm runs n>=10 trials before a rate is quoted, in one shuffled order across arms, so the variance shows.
+Instead, every arm runs n>=10 trials before a rate is quoted, so the variance shows. Arms on the same image share one shuffled order; arms on different images run as separate batches, one after the other, so their order across arms is not shuffled.

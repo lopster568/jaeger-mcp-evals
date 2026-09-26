@@ -1,10 +1,12 @@
 # jaeger-mcp-evals
 
-Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreachable); the pre-registered experiment desc-change-sep28 is recorded and judged under records/.
+Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreachable); the pre-registered experiment desc-change-sep28 failed its thresholds on 2026-09-26 ([records/INDEX.md](records/INDEX.md), [records/desc-change-sep28/NOTES.md](records/desc-change-sep28/NOTES.md)).
 
-A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
+A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. With the `cli` client the Claude Code CLI starts with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
 
 ## Quick Start
+
+`make setup`, `make smoke` and the Phoenix export have not yet been run from a fresh clone; every recorded batch ran against a fixture on a separate host.
 
 ```bash
 make setup     # demo checkout, overlay, bring-up, Phoenix; waits until ready (fixture/FIXTURE.md)
@@ -49,7 +51,7 @@ Everything a batch does is set in one checked-in file, `harness/experiments/<nam
 ## Requirements
 
 - Python 3.11 or newer, standard library only
-- One agent client, chosen by `run.client`: `api` (`ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` and `OPENAI_BASE_URL` for provider `openai`), `cli` (the Claude Code CLI, logged in) or `codex` (the OpenAI Codex CLI)
+- One agent client, chosen by `run.client`: `api` (experimental; `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` and `OPENAI_BASE_URL` for provider `openai`), `cli` (the Claude Code CLI, logged in) or `codex` (the OpenAI Codex CLI)
 - Docker and Docker Compose running the OpenTelemetry Demo 3.0.0 with the overlay in `fixture/`, locally or on a remote host over ssh
 
 ## License

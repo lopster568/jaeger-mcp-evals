@@ -47,7 +47,7 @@ name, and `desc-change-sep28` is pre-registered.
 | `version` | `2` |
 | `scenario` | a `harness/scenarios/<scenario>.json` name |
 | `hypothesis` | what the thresholds test, in one sentence |
-| `run.client` | `api` (`harness/agent_loop.py` over the Messages API), `cli` (the `claude` CLI) or `codex` (the OpenAI Codex CLI) |
+| `run.client` | `api` (`harness/agent_loop.py` over the Messages API; experimental), `cli` (the `claude` CLI) or `codex` (the OpenAI Codex CLI) |
 | `run.provider` | api only: `anthropic` or `openai` (any OpenAI-compatible chat completions endpoint); `null` for cli and codex |
 | `run.model` | the model id, sent unchanged; the api client refuses aliases |
 | `run.effort` | `low`, `medium`, `high`, `xhigh` or `max` |
@@ -63,7 +63,8 @@ name, and `desc-change-sep28` is pre-registered.
 | `thresholds` | `judge.py` thresholds (below); `{}` for none |
 | `status` | free text; a batch refuses while it contains `DRAFT` |
 
-The api client needs `ANTHROPIC_API_KEY` (provider anthropic) or `OPENAI_API_KEY` and
+The api client is experimental: it has run one trial outside this repository and has no batch
+under `records/`. It needs `ANTHROPIC_API_KEY` (provider anthropic) or `OPENAI_API_KEY` and
 `OPENAI_BASE_URL` (provider openai) in fixture.env, bills the account behind that key and never
 writes it or the base URL into a record (`api_base_url` records only `set`). The cli
 client runs the logged-in `claude` with no API key in its environment. The codex client runs
@@ -123,8 +124,13 @@ Run everything from the repository root.
    `records/<name>/trajectories.sha256`. It refuses (exit 1, nothing written) when any file
    would publish the fixture host, ssh user, home directory, an API key or base URL, or a
    session identifier, and prints each file with the key it matched. Commit RESULT.md,
-   INDEX.md and trajectories.sha256, then attach the tarball to a GitHub release of that
-   commit. docs/RECORD.md lists what the tarball holds.
+   INDEX.md and trajectories.sha256, then optionally attach the tarball to a GitHub release of
+   that commit; no release is published yet. docs/RECORD.md lists what the tarball holds.
+
+The variant image `jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981`
+(`harness/experiments/images/desc-change-sep28.json`) was built from a local Jaeger commit that
+is not published. `fixture/build-variant.sh` rebuilds it: it applies the descriptions file on a
+branch cut from v2.20.0 and commits, so a rebuild carries a new commit hash.
 
 A batch runs only the arms whose `image` equals `docker inspect jaeger` on the fixture; none
 matching is a refusal. Arms on different images therefore run as separate batches: switch the
@@ -222,4 +228,4 @@ container restart (named volume).
 `stream.jsonl`, `stderr.txt` and the per-cell directories carry session identifiers and local
 paths, so they stay under `RUNS_DIR` (default `runs/`, gitignored; point it elsewhere in
 fixture.env). The batch-level records under `records/` are the checked-in record of what ran;
-the trajectories are published as a release asset by `bench.py pack` (step 7), never committed.
+the trajectories can be attached to a release with `bench.py pack` (step 7) and are never committed.
