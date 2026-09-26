@@ -14,7 +14,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 |---|---|---|---|---|
 | adFailure | no | PASS | 0 | 0 |
 | paymentFailure | yes | PASS | 3 | 22 |
-| paymentUnreachable | yes | PASS | 0 | 0 |
+| paymentUnreachable | yes | PASS | 1 | 6 |
 
 ## Batches
 
@@ -23,6 +23,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [desc-change-sep28/batch-20260926T140333Z](desc-change-sep28/batch-20260926T140333Z/) | 2026-09-26 | paymentFailure | descchange 10 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981 | desc-change-sep28 | descchange 10/0/0/0 | descchange 3 |
 | [desc-change-sep28/batch-20260926T141252Z](desc-change-sep28/batch-20260926T141252Z/) | 2026-09-26 | paymentFailure | baseline 10 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | quay.io/jaegertracing/jaeger:2.20.0 | desc-change-sep28 | baseline 10/0/0/0 | baseline 3 |
 | [sanity-paymentfailure/batch-20260926T135500Z](sanity-paymentfailure/batch-20260926T135500Z/) | 2026-09-26 | paymentFailure | noskill 2 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981 | sanity-paymentfailure | noskill 2/0/0/0 | noskill 2 |
+| [screen-paymentunreachable/batch-20260926T211206Z](screen-paymentunreachable/batch-20260926T211206Z/) | 2026-09-26 | paymentUnreachable | noskill 3, vague 3 | cli sonnet | claude-sonnet-5 | high | 2.1.283 (Claude Code) | quay.io/jaegertracing/jaeger:2.20.0 | screen-paymentunreachable | noskill 3/0/0/0, vague 3/0/0/0 | noskill 2, vague 2 |
 
 ## Results
 
