@@ -3,7 +3,7 @@
 OpenTelemetry Demo 3.0.0 (tag `3.0.0`, commit `1755859a`) with Jaeger 2.20.0 in place of the demo's 2.19.0, since 2.20.0 is the first release serving MCP tools in-process (`jaeger_query.ai.enable_mcp`) with the built-in skills. MCP endpoint: `http://localhost:16686/jaeger/ui/api/ai/mcp/` (streamable HTTP, 9 tools including `read_skill`).
 Faults are the demo's own feature flags in `src/flagd/demo.flagd.json`, the only file a run edits.
 By default the demo runs on this machine and every command below runs locally; for a separate host see Remote host.
-The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and the trajectory store (`make phoenix`) for the local case.
+The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and the trajectory store (`make phoenix`) for the local case; `make setup` runs all three.
 
 ## The four overlay files
 

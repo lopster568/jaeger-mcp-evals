@@ -24,5 +24,5 @@ jobs:
           done
       - name: makefile parses
         run: |
-          make -n fixture up phoenix smoke
+          make -n setup smoke
           make test

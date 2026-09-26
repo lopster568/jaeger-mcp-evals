@@ -7,10 +7,8 @@ A harness for evaluating the MCP tools and skills Jaeger serves to AI agents aga
 ## Quick Start
 
 ```bash
-make fixture   # fixture.env, the OpenTelemetry Demo 3.0.0 checkout and the overlay (fixture/FIXTURE.md)
-make up        # bring the demo up, wait until pre-flight passes
+make setup     # demo checkout, overlay, bring-up, Phoenix; waits until ready (fixture/FIXTURE.md)
 make smoke     # one paid agent trial of harness/experiments/smoke-paymentfailure.json
-make phoenix   # optional: the Phoenix trajectory store
 # your own experiment: copy an experiment file to harness/experiments/<name>.json
 python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # pre-flight, planned order
 python3 harness/bench.py run harness/experiments/<name>.json            # flip, trials, scoring, records
