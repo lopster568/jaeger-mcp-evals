@@ -1,0 +1,14 @@
+{
+  "name": "screen-paymentunreachable",
+  "version": 2,
+  "scenario": "paymentUnreachable",
+  "hypothesis": "Screen, rank only: on paymentUnreachable (checkout cannot resolve the payment service) the baseline agent sometimes names payment instead of checkout, and a vaguer report that does not name checkout lowers accuracy further. A drop below 3/3 in either arm qualifies that arm for a certified batch; not a finding at n=3.",
+  "run": {"client": "cli", "provider": null, "model": "sonnet", "effort": "high", "client_version": "2.1.283", "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 3, "seed": null},
+  "arms": {
+    "noskill": {"prompt": "noskill", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true},
+    "vague": {"prompt": "vague", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true}
+  },
+  "baseline_arm": "noskill",
+  "thresholds": {},
+  "status": "CONFIRMED: screen, version 1 of the vague prompt, rank only"
+}
