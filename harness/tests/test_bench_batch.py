@@ -16,6 +16,7 @@ import io
 import json
 import os
 import pathlib
+import platform
 import shutil
 import stat
 import subprocess
@@ -135,6 +136,7 @@ class Fake(http.server.BaseHTTPRequestHandler):
     oracle_signal = True
     oracle_malformed = False
     mcp_calls = []
+    otlp_posts, otlp_status = [], 200
 
     def log_message(self, *a):
         pass
@@ -166,6 +168,11 @@ class Fake(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/ofrep/v1/evaluate/flags/"):
             flag = self.path.rsplit("/", 1)[1]
             return self.reply({"key": flag, "variant": self.flags()[flag]["defaultVariant"]})
+        if self.path == "/v1/traces":  # Phoenix's OTLP HTTP receiver
+            Fake.otlp_posts.append((self.headers.get("Content-Type"), body))
+            self.send_response(Fake.otlp_status)
+            self.end_headers()
+            return
         msg = json.loads(body)
         Fake.mcp_calls.append((msg.get("method"), (msg.get("params") or {}).get("name"), (msg.get("params") or {}).get("arguments")))
         if msg.get("method") == "tools/call":
@@ -222,6 +229,7 @@ class BenchCase(unittest.TestCase):
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
         Fake.oracle_signal, Fake.oracle_malformed = True, False
+        Fake.otlp_posts, Fake.otlp_status = [], 200
         self.env = {"PATH": binp + os.pathsep + os.environ["PATH"], "FAKE_HOME": self.home, "FAKE_IMAGE": STOCK_IMAGE,
                     "FIXTURE_HOST": "127.0.0.1", "FIXTURE_SSH_USER": "tester", "FIXTURE_DEMO_DIR": "otel-demo-3.0.0",
                     "JAEGER_UI_PORT": self.port, "OFREP_PORT": self.port, "JAEGER_BASE_PATH": "/jaeger/ui",
@@ -802,6 +810,28 @@ class TestKnobFile(BenchCase):
     def test_draft_refused(self):
         self.refused(lambda d: d.update(status="DRAFT"), "DRAFT")
 
+    def test_client_version_must_be_a_non_empty_string(self):
+        self.refused(lambda d: d["run"].update(client_version=""), "run.client_version must be a non-empty string")
+
+    def test_client_version_mismatch_refuses_before_the_fixture(self):
+        self.refused(lambda d: d["run"].update(client_version="2.1.283"),
+                     "run.client_version is 2.1.283 but the cli client reports 2.1.282")
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.flag_file(), self.pristine())
+
+    def test_client_version_match_runs_and_is_recorded(self):
+        self.assertEqual(self.run_batch(1, run={"client_version": "2.1.282"}), 0, self.err)
+        m = load(os.path.join(self.batch_dir(), "manifest.json"))
+        self.assertEqual(m["preflight"]["client_version"], "PASS")
+        self.assertEqual(m["experiment"]["content"]["run"]["client_version"], "2.1.282")
+        self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["client_version"], "PASS")
+
+    def test_client_version_absent_is_not_checked(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        m = load(os.path.join(self.batch_dir(), "manifest.json"))
+        self.assertIsNone(m["preflight"]["client_version"])
+        self.assertEqual(m["system_under_test"]["python_version"], platform.python_version())
+
     def test_shipped_experiments_validate(self):
         for f in glob.glob(os.path.join(HARNESS_DIR, "experiments", "*.json")):
             bench.load_experiment(f)
@@ -998,6 +1028,105 @@ class TestNoTools(BenchCase):
         self.assertIsNone(meta["notools"]["mcp_endpoint"])
         self.assertEqual(load(os.path.join(b, "%d-notools" % meta["notools"]["order_index"], "mcp.json")), {"mcpServers": {}})
         self.assertTrue(meta["noskill"]["mcp_endpoint"])
+
+
+def pb(b):
+    """{field: [values]} of one protobuf message: bytes when length-delimited, else int."""
+    out, i = {}, 0
+
+    def varint():
+        nonlocal i
+        n = shift = 0
+        while True:
+            c = b[i]
+            i += 1
+            n |= (c & 0x7F) << shift
+            shift += 7
+            if c < 0x80:
+                return n
+    while i < len(b):
+        key = varint()
+        if key & 7 == 0:
+            v = varint()
+        elif key & 7 == 1:
+            v, i = int.from_bytes(b[i:i + 8], "little"), i + 8
+        else:
+            n = varint()
+            v, i = b[i:i + n], i + n
+        out.setdefault(key >> 3, []).append(v)
+    return out
+
+
+def pb_attrs(msgs):
+    attrs = {}
+    for raw in msgs:
+        kv = pb(raw)
+        v = pb(kv[2][0])
+        attrs[kv[1][0].decode()] = v[1][0].decode() if 1 in v else v[3][0]
+    return attrs
+
+
+class TestExport(BenchCase):
+    def spans(self, body):
+        rs = pb(pb(body)[1][0])
+        resource = pb_attrs(pb(rs[1][0])[1])
+        return resource, [dict(pb(s), attrs=pb_attrs(pb(s).get(9, []))) for s in pb(rs[2][0])[2]]
+
+    def test_export_posts_one_trace_per_trial_with_run_attributes(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        b = self.batch_dir()
+        self.assertEqual(self.bench("export", b, PHOENIX_PORT=self.port), 0, self.out)  # default endpoint from fixture.env
+        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s/" % self.port), 0, self.out)
+        (ctype, body), (_, again) = Fake.otlp_posts
+        self.assertEqual(ctype, "application/x-protobuf")
+        self.assertEqual(body, again)  # deterministic: a re-export sends the same trace and span ids
+        resource, spans = self.spans(body)
+        self.assertEqual(resource["openinference.project.name"], "t")
+        kinds = [s["attrs"]["openinference.span.kind"] for s in spans]
+        self.assertEqual(sorted(kinds), ["AGENT", "AGENT", "LLM", "LLM", "TOOL", "TOOL"])
+        batch_id = os.path.basename(b)
+        for root in (s for s in spans if s["attrs"]["openinference.span.kind"] == "AGENT"):
+            a = root["attrs"]
+            self.assertEqual({k: a[k] for k in ("experiment", "batch_id", "model", "client", "verdict", "trial_index")},
+                             {"experiment": "t", "batch_id": batch_id, "model": "claude-sonnet-5", "client": "cli",
+                              "verdict": "PASS", "trial_index": 0})
+            trial = [d for d in os.listdir(b) if d.endswith("-" + a["arm"])][0]
+            tid = root[1][0]
+            self.assertEqual(tid.hex(), bench.hashlib.sha256(("paymentFailure/%s/%s" % (batch_id, trial)).encode()).hexdigest()[:32])
+            children = [s for s in spans if s[1][0] == tid and s is not root]
+            self.assertEqual(len(children), 2)
+            self.assertTrue(all(s[4][0] == root[2][0] for s in children))  # parent is the AGENT span
+            tool = next(s for s in children if s["attrs"]["openinference.span.kind"] == "TOOL")
+            self.assertEqual(tool["attrs"]["tool.name"], "mcp__jaeger__get_trace_errors")
+            self.assertEqual(tool["attrs"]["output.value"], "Payment request failed. Invalid token.")
+
+    def snapshot(self):
+        return {os.path.relpath(os.path.join(d, n), self._tmp.name): pathlib.Path(d, n).read_bytes()
+                for d, _, names in os.walk(self._tmp.name) for n in names}
+
+    def test_export_refuses_a_planted_host(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        stream = glob.glob(os.path.join(self.batch_dir(), "0-*", "stream.jsonl"))[0]
+        lines = read(stream).splitlines()
+        lines[2] = lines[2].replace("Invalid token.", "Invalid token at fixture.example.test")
+        pathlib.Path(stream).write_text("\n".join(lines) + "\n")
+        before = self.snapshot()
+        rc = self.bench("export", self.batch_dir(), "--endpoint", "http://127.0.0.1:%s" % self.port,
+                        FIXTURE_HOST="fixture.example.test")
+        self.assertEqual(rc, 1, self.out)
+        self.assertEqual(Fake.otlp_posts, [])
+        self.assertIn("export: FOUND 0-", self.out)
+        self.assertIn(": FIXTURE_HOST (1)", self.out)
+        self.assertNotIn("fixture.example.test", self.out)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_export_http_error_is_nonzero_and_writes_nothing(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        before = self.snapshot()
+        Fake.otlp_status = 415
+        self.assertEqual(self.bench("export", self.batch_dir(), PHOENIX_PORT=self.port), 1, self.out)
+        self.assertIn("export: FAILED - Phoenix at http://127.0.0.1:%s/v1/traces: HTTP Error 415" % self.port, self.out)
+        self.assertEqual(self.snapshot(), before)
 
 
 class TestSoak(BenchCase):

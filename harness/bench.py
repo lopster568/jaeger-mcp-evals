@@ -12,6 +12,8 @@
   bench.py index                  write records/INDEX.md
   bench.py pack <experiment>      dist/<experiment>-trajectories.tar.gz of its batches, after a leak scan
   bench.py power <n_per_arm>      Fisher's exact test significance table
+  bench.py export <batch_dir> [--endpoint URL]
+                                  POST the batch's trajectories to Phoenix (<URL>/v1/traces), after a leak scan
 
 The experiment file (harness/experiments/<name>.json, docs/USAGE.md) is the complete
 configuration of a batch. fixture.env (harness/config.py) holds only where the fixture
@@ -25,6 +27,7 @@ ran than planned.
 band exit codes: 0 certified, 2 n < 10 (rank only), 3 pass rate 0 or 1 (read the
 trajectories). leak and readiness: 0 pass, 1 fail, 2 bad input. oracle: 0 pass, 1 fail.
 soak: 0 pass, 5 fail. pack: 0 written, 1 refused (a scan hit or a missing batch).
+export: 0 sent, 1 refused (a scan hit or an unreadable batch) or Phoenix error; nothing is written either way.
 """
 import argparse
 import glob
@@ -34,6 +37,7 @@ import io
 import json
 import math
 import os
+import platform
 import random
 import re
 import shlex
@@ -53,6 +57,7 @@ from time import sleep
 import config
 import fixture_leak
 import judge
+import otlp
 import score
 import tools
 from mcp_client import MCPClient, MCPError
@@ -678,7 +683,7 @@ def load_experiment(path):
     for k in ("name", "scenario", "hypothesis", "status"):
         check(isinstance(exp[k], str) and exp[k], "%s must be a non-empty string" % k)
     r = exp["run"]
-    keys(r, "run", RUN_KEYS)
+    keys(r, "run", RUN_KEYS, optional=("client_version",))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
     if r["client"] == "api":
         check(r["provider"] in ("anthropic", "openai"), "run.provider must be anthropic or openai for client api")
@@ -690,6 +695,8 @@ def load_experiment(path):
     check(type(r["max_budget_usd"]) in (int, float) and r["max_budget_usd"] > 0, "run.max_budget_usd must be a positive number")
     check(is_int(r["n_per_arm"]) and r["n_per_arm"] > 0, "run.n_per_arm must be a positive integer")
     check(r["seed"] is None or is_int(r["seed"]), "run.seed must be an integer or null")
+    if "client_version" in r:
+        check(isinstance(r["client_version"], str) and r["client_version"], "run.client_version must be a non-empty string")
     check(isinstance(exp["arms"], dict) and exp["arms"], "arms must be a non-empty object")
     for name, arm in exp["arms"].items():
         keys(arm, "arms.%s" % name, ARM_KEYS)
@@ -751,7 +758,8 @@ def run(a, cfg):
 
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
-           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None}
+           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
+           "client_version": None}
     if a.client == "api" and a.provider == "openai":
         log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
         if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
@@ -774,6 +782,21 @@ def run(a, cfg):
             return die("ABORT - the api client refuses these arguments: %s" % r.stderr.strip())
         pre["client"] = "PASS"
         log.check(True, "api client (%s) accepts %s at effort %s" % (a.provider, a.model, a.effort))
+    try:
+        client_pre = subprocess.run({"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"]}.get(
+                                        a.client, [sys.executable, AGENT_LOOP, "--version"]),
+                                    capture_output=True, text=True,
+                                    stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        client_pre = None
+    want = exp["run"].get("client_version")
+    if want:
+        # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "agent_loop 1": the first token starting with a digit
+        got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
+        pre["client_version"] = "PASS" if got == want else "FAIL"
+        if not log.check(got == want, "client version %s" % want):
+            return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
+                       % (want, a.client, got or client_pre or "no version"))
     log.detail("== pre-flight: readiness ==")
     pre["readiness"] = "PASS" if readiness(a.scenario, out=log.detail) == 0 else "FAIL"
     log.check(pre["readiness"] == "PASS", "scenario %s ready" % a.scenario)
@@ -809,13 +832,6 @@ def run(a, cfg):
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
     r = fixture_sh(cfg, "sha256sum overlay/* .env.override")
     overlay_sha = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else None
-    try:
-        client_pre = subprocess.run({"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"]}.get(
-                                        a.client, [sys.executable, AGENT_LOOP, "--version"]),
-                                    capture_output=True, text=True,
-                                    stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
-    except (OSError, subprocess.TimeoutExpired):
-        client_pre = None
     git = lambda *args: subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True).stdout.strip()
     harness_sha, harness_dirty = git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--", "harness", "fixture"))
 
@@ -931,7 +947,8 @@ def run(a, cfg):
         hashes["prompts/%s.txt" % prompt_for[arm]] = sha256_file(prompt_file[arm])
     sut = {"jaeger_image": image, "jaeger_image_digest": image_id, "jaeger_commit": jaeger_commit(cfg, image),
            "otel_demo_ref": otel_demo_ref, "agent_client": client_pre,
-           "harness_git_sha": harness_sha + ("-dirty" if harness_dirty else ""), "pinned_at_utc": utc()}
+           "harness_git_sha": harness_sha + ("-dirty" if harness_dirty else ""),
+           "python_version": platform.python_version(), "pinned_at_utc": utc()}
     common = {
         "schema_version": 4, "client": a.client, "provider": a.provider, "batch_id": batch_id, "seed": seed,
         "scenario": a.scenario, "scenario_sha256": hashes["scenario_file"], "scenario_version": scen.get("version"),
@@ -1469,14 +1486,18 @@ def pack_members(batches):
             yield arc, data
 
 
-def pack_findings(batches, cfg):
-    """['<arcname>: <what> (<count>)'] for every file that would leak; names the key, never its value."""
+def leak_rx(cfg):
+    """[(what, regex)] for every value that must never be published: fixture identity, keys, home, session ids."""
     needles = [(k, cfg.get(k)) for k in ("FIXTURE_HOST", "FIXTURE_SSH_USER") + SECRET_KEYS
                if not (k == "FIXTURE_HOST" and cfg.get(k) in ("localhost", "127.0.0.1", "::1"))]  # loopback names nothing
     needles.append(("home directory", os.path.expanduser("~")))
     rx = [(name, re.compile(r"(?<!\w)%s(?!\w)" % re.escape(v))) for name, v in needles if v]
-    rx += [(p, re.compile(re.escape(p))) for p in PACK_PATTERNS]
-    found = []
+    return rx + [(p, re.compile(re.escape(p))) for p in PACK_PATTERNS]
+
+
+def pack_findings(batches, cfg):
+    """['<arcname>: <what> (<count>)'] for every file that would leak; names the key, never its value."""
+    rx, found = leak_rx(cfg), []
     for arc, data in pack_members(batches):
         text = data.decode("utf-8", errors="replace")
         found += ["%s: %s (%d)" % (arc, name, len(r.findall(text))) for name, r in rx if r.search(text)]
@@ -1521,6 +1542,59 @@ def pack(experiment, cfg):
     return 0
 
 
+# ---- export ----------------------------------------------------------------------
+
+def export(batch_dir, endpoint, cfg):
+    """POST every scored trial of a RUNS_DIR batch to Phoenix as one OTLP request (harness/otlp.py).
+    Reads the batch, writes nothing; refuses when a span would carry what pack refuses."""
+    rx, spans, found = leak_rx(cfg), [], []
+    try:
+        m = load_json(os.path.join(batch_dir, "manifest.json"))
+        exp = (m.get("experiment") or {}).get("name") or m["scenario"]
+        rows = read_jsonl(os.path.join(batch_dir, "scores.jsonl"))
+        for row in rows:
+            trial = os.path.join(batch_dir, row["dir"])
+            meta = load_json(os.path.join(trial, "meta.json"))
+            events = [e for e in (json.loads(l) for l in read_text(os.path.join(trial, "stream.jsonl")).splitlines() if l.strip())
+                      if isinstance(e, dict)]
+            attrs = {"experiment": exp, "batch_id": m["batch_id"], "scenario": m["scenario"], "arm": row["arm"],
+                     "trial_index": meta["trial_index"], "model": (meta.get("observed") or {}).get("model") or meta["model_requested"],
+                     "client": meta["client"], "verdict": row.get("verdict") or "ERROR"}
+            t0 = int(datetime.strptime(meta["started_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()) * 10**9
+            trial_spans = otlp.trace_spans("%s/%s/%s" % (m["scenario"], m["batch_id"], row["dir"]), events, t0,
+                                           [otlp.kv(k, v) for k, v in attrs.items()] + [otlp.kv("metadata", json.dumps(attrs))])
+            text = "\n".join([s["name"] for s in trial_spans] +  # raw values: JSON escapes could hide a word boundary
+                              [str(next(iter(a["value"].values()))) for s in trial_spans for a in s["attributes"]])
+            found += ["%s: %s (%d)" % (row["dir"], name, len(r.findall(text))) for name, r in rx if r.search(text)]
+            spans += trial_spans
+    except (OSError, ValueError, KeyError) as e:
+        print("export: REFUSED - cannot read the batch in %s (a RUNS_DIR batch with its trial directories): %r" % (batch_dir, e))
+        return 1
+    if not rows:
+        print("export: REFUSED - no scores.jsonl rows in %s" % batch_dir)
+        return 1
+    if found:
+        for line in found:
+            print("export: FOUND " + line)
+        print("export: REFUSED - %d trial(s) would send the above; nothing sent" % len(found))
+        return 1
+    request = {"resourceSpans": [{"resource": {"attributes": [otlp.kv("service.name", "jaeger-mcp-evals"),
+                                                               otlp.kv("openinference.project.name", exp)]},
+                                  "scopeSpans": [{"scope": {"name": "bench.py export"}, "spans": spans}]}]}
+    url = (endpoint or "http://%s:%s" % (cfg.get("FIXTURE_HOST") or "localhost", cfg.get("PHOENIX_PORT") or "16006"))
+    url = url.rstrip("/") + "/v1/traces"
+    req = urllib.request.Request(url, data=otlp.encode(request), method="POST",
+                                 headers={"Content-Type": "application/x-protobuf"})
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+    except OSError as e:  # HTTPError and URLError included
+        print("export: FAILED - Phoenix at %s: %s" % (url, e))
+        return 1
+    print("export: sent %d trial(s), %d spans, to project %s at %s" % (len(rows), len(spans), exp, url))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="bench.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1552,6 +1626,10 @@ def main(argv=None):
     pk = sub.add_parser("pack")
     pk.add_argument("experiment")
     pk.set_defaults(func=lambda a, cfg: pack(a.experiment, cfg))
+    ex = sub.add_parser("export")
+    ex.add_argument("batch_dir")
+    ex.add_argument("--endpoint", help="Phoenix base URL (default http://<FIXTURE_HOST>:<PHOENIX_PORT>)")
+    ex.set_defaults(func=lambda a, cfg: export(a.batch_dir, a.endpoint, cfg))
     pw = sub.add_parser("power")
     pw.add_argument("n_per_arm", type=int)
     pw.set_defaults(func=lambda a, cfg: power(a.n_per_arm))

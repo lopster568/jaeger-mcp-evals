@@ -18,7 +18,8 @@ variable of the same name wins over the file. Nothing in it changes what a run d
 ## The experiment file
 
 `harness/experiments/<name>.json` is the complete configuration of a batch. Every key is
-required; an unknown or missing key is refused before anything touches the fixture.
+required except `run.client_version`; an unknown or missing key is refused before anything
+touches the fixture.
 
 ```json
 {
@@ -51,6 +52,7 @@ required; an unknown or missing key is refused before anything touches the fixtu
 | `run.max_budget_usd` | positive number; no effect with provider openai or client codex (cost unknown) |
 | `run.n_per_arm` | trials per arm |
 | `run.seed` | shuffle seed, or `null` to draw one and record it |
+| `run.client_version` | optional, e.g. `"2.1.283"`: the batch refuses before touching the fixture unless the client reports this version (the first numeric token of `client_version_pre`); the result is `client_version` in preflight.json |
 | `arms.<arm>.prompt` | a `harness/prompts/<prompt>.txt` name |
 | `arms.<arm>.image` | the Jaeger image this arm must run against |
 | `arms.<arm>.tools` | `false` gives the arm no MCP server, to test answers from memory |
@@ -187,6 +189,30 @@ the client validates against `verdict-schema.json`.
   cascade are MISSING, the verdict is FAIL and `verdict_source` is null.
 - Skill arms report `read_skill_attempted` and `read_skill_succeeded`; an error result is not
   a read.
+
+## Export to Phoenix
+
+`python3 harness/bench.py export <RUNS_DIR>/<scenario>/<batch-id> [--endpoint URL]` sends every
+trial listed in the batch's `scores.jsonl` to Phoenix (fixture/FIXTURE.md, Trajectory store) as
+one OTLP protobuf POST to `<URL>/v1/traces`; the default URL is
+`http://<FIXTURE_HOST>:<PHOENIX_PORT>`. It needs the trial directories, so a `records/` copy is
+refused. Each trial is one trace: an AGENT root span, one TOOL span per tool call and a final LLM
+span with the answer. The root carries `experiment`, `batch_id`, `scenario`, `arm`, `trial_index`,
+`model`, `client` and `verdict` (from `scores.jsonl`), also as one `metadata` JSON, and the
+Phoenix project is the experiment name (`openinference.project.name`). Tool outputs and the
+answer are cut to 8 KiB. Trace and span ids are derived from `<scenario>/<batch-id>/<trial>`, so
+exporting a batch twice sends the same ids again. The command reads the batch and writes
+nothing; it refuses (exit 1, nothing sent) on the same values `pack` refuses, and exits 1 with
+the error when Phoenix does not accept the request.
+
+Span timestamps are synthetic and must not be read as timings. stream.jsonl has no per-event
+times, so spans start at `started_utc` and split the run's `duration_ms` evenly
+(`timestamp.synthetic=true`); only the trial's total duration is measured.
+
+Checked on 2026-09-26 against a live Phoenix of the digest pinned in fixture/compose.overlay.yaml:
+each experiment name becomes one Phoenix project; OTLP protobuf is accepted and OTLP JSON is
+refused with 415; exporting a batch twice leaves the span count unchanged; the data survives a
+container restart (named volume).
 
 ## What stays out of git
 

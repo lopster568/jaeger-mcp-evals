@@ -66,3 +66,16 @@ services:
       resources:
         limits:
           memory: 300M
+  # Trajectory store, off by default: started only with `--profile store`. UI and OTLP HTTP
+  # (/v1/traces) share container port 6006. Pinned by digest.
+  phoenix:
+    image: arizephoenix/phoenix@sha256:440c03af939e775343788a4e9e0fed72df6fd87ee287c771e94494ab3037c790
+    profiles: ["store"]
+    ports:
+      - "16006:6006"
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+    volumes:
+      - phoenix-data:/mnt/data
+volumes:
+  phoenix-data:

@@ -11,6 +11,7 @@ cp fixture.env.example fixture.env      # where the demo runs, API keys
 python3 harness/bench.py run harness/experiments/desc-change-sep28.json --dry-run  # pre-flight, planned order
 python3 harness/bench.py run harness/experiments/desc-change-sep28.json            # flip, trials, scoring, records
 python3 harness/bench.py verify         # re-score from raw files, check records/INDEX.md
+python3 harness/bench.py export runs/<scenario>/<batch-id>  # optional: trajectories to Phoenix
 ```
 
 ```mermaid

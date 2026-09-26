@@ -54,6 +54,24 @@ docker compose --env-file .env --env-file .env.override \
 
 The same flags with `down` stop it, but `down` empties Jaeger's store, so avoid it between batches. Give the load generator a few minutes to fill Jaeger.
 
+## Trajectory store (optional)
+
+Phoenix runs from the same overlay under the Compose profile `store`, so the bring-up above
+never starts it. Start only Phoenix, leaving every demo container as it is:
+
+```
+docker compose --env-file .env --env-file .env.override \
+  -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml \
+  --profile store up -d --no-deps phoenix
+```
+
+Phoenix answers about one to two minutes after start (database migrations, then app startup).
+UI and OTLP HTTP share host port 16006 (`PHOENIX_PORT` in fixture.env); its data lives in the
+named volume `phoenix-data`. To open the UI from another machine, tunnel the port
+(`ssh -N -L 16006:localhost:16006 <user>@<host>`) and browse http://localhost:16006.
+After a batch, `python3 harness/bench.py export <batch_dir>` sends
+its trajectories there (docs/USAGE.md, Export to Phoenix).
+
 ## Health checks
 
 ```

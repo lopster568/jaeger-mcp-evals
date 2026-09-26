@@ -57,7 +57,7 @@ answers "what could have changed this result". The 47 keys, in write order:
 | 44 | exit_code | the client's exit status, 127 if it could not start; also `exit=<n>` in `exit.txt`. The api loop exits 0 for any model-driven stop (max turns included) and 1 only when the trial could not run |
 | 45 | observed | from the init event: `client_version` (`claude_code_version`, the loop's `loop_version`, or `codex --version` for codex), `model`, `tools`, `skills` and `agents` (the CLI's own lists; null for api); plus `compaction_events` from score.py's detector |
 | 46 | agent_loop | api: the loop's settings block from `agent_loop.json` (loop version, API version header, model and `response_models`, thinking, effort, temperature, max_turns, max_tokens, cache_control, price table, request ids, `result_subtype`); with provider openai also `api_base_url` (`set` when OPENAI_BASE_URL was non-empty, else empty; never the URL, which pack treats as a secret) and `response_format_supported` (false once the endpoint rejected `response_format` and the run went on without it), `thinking` and `effort` are `n/a`, and the price table and cost are null; null for cli |
-| 47 | system_under_test | summary block that score.py copies into each scores.jsonl row: `jaeger_image`, `jaeger_image_digest`, `jaeger_commit`, `otel_demo_ref`, `agent_client`, `harness_git_sha` (`-dirty` suffix when dirty), `pinned_at_utc` |
+| 47 | system_under_test | summary block that score.py copies into each scores.jsonl row: `jaeger_image`, `jaeger_image_digest`, `jaeger_commit`, `otel_demo_ref`, `agent_client`, `harness_git_sha` (`-dirty` suffix when dirty), `python_version` (`platform.python_version()` of the interpreter running bench.py), `pinned_at_utc` |
 
 Other cell files: `prompt.txt`, `system-prompt.txt`, `mcp.json` (not a record file, so it
 carries the real, host-including URL the client connects to:
@@ -111,8 +111,9 @@ uid and gid 0, no gzip name or time), so packing the same batches twice gives th
 `preflight.json`, written when the batch directory exists and again after the
 leak scan and oracle under the fault: `leak`, `readiness`, `containers`,
 `baseline_traces`, `fixture_leak_baseline`, `fixture_leak_under_fault`, `oracle`,
-`client` (PASS, FAIL or a count; null if not run; `oracle` stays null when no arm has tools,
-`client` unless `run.client` is api).
+`client`, `client_version` (PASS, FAIL or a count; null if not run; `oracle` stays null when no
+arm has tools, `client` unless `run.client` is api, `client_version` unless the experiment sets
+`run.client_version`).
 
 `manifest.json`, written before the fault flip and rewritten after the leak scan
 under the fault; in this order:
