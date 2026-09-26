@@ -13,13 +13,14 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | scenario | deterministic | readiness | batches recorded | cells scored |
 |---|---|---|---|---|
 | adFailure | no | PASS | 0 | 0 |
-| paymentFailure | yes | PASS | 0 | 0 |
+| paymentFailure | yes | PASS | 1 | 2 |
 | paymentUnreachable | yes | PASS | 0 | 0 |
 
 ## Batches
 
 | batch | date | scenario | arms (cells) | client and model requested | model observed | effort | client version | jaeger image | experiment | PASS/PARTIAL/FAIL/ABSTAIN | band |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| [sanity-paymentfailure/batch-20260926T135500Z](sanity-paymentfailure/batch-20260926T135500Z/) | 2026-09-26 | paymentFailure | noskill 2 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981 | sanity-paymentfailure | noskill 2/0/0/0 | noskill 2 |
 
 ## Results
 
