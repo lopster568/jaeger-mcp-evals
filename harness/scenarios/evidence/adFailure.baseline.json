@@ -1,0 +1,10 @@
+{
+ "scenario": "adFailure",
+ "service_queried": "ad",
+ "lookback": "5m",
+ "traces_checked": 50,
+ "signal_regex": "GetAds.*UNAVAILABLE|AdService.?GetAds.*UNAVAILABLE",
+ "signal_present": false,
+ "checked_utc": "2026-09-10T20:29:51Z",
+ "flag_state": "pristine file confirmed via OFREP earlier this sitting"
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "root-cause-verdict",
+  "type": "object",
+  "properties": {
+    "root_cause_service": {
+      "type": "string",
+      "description": "The service that is the root cause locus, as evidenced by span data."
+    },
+    "root_cause_operation": {
+      "type": "string",
+      "description": "The root-cause span name (operation) on that service."
+    },
+    "mechanism": {
+      "type": "string",
+      "description": "The failure mechanism, chosen from a fixed enum shared across scenarios.",
+      "enum": [
+        "invalid_token",
+        "dependency_unreachable",
+        "dns_resolution_failure",
+        "timeout",
+        "cache_growth",
+        "resource_exhaustion",
+        "grpc_unavailable",
+        "other",
+        "cannot_determine"
+      ]
+    },
+    "mechanism_detail": {
+      "type": "string",
+      "description": "Free text elaborating on the mechanism. Not graded."
+    },
+    "cascading": {
+      "type": "array",
+      "description": "Downstream failures that are symptoms of the root cause, not the cause itself.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          }
+        },
+        "required": ["service", "operation"],
+        "additionalProperties": false
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "evidence_span_ids": {
+      "type": "array",
+      "description": "Span ids used as evidence for the verdict.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "abstain": {
+      "type": "boolean",
+      "description": "True when the span data cannot establish a root cause. When true, mechanism must be cannot_determine."
+    }
+  },
+  "required": [
+    "root_cause_service",
+    "root_cause_operation",
+    "mechanism",
+    "mechanism_detail",
+    "cascading",
+    "confidence",
+    "evidence_span_ids",
+    "abstain"
+  ],
+  "additionalProperties": false
+}

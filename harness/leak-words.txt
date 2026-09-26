@@ -1,0 +1,16 @@
+# Leak-word list for prompts, system prompts and skill text the agent sees.
+# Additions or removals are deliberate, reviewed changes, since
+# loosening it silently weakens every leak check downstream.
+paymentFailure
+paymentUnreachable
+productCatalogFailure
+cartFailure
+adFailure
+recommendationCacheFailure
+flagd
+flag
+inject
+injected
+scenario
+ground-truth
+feature flag

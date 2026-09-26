@@ -1,0 +1,68 @@
+# Overlay for the jaeger-mcp-evals fixture. Layer on top of compose.yaml + compose.full.yaml +
+# compose.observability.yaml (what `make start` uses). Publishes fixed host
+# ports for the harness and swaps in the MCP-enabled Jaeger config.
+services:
+  jaeger:
+    ports:
+      - "16686:16686"
+    volumes:
+      - ./overlay/jaeger-config.yml:/etc/jaeger/config.yml
+      - ./src/jaeger/ui-config.json:/etc/jaeger/ui-config.json
+  flagd:
+    ports:
+      - "8013:8013"
+      - "8016:8016"
+  flagd-ui:
+    ports:
+      - "4000:4000"
+  otel-collector:
+    volumes:
+      - ./overlay/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+  # 2026-09-18 deviation: the demo's 20 MiB limit on these two Go
+  # services is too tight on this machine. After about an hour both sit at the ceiling,
+  # the GC thrashes, health probes time out, a third of orders fail and payment is
+  # barely called. Limits only: no code, image, flag or span content changes.
+  product-catalog:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    environment:
+      - GOMEMLIMIT=48MiB
+  checkout:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    environment:
+      - GOMEMLIMIT=48MiB
+  # 2026-09-18, same deviation, second round. With swap off the machine
+  # still spent ~80% of CPU in the kernel re-reading files: grafana sat at 91% of its
+  # 175 MiB limit and 196% CPU, prometheus at 96% of 200 MiB and 87% CPU, and astronomy-db
+  # had been OOM-killed at 80 MiB. A container pinned at its memory ceiling evicts and
+  # re-reads its own pages endlessly. Limits only; no code, image, flag or span changes.
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+  prometheus:
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+  astronomy-db:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+  # 2026-09-20, same deviation, third round. payment (Node.js) sat at 136 of 140 MiB with
+  # 98% CPU and a failing health probe 40 minutes after boot, while the machine read disk at
+  # 500 to 870 MB/s. It is the root-cause service of paymentFailure, so it has to be healthy.
+  # The JVM services (ad, fraud-detection, kafka, opensearch) also sit near their limits but
+  # at under 5% CPU, which is normal heap sizing, so they are left alone. Limits only.
+  payment:
+    deploy:
+      resources:
+        limits:
+          memory: 300M

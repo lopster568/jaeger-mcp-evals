@@ -1,0 +1,40 @@
+{
+  "name": "desc-change-sep28",
+  "version": 2,
+  "scenario": "paymentFailure",
+  "hypothesis": "A tool-description change moves an error investigation from get_critical_path, a latency-oriented tool on an error task, to get_trace_topology, without any skill named in the prompt, at no cost in accuracy.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "sonnet",
+    "effort": "xhigh",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "noskill",
+      "image": "quay.io/jaegertracing/jaeger:2.20.0",
+      "tools": true
+    },
+    "descchange": {
+      "prompt": "noskill",
+      "image": "jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {
+    "tool_used_min": {
+      "get_trace_topology": 8
+    },
+    "tool_used_max": {
+      "get_critical_path": 2
+    },
+    "tool_output_chars_median_drop_pct_min": 10,
+    "accuracy_pass_min": 10
+  },
+  "status": "CONFIRMED v2 2026-09-26: run settings moved into this file; hypothesis, arms and thresholds unchanged from v1"
+}

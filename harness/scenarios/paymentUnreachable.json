@@ -1,0 +1,43 @@
+{
+ "flag": "paymentUnreachable",
+ "version": 1,
+ "activation": {
+  "field": "defaultVariant",
+  "value": "on"
+ },
+ "deterministic": "yes",
+ "ground_truth": {
+  "service": "checkout",
+  "operation": "PaymentService/Charge",
+  "mechanism": "checkout/main.go (lines 565-575) makes its own client span for oteldemo.PaymentService/Charge, which fails with grpc UNAVAILABLE, status description name resolver error: produced zero addresses. The payment service's own server span never exists anywhere in the trace's process list - checkout cannot resolve payment's address at all, rather than payment rejecting the call. Sibling calls inside prepareOrderItemsAndShippingQuoteFromCart (cart, product-catalog, currency) all succeed, isolating the fault to the charge call specifically."
+ },
+ "signal_regex": "produced zero addresses|name resolver error",
+ "oracle": [{"tool": "search_traces", "arguments": {"service_name": "checkout", "with_errors": true}}, {"tool": "get_trace_errors", "arguments": {"trace_id": "$trace_id"}}],
+ "pass_rule": {
+  "service_exact": [
+   "checkout"
+  ],
+  "operation_exact": [
+   "oteldemo.PaymentService/Charge",
+   "oteldemo.CheckoutService/PlaceOrder"
+  ]
+ },
+ "expected_mechanism": "dependency_unreachable",
+ "accepted_mechanisms": [
+  "dependency_unreachable",
+  "dns_resolution_failure",
+  "grpc_unavailable"
+ ],
+ "cascade_rule": {
+  "required_any": [
+   [
+    "placeorder|checkout"
+   ]
+  ]
+ },
+ "evidence": {
+  "ground_truth_trace": "evidence/paymentUnreachable.trace.json",
+  "baseline_absence": "evidence/paymentUnreachable.baseline.json"
+ },
+ "notes": "Evidence: signal inventory of 2026-09-10, Part A/B, confirmed live. Baseline absence was confirmed live (post-restore traces show zero occurrences, cross-checked by startTime against the restore timestamp), and the baseline_absence evidence file at the path above was captured in the same session (checked_utc 2026-09-10T20:29:50Z, signal_present false). SPM gap: the PaymentService/Charge client span's own otel.status_code=ERROR is not reflected in traces_span_metrics_calls_total (100% STATUS_CODE_UNSET across the fault window), so an SPM-only verifier would miss this fault entirely; only checkout's PlaceOrder server-span error count moved. Locus: checkout, because the failing span and the flag evaluation are in checkout and payment never receives the call."
+}

@@ -1,0 +1,8 @@
+fixture.env
+stream.jsonl
+stderr.txt
+*.log
+__pycache__/
+.pytest_cache/
+runs/
+dist/

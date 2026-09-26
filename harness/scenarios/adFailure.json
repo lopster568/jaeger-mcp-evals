@@ -1,0 +1,42 @@
+{
+  "flag": "adFailure",
+  "version": 1,
+  "activation": {
+    "field": "defaultVariant",
+    "value": "on"
+  },
+  "deterministic": "no",
+  "ground_truth": {
+    "service": "ad",
+    "operation": "GetAds",
+    "mechanism": "AdService.java:238 evaluates flag && random.nextInt(10) == 0 - only 1 in 10 requests fail even with the flag on, and no flagd variant can make it deterministic. When it fires, ad's own GetAds span goes ERROR with exception event Error, exception.message=UNAVAILABLE, cascading as grpc code 14 UNAVAILABLE up through frontend's /api/data route to frontend-proxy."
+  },
+  "signal_regex": "GetAds.*UNAVAILABLE|AdService.?GetAds.*UNAVAILABLE",
+  "oracle": [{"tool": "search_traces", "arguments": {"service_name": "ad", "with_errors": true}}, {"tool": "get_trace_errors", "arguments": {"trace_id": "$trace_id"}}],
+  "pass_rule": {
+    "service_exact": [
+      "ad"
+    ],
+    "operation_exact": [
+      "oteldemo.AdService/GetAds",
+      "getAds",
+      "GetAds"
+    ]
+  },
+  "expected_mechanism": "grpc_unavailable",
+  "accepted_mechanisms": [
+    "grpc_unavailable"
+  ],
+  "cascade_rule": {
+    "required_any": [
+      [
+        "frontend"
+      ]
+    ]
+  },
+  "evidence": {
+    "ground_truth_trace": "evidence/adFailure.trace.json",
+    "baseline_absence": "evidence/adFailure.baseline.json"
+  },
+  "notes": "Evidence: signal inventory of 2026-09-10, Part A/B, confirmed live from a fresh capture unaffected by the product-catalog congestion that blocked three other flags. deterministic=no because the fault code itself gates the error stochastically (1 in 10), so it stays out of the certified pool until it is deterministic and is never scored alongside deterministic scenarios. The baseline_absence evidence file at the path above was captured the same session (checked_utc 2026-09-10T20:29:51Z, signal_present false). signal_regex is deliberately narrower than a bare UNAVAILABLE match, since paymentUnreachable's mechanism also produces that word."
+}

@@ -1,0 +1,60 @@
+# Overlay for the jaeger-mcp-evals fixture, loaded last by the demo's collector command line.
+#
+# 1. memory_limiter: Docker Desktop on Windows exposes a 9p mount in /hostfs's mount table
+#    that the collector's memory reader cannot parse, so limit_percentage crashes the
+#    collector at startup ("invalid format for MountPoint"). A fixed limit avoids it.
+#
+# 2. De-flagging (2026-09-20). The demo labels its own faults in the telemetry the agent
+#    reads. Reproduced from six saved fault traces: (a) "feature_flag.evaluation" span
+#    events on application spans carry the flag key and the active variant; (b) the flagd
+#    service's own spans carry feature_flag.key and feature_flag.result.variant; (c) client
+#    spans named flagd.evaluation.v2.Service/Resolve* sit inside the application services;
+#    (d) recommendation sets demo.feature_flag.recommendation_cache. An agent that reads
+#    any of these is told which fault is active. Everything below removes that data before
+#    it reaches Jaeger and the span-metrics connector. Application spans, their status,
+#    messages, exceptions and timing are untouched. Dropped spans are leaves (flag lookups).
+#
+#    NOT removed, on purpose: productCatalogFailure's own error text and event,
+#    "Error: Product Catalog Fail Feature Flag Enabled". That text IS the scenario's
+#    signal; changing it is a scenario decision. See the commented statement.
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 1024
+    spike_limit_mib: 256
+    limit_percentage: 0
+    spike_limit_percentage: 0
+
+  filter/deflag:
+    error_mode: ignore
+    traces:
+      span:
+        - 'resource.attributes["service.name"] == "flagd"'
+        - 'IsMatch(name, "^flagd\\.evaluation\\.")'
+        # Found by harness/fixture-leak.py on the saved traces, both leaf client spans:
+        # ad's OpenFeature provider span (scope name ends in ".flagd") and cart's HTTP
+        # POST to flagd (server.address = flagd).
+        - 'IsMatch(instrumentation_scope.name, "(?i)openfeature|flagd")'
+        - 'attributes["server.address"] == "flagd"'
+        - 'IsMatch(attributes["rpc.service"], "^flagd\\.")'
+      spanevent:
+        - 'name == "feature_flag.evaluation"'
+
+  transform/deflag:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - delete_matching_keys(span.attributes, "(?i)feature_flag")
+          # Scenario decision, off by default:
+          # - replace_pattern(span.status.message, " Feature Flag Enabled", "")
+      - context: spanevent
+        statements:
+          - delete_matching_keys(spanevent.attributes, "(?i)feature_flag")
+
+service:
+  pipelines:
+    traces:
+      # The demo's list at tag 3.0.0, plus the two de-flagging processors at the end.
+      # Lists are replaced, not merged, so the demo's four entries are repeated here.
+      processors: [resourcedetection, memory_limiter, transform/sanitize_spans, gen_ai_normalizer, filter/deflag, transform/deflag]

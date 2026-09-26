@@ -1,0 +1,11 @@
+{
+ "scenario": "paymentFailure",
+ "service_queried": "payment",
+ "lookback": "5m",
+ "traces_checked": 50,
+ "signal_regex": "Invalid token",
+ "signal_present": false,
+ "checked_utc": "2026-09-10T20:30:40Z",
+ "flag_state": "OFREP variant off at check time",
+ "note": "loyalty_level regex retired: attribute present on all baseline charge spans"
+}
