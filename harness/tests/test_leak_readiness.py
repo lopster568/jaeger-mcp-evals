@@ -117,5 +117,42 @@ class TestReadiness(unittest.TestCase):
                 self.assertEqual(rc, 1, out)
                 self.assertIn("readiness x: oracle is a non-empty list of {tool, arguments} - FAIL", "\n".join(out))
 
+
+class TestOracleSpanId(unittest.TestCase):
+    def test_span_id_expands_per_trace_from_earlier_output(self):
+        from unittest import mock
+        outputs = {"search_traces": '{"traces":[{"trace_id":"aa"},{"trace_id":"bb"}]}',
+                   "get_trace_topology": lambda a: '{"spans":[{"path":"%s01/%s02"}]}' % ((a["trace_id"] * 7,) * 2)}
+        seen = []
+
+        class Client:
+            def __init__(self, *a, **k):
+                pass
+
+            def initialize(self):
+                pass
+
+            def call_tool(self, name, args):
+                seen.append((name, args))
+                o = outputs.get(name)
+                text = o(args) if callable(o) else o or ('{"n":%d}' % (99 if args["span_ids"] == ["bbbbbbbbbbbbbb02"] else 1))
+                return {"is_error": False, "raw": {}, "text": text}
+
+        with tempfile.TemporaryDirectory() as h:
+            os.makedirs(os.path.join(h, "scenarios"))
+            with open(os.path.join(h, "scenarios", "x.json"), "w") as f:
+                json.dump({"signal_regex": '"n":99', "oracle": [
+                    {"tool": "search_traces", "arguments": {}},
+                    {"tool": "get_trace_topology", "arguments": {"trace_id": "$trace_id"}},
+                    {"tool": "get_span_details", "arguments": {"trace_id": "$trace_id", "span_ids": ["$span_id"]}}]}, f)
+            with mock.patch.object(bench, "HARNESS", h), mock.patch.object(bench, "MCPClient", Client), \
+                    mock.patch.object(bench.config, "mcp_url", lambda cfg: "u"):
+                rc, out = gate(bench.oracle, "x", {})
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([a for n, a in seen if n == "get_span_details"], [
+            {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa01"]}, {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa02"]},
+            {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb01"]}, {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb02"]}])
+
+
 if __name__ == "__main__":
     unittest.main()

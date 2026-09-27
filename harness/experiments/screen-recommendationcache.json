@@ -1,0 +1,13 @@
+{
+  "name": "screen-recommendationcache",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Screen, rank only: on recommendationCacheFailure (a latency and size fault with no ERROR span) the baseline agent, told only that product pages are slow, follows the pre-existing checkout 504 errors or names a slow downstream instead of recommendation's get_product_list. Any result below 3/3 qualifies the scenario for a certified batch; not a finding at n=3.",
+  "run": {"client": "cli", "provider": null, "model": "sonnet", "effort": "high", "client_version": "2.1.283", "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 3, "seed": null},
+  "arms": {
+    "noskill": {"prompt": "slow", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true}
+  },
+  "baseline_arm": "noskill",
+  "thresholds": {},
+  "status": "CONFIRMED: screen, version 1 of the slow prompt, rank only"
+}
