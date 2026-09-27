@@ -1,6 +1,6 @@
 {
   "flag": "recommendationCacheFailure",
-  "version": 1,
+  "version": 2,
   "activation": {
     "field": "defaultVariant",
     "value": "on"
@@ -11,6 +11,7 @@
     "operation": "get_product_list",
     "mechanism": "recommendation/recommendation_server.py get_product_list (lines 66-98 at tag 3.0.0): with the flag on, each call is a cache miss with probability 0.5; a miss calls ProductCatalogService/ListProducts, appends the 10 catalog ids to the module-global cached_ids and then appends a quarter of the list to itself, so the list grows by about 1.25x per miss and is never deduplicated or trimmed. demo.product.count on the get_product_list span is len(cached_ids): 10 on every baseline span, 12 after the first miss, and 3,393,387 after 21 minutes live on 2026-09-27. Span duration follows the list size (baseline median about 5 ms; 143-159 ms at 2.7-3.4 million). No span sets ERROR status. frontend's RecommendationService/ListRecommendations client span and GET /api/recommendations slow down only once the count passes about 1 million; those are cascading symptoms."
   },
+  "mechanism_truth": "An in-memory list that the service keeps between requests has items appended on every lookup miss and is never deduplicated or trimmed, so it keeps getting larger and each request gets slower; no request returns an error.",
   "signal_regex": "demo\\.product\\.count\"(?:,\\s*\"type\":\\s*\"int64\",\\s*\"value\")?:\\s*\\d{7,}",
   "oracle": [
     {
@@ -47,7 +48,6 @@
       "oteldemo.RecommendationService/ListRecommendations"
     ]
   },
-  "expected_mechanism": "cache_growth",
   "cascade_rule": {
     "required_any": [
       [

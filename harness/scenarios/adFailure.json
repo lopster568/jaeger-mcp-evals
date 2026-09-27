@@ -1,6 +1,6 @@
 {
   "flag": "adFailure",
-  "version": 1,
+  "version": 2,
   "activation": {
     "field": "defaultVariant",
     "value": "on"
@@ -11,6 +11,7 @@
     "operation": "GetAds",
     "mechanism": "AdService.java:238 evaluates flag && random.nextInt(10) == 0 - only 1 in 10 requests fail even with the flag on, and no flagd variant can make it deterministic. When it fires, ad's own GetAds span goes ERROR with exception event Error, exception.message=UNAVAILABLE, cascading as grpc code 14 UNAVAILABLE up through frontend's /api/data route to frontend-proxy."
   },
+  "mechanism_truth": "The service's own request handler deliberately fails a random fraction of requests (about one in ten) by returning a transient 'try again later' status error; callers only pass that error upward.",
   "signal_regex": "GetAds.*UNAVAILABLE|AdService.?GetAds.*UNAVAILABLE",
   "oracle": [{"tool": "search_traces", "arguments": {"service_name": "ad", "with_errors": true}}, {"tool": "get_trace_errors", "arguments": {"trace_id": "$trace_id"}}],
   "pass_rule": {
@@ -23,10 +24,6 @@
       "GetAds"
     ]
   },
-  "expected_mechanism": "grpc_unavailable",
-  "accepted_mechanisms": [
-    "grpc_unavailable"
-  ],
   "cascade_rule": {
     "required_any": [
       [

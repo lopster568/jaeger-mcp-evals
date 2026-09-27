@@ -13,22 +13,7 @@
     },
     "mechanism": {
       "type": "string",
-      "description": "The failure mechanism, chosen from a fixed enum shared across scenarios.",
-      "enum": [
-        "invalid_token",
-        "dependency_unreachable",
-        "dns_resolution_failure",
-        "timeout",
-        "cache_growth",
-        "resource_exhaustion",
-        "grpc_unavailable",
-        "other",
-        "cannot_determine"
-      ]
-    },
-    "mechanism_detail": {
-      "type": "string",
-      "description": "Free text elaborating on the mechanism. Not graded."
+      "description": "How the failure happens, as evidenced by span data."
     },
     "cascading": {
       "type": "array",
@@ -60,14 +45,13 @@
     },
     "abstain": {
       "type": "boolean",
-      "description": "True when the span data cannot establish a root cause. When true, mechanism must be cannot_determine."
+      "description": "True when the span data cannot establish a root cause."
     }
   },
   "required": [
     "root_cause_service",
     "root_cause_operation",
     "mechanism",
-    "mechanism_detail",
     "cascading",
     "confidence",
     "evidence_span_ids",

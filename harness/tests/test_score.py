@@ -13,7 +13,14 @@ import unittest
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 sys.path.insert(0, HARNESS_DIR)
+sys.path.insert(0, os.path.join(HARNESS_DIR, "tests"))
 import score as score_mod  # noqa: E402
+from fake_grader import graded  # noqa: E402
+
+
+def graded_score(d):
+    with graded():
+        return score_mod.score(d, call_grader=True)
 
 
 def build_run_dir_structured(root, verdict, scenario="paymentFailure", name="fake"):
@@ -64,7 +71,7 @@ def build_run_dir_structured(root, verdict, scenario="paymentFailure", name="fak
             f.write(json.dumps(e) + "\n")
 
     with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump({"scenario": scenario}, f)
+        json.dump({"scenario": scenario, "schema_version": 5}, f)
 
     with open(os.path.join(out_dir, "prompt.txt"), "w", encoding="utf-8") as f:
         f.write("investigate the failing checkout trace")
@@ -133,7 +140,7 @@ def build_run_dir_with_read_skill(root, read_skill_calls, name, scenario="paymen
         for e in events:
             f.write(json.dumps(e) + "\n")
     with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump({"scenario": scenario}, f)
+        json.dump({"scenario": scenario, "schema_version": 5}, f)
     with open(os.path.join(out_dir, "prompt.txt"), "w", encoding="utf-8") as f:
         f.write("investigate the failing checkout trace, call read_skill first")
 
@@ -149,36 +156,37 @@ class TestScore(unittest.TestCase):
         verdict = {
             "root_cause_service": "payment",
             "root_cause_operation": "charge",
-            "mechanism": "invalid_token",
-            "mechanism_detail": "payment throws Invalid token on every charge call.",
+            "mechanism": "payment rejects every charge over an invalid token",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "high",
             "evidence_span_ids": ["span-1"],
             "abstain": False,
         }
         d = build_run_dir_structured(self.tmp.name, verdict, scenario="paymentFailure")
-        summary, _ = score_mod.score(d)
+        summary, _ = graded_score(d)
         self.assertEqual(summary["verdict_source"], "structured")
         self.assertEqual(summary["locus"], "PASS")
         self.assertEqual(summary["mechanism"], "PASS")
         self.assertEqual(summary["cascade"], "PASS")
         self.assertFalse(summary["abstained"])
         self.assertEqual(summary["verdict"], "PASS")
-        self.assertEqual(summary["mechanism_value"], "invalid_token")
+        self.assertEqual(summary["mechanism_value"], verdict["mechanism"])
+        self.assertEqual((summary["mechanism_grade"], summary["grader_model"], summary["grader_cached"]),
+                         ("correct", "claude-fable-5-1", False))
+        self.assertEqual(len(summary["grader_prompt_sha256"]), 64)
 
     def test_structured_payment_timeout_partial(self):
         verdict = {
             "root_cause_service": "payment",
             "root_cause_operation": "charge",
-            "mechanism": "timeout",
-            "mechanism_detail": "the charge call timed out.",
+            "mechanism": "the charge call timed out waiting for the card processor",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "medium",
             "evidence_span_ids": ["span-1"],
             "abstain": False,
         }
         d = build_run_dir_structured(self.tmp.name, verdict, scenario="paymentFailure")
-        summary, _ = score_mod.score(d)
+        summary, _ = graded_score(d)
         self.assertEqual(summary["verdict_source"], "structured")
         self.assertEqual(summary["locus"], "PASS")
         self.assertEqual(summary["mechanism"], "FAIL")
@@ -188,8 +196,7 @@ class TestScore(unittest.TestCase):
         verdict = {
             "root_cause_service": "unknown",
             "root_cause_operation": "unknown",
-            "mechanism": "cannot_determine",
-            "mechanism_detail": "spans do not establish a root cause.",
+            "mechanism": "the spans do not show one",
             "cascading": [],
             "confidence": "low",
             "evidence_span_ids": [],
@@ -201,51 +208,26 @@ class TestScore(unittest.TestCase):
         self.assertTrue(summary["abstained"])
         self.assertEqual(summary["verdict"], "ABSTAIN")
 
-    def test_structured_payment_unreachable_dns_accepted(self):
-        # root_cause_operation must be one of pass_rule.operation_exact's
-        # accepted strings now that the structured path is exact-match, not
-        # a substring/regex search - "oteldemo.PaymentService/Charge" is in
-        # that list, a bare "PaymentService/Charge" is not.
-        verdict = {
-            "root_cause_service": "checkout",
-            "root_cause_operation": "oteldemo.PaymentService/Charge",
-            "mechanism": "dns_resolution_failure",
-            "mechanism_detail": "name resolver error: produced zero addresses.",
-            "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
-            "confidence": "high",
-            "evidence_span_ids": ["span-7"],
-            "abstain": False,
-        }
-        d = build_run_dir_structured(self.tmp.name, verdict, scenario="paymentUnreachable")
-        summary, _ = score_mod.score(d)
-        self.assertEqual(summary["verdict_source"], "structured")
-        self.assertEqual(summary["locus"], "PASS")
-        self.assertEqual(summary["mechanism"], "PASS")
-        self.assertEqual(summary["verdict"], "PASS")
+    def test_unclear_grade_is_partial(self):
+        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge",
+                   "mechanism": "unsure: something in the charge path", "cascading": [{"service": "checkout"}],
+                   "confidence": "low", "evidence_span_ids": [], "abstain": False}
+        summary, _ = graded_score(build_run_dir_structured(self.tmp.name, verdict))
+        self.assertEqual((summary["mechanism_grade"], summary["mechanism"], summary["verdict"]),
+                         ("unclear", "UNCLEAR", "PARTIAL"))
 
-    def test_structured_mechanism_not_in_schema_enum_fails(self):
-        # feature_flag_forced_error was removed from verdict-schema.json's
-        # mechanism enum on 2026-09-18 (a pilot run named it for
-        # paymentFailure from prior OTel-demo knowledge, not span data).
-        # A schema-validated run can never produce it, but old pilot runs
-        # on disk still carry it and must score without crashing: mechanism
-        # FAIL, not an exception.
-        verdict = {
-            "root_cause_service": "ad",
-            "root_cause_operation": "GetAds",
-            "mechanism": "feature_flag_forced_error",
-            "mechanism_detail": "flag-gated error path in AdService.java.",
-            "cascading": [{"service": "frontend", "operation": "/api/data"}],
-            "confidence": "high",
-            "evidence_span_ids": ["span-9"],
-            "abstain": False,
-        }
-        d = build_run_dir_structured(self.tmp.name, verdict, scenario="adFailure")
-        summary, _ = score_mod.score(d)
-        self.assertEqual(summary["verdict_source"], "structured")
-        self.assertEqual(summary["locus"], "PASS")
-        self.assertEqual(summary["mechanism"], "FAIL")
-        self.assertEqual(summary["verdict"], "PARTIAL")
+    def test_cache_miss_without_grader_is_ungraded(self):
+        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token",
+                   "cascading": [{"service": "checkout"}], "confidence": "high", "evidence_span_ids": [], "abstain": False}
+        summary, _ = score_mod.score(build_run_dir_structured(self.tmp.name, verdict))
+        self.assertEqual((summary["mechanism"], summary["verdict"], summary["mechanism_grade"]), ("UNGRADED", "UNGRADED", None))
+
+    def test_legacy_schema_is_not_rescored(self):
+        d = build_run_dir_structured(self.tmp.name, {"mechanism": "invalid_token"})
+        with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"scenario": "paymentFailure", "schema_version": 4}, f)
+        with self.assertRaises(score_mod.Legacy):
+            score_mod.score(d)
 
     def test_non_jaeger_tool_calls_excluded_from_metrics(self):
         # The CLI delivers the structured verdict through an internal tool
@@ -258,7 +240,6 @@ class TestScore(unittest.TestCase):
             "root_cause_service": "payment",
             "root_cause_operation": "charge",
             "mechanism": "invalid_token",
-            "mechanism_detail": "payment throws Invalid token on every charge call.",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "high",
             "evidence_span_ids": ["span-1"],
@@ -317,7 +298,7 @@ class TestScore(unittest.TestCase):
             for e in events:
                 f.write(json.dumps(e) + "\n")
         with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
-            json.dump({"scenario": "paymentFailure"}, f)
+            json.dump({"scenario": "paymentFailure", "schema_version": 5}, f)
         with open(os.path.join(out_dir, "prompt.txt"), "w", encoding="utf-8") as f:
             f.write("investigate the failing checkout trace")
 
@@ -344,7 +325,6 @@ class TestScore(unittest.TestCase):
             "root_cause_service": "payment-gateway",
             "root_cause_operation": "charge",
             "mechanism": "invalid_token",
-            "mechanism_detail": "hallucinated service name.",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "high",
             "evidence_span_ids": ["span-1"],
@@ -362,7 +342,6 @@ class TestScore(unittest.TestCase):
             "root_cause_service": "Payment",
             "root_cause_operation": "charge",
             "mechanism": "invalid_token",
-            "mechanism_detail": "capitalised service name.",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "high",
             "evidence_span_ids": ["span-1"],
@@ -382,7 +361,6 @@ class TestScore(unittest.TestCase):
             "root_cause_service": "payment",
             "root_cause_operation": "recharge",
             "mechanism": "invalid_token",
-            "mechanism_detail": "hallucinated operation name.",
             "cascading": [{"service": "checkout", "operation": "PlaceOrder"}],
             "confidence": "high",
             "evidence_span_ids": ["span-1"],

@@ -16,9 +16,9 @@ Keys, from `harness/scenarios/paymentFailure.json`:
 - `signal_regex`: text in the fault trace and absent from the baseline.
 - `pass_rule`: `{service_exact, operation_exact}`, lists of accepted exact strings
   (case-insensitive, whitespace-trimmed equality).
-- `expected_mechanism`: the shared mechanism enum value this fault matches.
-- `accepted_mechanisms`: optional extra mechanism values that also PASS (an
-  equality check in score.py's `evaluate_mechanism_structured`, not a regex).
+- `mechanism_truth`: one plain sentence saying what fails and why, with no flag, service,
+  file or code names. The grader (harness/grade.py) labels the agent's free-text mechanism
+  against it, so rewording it changes what PASS means: bump `version`.
 - `cascade_rule`: `{required_any}`, term groups the verdict's cascade list must match.
 - `evidence`: `{ground_truth_trace, baseline_absence}`, paths to the captured traces,
   relative to `harness/scenarios/`.
@@ -42,7 +42,7 @@ All three must be green before a scenario's first pilot batch:
 - `python3 harness/bench.py leak <prompt files>`: no word from
   `harness/leak-words.txt` in any prompt or system prompt the agent sees.
 - `python3 harness/bench.py readiness <scenario>`: `version` is a positive
-  integer, `oracle` is a non-empty list, and the fault trace matches
+  integer, `mechanism_truth` is set, `oracle` is a non-empty list, and the fault trace matches
   `signal_regex` while the baseline doesn't.
 - `python3 harness/bench.py oracle <scenario>` against the live fixture: the
   `oracle` call sequence returns the signal through the served MCP tools.

@@ -45,7 +45,7 @@ def make_run(root, events, meta):
             f.write(json.dumps(e) + "\n")
     if meta is not None:
         with open(os.path.join(out, "meta.json"), "w") as f:
-            json.dump(meta, f)
+            json.dump(dict(meta, schema_version=5), f)
     return out
 
 
