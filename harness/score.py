@@ -301,7 +301,9 @@ def score(out_dir):
     else:
         locus = mechanism = cascade = "MISSING"
         abstained, mechanism_value = False, None
-    verdict = "INVALID" if sandbox_violations else compute_verdict(locus, mechanism, abstained)
+    # A call the client refused shows the sandbox held; it is recorded, not disqualifying.
+    breached = [v for v in sandbox_violations if not v.startswith("attempted_unknown_tool:")]
+    verdict = "INVALID" if breached else compute_verdict(locus, mechanism, abstained)
     final_text = str((final or {}).get("result", "<none>"))
 
     prompt_path = os.path.join(out_dir, "prompt.txt")
@@ -341,7 +343,7 @@ def score(out_dir):
         "system_under_test": meta.get("system_under_test"),
         "effort": meta.get("effort"),
         "compaction_events": compaction_events,
-        "sandbox_ok": not sandbox_violations,
+        "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,
     }
     return summary, final_text
