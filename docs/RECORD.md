@@ -178,7 +178,8 @@ lists none); `mcp_servers` when the init event does not name exactly one server,
 allowed set; `attempted_unknown_tool` for one the client refused (`No such tool available`
 from the CLI, `unknown tool:` from the api loop); `no_init_event`. codex_client's `error`
 items are not tool calls. A refused name such as `mcp__jaeger__StructuredOutput` is never a
-Jaeger call. When `sandbox_ok` is false the verdict is INVALID, whatever the answer: `band`,
+Jaeger call. `attempted_unknown_tool` is recorded but does not clear `sandbox_ok`: the client
+refused the call, so the sandbox held. When `sandbox_ok` is false the verdict is INVALID, whatever the answer: `band`,
 the Results table and INDEX count it apart (like `err`), judge.py prints a WARNING line and
 never counts it as a PASS, and `bench.py verify` fails.
 

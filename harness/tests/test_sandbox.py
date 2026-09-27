@@ -98,7 +98,8 @@ class TestSandboxCheck(unittest.TestCase):
     def test_rejected_call_is_an_attempt_and_not_a_jaeger_call(self):
         s = self.score([init()] + call(J[0]) + REJECTED + [PASS_FINAL], tools_json=["get_trace_errors", "search_traces"])
         self.assertEqual(s["sandbox_violations"], ["attempted_unknown_tool:mcp__jaeger__StructuredOutput"])
-        self.assertEqual(s["verdict"], "INVALID")
+        # refused by the client: recorded, but the sandbox held, so the run is still scored
+        self.assertEqual((s["verdict"], s["sandbox_ok"]), ("PASS", True))
         self.assertEqual((s["tool_calls"], s["call_errors"], s["call_sequence"]), (1, 0, ["get_trace_errors"]))
         self.assertEqual(s["non_jaeger_tool_calls"], ["mcp__jaeger__StructuredOutput"])
 
