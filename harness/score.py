@@ -3,19 +3,25 @@
 
 The final result event carries the agent's answer as a structured_output object
 matching harness/verdict-schema.json (root_cause_service, root_cause_operation,
-mechanism, mechanism_detail, cascading, confidence, evidence_span_ids, abstain).
-Grading is an equality/membership check against the scenario, not a regex over prose:
+mechanism, cascading, confidence, evidence_span_ids, abstain).
 - locus: PASS/PARTIAL/FAIL, from the root-cause service/operation against the
-  scenario's pass_rule.
-- mechanism: PASS/FAIL against expected_mechanism / accepted_mechanisms.
+  scenario's pass_rule (exact strings).
+- mechanism: the free-text mechanism graded against the scenario's mechanism_truth by
+  grade.py (pinned model, cached in <batch>/grades.jsonl): correct PASS, incorrect FAIL,
+  unclear UNCLEAR; UNGRADED when no cached label exists and the grader may not be called.
 - cascade: PASS/FAIL against cascade_rule.
-- abstained: verdict.abstain, or mechanism == cannot_determine.
-- verdict: PASS only if locus PASS and mechanism PASS; PARTIAL if locus PASS or
-  PARTIAL but mechanism is not PASS; ABSTAIN if abstained; FAIL otherwise; INVALID,
-  whatever the answer, when the sandbox check fails (sandbox_ok false).
+- abstained: verdict.abstain.
+- verdict: PASS only if locus PASS and mechanism PASS; UNGRADED if locus PASS and the
+  mechanism is ungraded; PARTIAL if locus PASS or PARTIAL but mechanism is not PASS;
+  ABSTAIN if abstained; FAIL otherwise. INVALID, whatever the answer, when the sandbox
+  check fails (sandbox_ok false); else LEAK when the answer or any assistant text names a
+  flag, "feature_flag" or "flagd" (leak_hits).
 A run with no valid structured_output (schema-invalid answer, max turns, crash)
 scores locus, mechanism and cascade MISSING and verdict FAIL; verdict_source is
 "structured" or null so the two cases stay apart.
+A trial recorded under record schema 4 or older, or with no schema_version (the mechanism
+menu), raises Legacy: its
+stored scores stand and it is never re-graded.
 
 The scenario comes from the trial's meta.json. score(out_dir) is importable (bench.py
 band and verify use it) so the CLI and the aggregate tools compute the same numbers
@@ -26,10 +32,27 @@ import os
 import re
 import sys
 
+import fixture_leak
+import grade
+
 HARNESS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Minimal set of keys a candidate object must have before it counts as a structured verdict.
 STRUCTURED_KEYS = ["root_cause_service", "root_cause_operation", "mechanism", "cascading", "abstain"]
+SCHEMA_VERSION = 5  # record schema; 5 is the free-text mechanism, 4 and older the menu
+LEAK_LITERALS = ["feature_flag", "flagd"]
+GRADE_TO_MECHANISM = {"correct": "PASS", "incorrect": "FAIL", "unclear": "UNCLEAR"}
+
+
+class Legacy(Exception):
+    """A trial recorded under an older record schema: report its stored scores, never re-grade."""
+
+
+def answer_leaks(texts, flag_names):
+    """Sorted flag names and LEAK_LITERALS found in texts (case-insensitive, not inside a longer word)."""
+    joined = "\n".join(texts)
+    return sorted({t for t in list(flag_names) + LEAK_LITERALS
+                   if re.search(r"(?<![a-z0-9])" + re.escape(t), joined, re.I)})
 
 
 def leak_words(harness_dir=None):
@@ -61,8 +84,8 @@ def compute_verdict(locus, mechanism, abstained):
         return "ABSTAIN"
     if locus is None:
         return None
-    if locus == "PASS" and mechanism == "PASS":
-        return "PASS"
+    if locus == "PASS" and mechanism in ("PASS", "UNGRADED"):
+        return mechanism
     if locus in ("PASS", "PARTIAL"):
         return "PARTIAL"
     return "FAIL"
@@ -114,19 +137,6 @@ def compute_locus_structured(verdict, pass_rule):
     return "FAIL"
 
 
-def evaluate_mechanism_structured(verdict, scenario):
-    """PASS iff verdict['mechanism'] equals expected_mechanism or is in
-    accepted_mechanisms - an equality/membership check, not a regex."""
-    mech = verdict.get("mechanism")
-    expected = scenario.get("expected_mechanism")
-    accepted = set(scenario.get("accepted_mechanisms", []) or [])
-    if expected:
-        accepted.add(expected)
-    if not accepted:
-        return "PASS"
-    return "PASS" if mech in accepted else "FAIL"
-
-
 def evaluate_cascade_structured(verdict, cascade_rule):
     """PASS iff any cascading[].service matches cascade_rule. Every
     required_any group needs at least one cascading entry whose service
@@ -141,7 +151,7 @@ def evaluate_cascade_structured(verdict, cascade_rule):
 
 
 def check_abstain_structured(verdict):
-    return bool(verdict.get("abstain")) or verdict.get("mechanism") == "cannot_determine"
+    return bool(verdict.get("abstain"))
 
 
 JAEGER_PREFIX = "mcp__jaeger__"
@@ -222,8 +232,10 @@ def is_compaction_event(event, raw_line):
     return '"compact_boundary"' in raw_line
 
 
-def score(out_dir):
+def score(out_dir, call_grader=False):
     """Read the raw files in out_dir and return (summary_dict, final_answer_text).
+    call_grader: on a grade cache miss, call the grader (bench.py run only); otherwise the
+    mechanism of a miss is UNGRADED.
 
     Tool-call metrics (tool_calls, call_sequence, call_errors,
     steps_to_evidence, tool_output_chars) are computed over calls to the
@@ -237,13 +249,15 @@ def score(out_dir):
     """
     with open(os.path.join(out_dir, "meta.json"), encoding="utf-8") as f:
         meta = json.load(f)
+    if meta.get("schema_version", 0) < SCHEMA_VERSION:
+        raise Legacy("legacy schema, stored scores")
     scenario_name = meta["scenario"]
     scenario = load_scenario(scenario_name)
     signal = re.compile(scenario["signal_regex"], re.I)
     raw_lines = [l for l in open(os.path.join(out_dir, "stream.jsonl")) if l.strip()]
     events = [json.loads(l) for l in raw_lines]
     compaction_events = sum(1 for e, l in zip(events, raw_lines) if is_compaction_event(e, l))
-    all_calls, results_by_id, final, model, tools, init = [], {}, None, None, [], None
+    all_calls, results_by_id, final, model, tools, init, texts = [], {}, None, None, [], None, []
     for e in events:
         if e.get("type") == "system" and e.get("subtype") == "init":
             init = init or e
@@ -251,6 +265,8 @@ def score(out_dir):
             tools = [t for t in e.get("tools", []) if t.startswith("mcp__")]
         if e.get("type") == "assistant":
             for b in e["message"].get("content", []):
+                if b.get("type") == "text":
+                    texts.append(str(b.get("text") or ""))
                 if b.get("type") == "tool_use":
                     all_calls.append({"id": b.get("id"), "name": b["name"], "input": b.get("input")})
         if e.get("type") == "user":
@@ -292,19 +308,25 @@ def score(out_dir):
     u = (final or {}).get("usage", {})
 
     structured_verdict = extract_structured(final)
+    g = None
     if structured_verdict is not None:
         locus = compute_locus_structured(structured_verdict, scenario.get("pass_rule"))
-        mechanism = evaluate_mechanism_structured(structured_verdict, scenario)
         cascade = evaluate_cascade_structured(structured_verdict, scenario.get("cascade_rule"))
         abstained = check_abstain_structured(structured_verdict)
-        mechanism_value = structured_verdict.get("mechanism")
+        mechanism_value = str(structured_verdict.get("mechanism"))
+        if not abstained:
+            g = grade.grade(os.path.dirname(os.path.abspath(out_dir)), scenario["mechanism_truth"], mechanism_value,
+                            call=call_grader)
+        mechanism = None if abstained else GRADE_TO_MECHANISM[g["label"]] if g else "UNGRADED"
     else:
         locus = mechanism = cascade = "MISSING"
         abstained, mechanism_value = False, None
+    final_text = str((final or {}).get("result", "<none>"))
+    leak_hits = answer_leaks(texts + [final_text, json.dumps((final or {}).get("structured_output"))],
+                             meta.get("flag_names") or fixture_leak.FLAGS)
     # A call the client refused shows the sandbox held; it is recorded, not disqualifying.
     breached = [v for v in sandbox_violations if not v.startswith("attempted_unknown_tool:")]
-    verdict = "INVALID" if breached else compute_verdict(locus, mechanism, abstained)
-    final_text = str((final or {}).get("result", "<none>"))
+    verdict = "INVALID" if breached else "LEAK" if leak_hits else compute_verdict(locus, mechanism, abstained)
 
     prompt_path = os.path.join(out_dir, "prompt.txt")
     signal_leaked_in_prompt = False
@@ -335,6 +357,11 @@ def score(out_dir):
         "locus": locus,
         "mechanism": mechanism,
         "mechanism_value": mechanism_value,
+        "mechanism_grade": g and g["label"],
+        "mechanism_grade_reason": g and g["reason"],
+        "grader_model": g and g["model"],
+        "grader_prompt_sha256": g and g["prompt_sha256"],
+        "grader_cached": g and g["cached"],
         "cascade": cascade,
         "abstained": abstained,
         "verdict": verdict,
@@ -345,6 +372,7 @@ def score(out_dir):
         "compaction_events": compaction_events,
         "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,
+        "leak_hits": leak_hits,
     }
     return summary, final_text
 

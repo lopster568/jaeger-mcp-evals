@@ -20,6 +20,7 @@ Tune a run by editing its experiment file, `harness/experiments/<name>.json` (do
 | History and compaction | Harness truncates nothing; the api loop never compacts; CLI autocompact runs at its default and cannot be switched off | `history_policy`; `observed.compaction_events`; `compaction_events` in scores.jsonl, flagged by `band` and `verify` |
 | Jaeger image and commit | `arms.<arm>.image`, served by `JAEGERTRACING_IMAGE` in `.env.override` (fixture/env.override) | `jaeger_image`, `jaeger_image_id` (`docker inspect jaeger` at batch start), `jaeger_commit`, `arm_pin` |
 | OTel Demo ref and overlay | The fixture's demo checkout and the overlay files in `fixture/` | `otel_demo_ref`, `fixture_overlay_sha256` |
+| Mechanism grader | `GRADER_MODEL` in `harness/grade.py` and the prompt `harness/grader-prompt.txt`; the scenario's `mechanism_truth` | manifest `grader` (`model`, `prompt_sha256`, `cli_version`); per row `mechanism_grade`, `mechanism_grade_reason`, `grader_model`, `grader_prompt_sha256`, `grader_cached`; `grades.jsonl` |
 | Scenario and fault activation | `scenario`, naming `harness/scenarios/<name>.json` (`flag`, `activation`) | `scenario`, `scenario_sha256`, `scenario_version`, `fault` (flag, activation, flip time, OFREP confirmation, fault traces seen) |
 | Client version | The installed `claude` or `codex`, which can self-update between batches; for api, the loop's code. Optional `run.client_version` pins it: a batch refuses to start on any other version | `client_version_pre`, `observed.client_version`; `client_version` in preflight.json; manifest `file_hashes_sha256` |
 | Trials, seed and cell order | `run.n_per_arm`; `run.seed` (null draws one), which shuffles all cells of the arms in one batch together | `n_per_arm`, `seed`, `order_index`, `trial_index`; manifest `seed` and `order` |
@@ -27,6 +28,14 @@ Tune a run by editing its experiment file, `harness/experiments/<name>.json` (do
 Numbers do not compare across clients or providers: `num_turns` and cost are counted differently by each.
 
 With the cli client on a claude.ai login the CLI adds the account's email to the model's context (seen in the sandbox probe's captured request, 2026-09-27); it is the same in every arm, and API-key auth avoids it.
+
+## Mechanism grader
+
+The agent states the mechanism in its own words; `harness/grade.py` labels it `correct`, `incorrect` or `unclear` against the scenario's one-sentence `mechanism_truth`.
+Model: `claude-fable-5-1`, pinned in `GRADER_MODEL`. Prompt: `harness/grader-prompt.txt` (the labeling instructions and three labeling rules the human labels were made under), recorded by sha256.
+It runs through the Claude Code CLI sandboxed like the agent: `--tools ""`, `--strict-mcp-config` with an empty MCP config, `--setting-sources ""`, `--restricted`, `--no-session-persistence`, a temporary working directory, no API keys or `CLAUDECODE` in the environment, and `--json-schema` forcing `{label, reason}`. The agent's text reaches it only in the user prompt.
+Caching: every label is stored in the batch's `grades.jsonl`, keyed by sha256 of (model, prompt sha256, truth, agent text). Only the scoring step at the end of `bench.py run` calls the grader, once per answer not already cached; `verify`, `band` and `score.py` read the cache, and `verify` fails on a miss instead of calling. Changing the model, the prompt or a `mechanism_truth` changes the key, so old labels are never reused for a new grader.
+Validation: validated on a 94-item blind set, see the private validation record.
 
 Arms compared with each other, and batches compared across dates, must run at the same effort. An unset effort is the CLI's own default and is not recorded, so always set `run.effort`.
 

@@ -1,17 +1,17 @@
 # Run record contract
 
-What `harness/bench.py run` writes, key by key. Schema 4. Every run setting comes from the
+What `harness/bench.py run` writes, key by key. Schema 5 (schema 5 is the free-text mechanism graded by grade.py; a trial or batch recorded under schema 4 or older or with no schema_version (the mechanism menu) is never re-graded: `verify` and INDEX report its stored scores as "legacy schema, stored scores"). Every run setting comes from the
 experiment file (docs/USAGE.md, The experiment file), written below as `run.<key>`.
 
-## Per-run record: `<trial>/meta.json` (schema 4)
+## Per-run record: `<trial>/meta.json` (schema 5)
 
 Written before the agent client starts, then rewritten with `ended_utc`, `wall_time_s`,
 `exit_code`, `observed` and `agent_loop`. Batch-level values repeat in every trial so one file
-answers "what could have changed this result". The 47 keys, in write order:
+answers "what could have changed this result". The 48 keys, in write order:
 
 | # | Key | Value and source |
 |---|---|---|
-| 1 | schema_version | constant 4 |
+| 1 | schema_version | constant 5 |
 | 2 | run_id | `<batch_id>/<order_index>-<arm>`, also the cell directory name |
 | 3 | client | `run.client`: `api`, `cli` or `codex` |
 | 4 | provider | `run.provider`: `anthropic` or `openai` for api, null for cli and codex |
@@ -46,18 +46,19 @@ answers "what could have changed this result". The 47 keys, in write order:
 | 33 | otel_demo_ref | `git rev-parse HEAD` of `FIXTURE_DEMO_DIR` on the fixture (local, or over ssh), else `unresolved` |
 | 34 | fixture_overlay_sha256 | sha256 of `sha256sum overlay/* .env.override` output in `FIXTURE_DEMO_DIR` on the fixture (mounted overlay plus pristine flag file), else null |
 | 35 | fault | `{flag, activation_field, activation_value}` from the scenario, plus `flip_utc`, `ofrep_confirmed`, `signal_traces_seen` from the flip step |
-| 36 | preflight | same object as `preflight.json` |
-| 37 | experiment | `{name, file, sha256}` of the experiment file (`file` repo-relative) |
-| 38 | harness_git_sha | `git rev-parse HEAD` of this repository |
-| 39 | harness_dirty | true if `git status --porcelain -- harness fixture` was non-empty |
-| 40 | score_py_sha256 | sha256 of `harness/score.py` |
-| 41 | started_utc | cell start |
-| 42 | ended_utc | cell end (null until the call returns) |
-| 43 | wall_time_s | wall time of the client call |
-| 44 | exit_code | the client's exit status, 127 if it could not start; also `exit=<n>` in `exit.txt`. The api loop exits 0 for any model-driven stop (max turns included) and 1 only when the trial could not run |
-| 45 | observed | from the init event: `client_version` (`claude_code_version`, the loop's `loop_version`, or `codex --version` for codex), `model`, `tools`, `skills` and `agents` (the CLI's own lists; null for api); plus `compaction_events` from score.py's detector |
-| 46 | agent_loop | api: the loop's settings block from `agent_loop.json` (loop version, API version header, model and `response_models`, thinking, effort, temperature, max_turns, max_tokens, cache_control, price table, request ids, `result_subtype`); with provider openai also `api_base_url` (`set` when OPENAI_BASE_URL was non-empty, else empty; never the URL, which pack treats as a secret) and `response_format_supported` (false once the endpoint rejected `response_format` and the run went on without it), `thinking` and `effort` are `n/a`, and the price table and cost are null; null for cli |
-| 47 | system_under_test | summary block that score.py copies into each scores.jsonl row: `jaeger_image`, `jaeger_image_digest`, `jaeger_commit`, `otel_demo_ref`, `agent_client`, `harness_git_sha` (`-dirty` suffix when dirty), `python_version` (`platform.python_version()` of the interpreter running bench.py), `pinned_at_utc` |
+| 36 | flag_names | the keys of the fixture's pristine flag file, sorted; score.py's answer leak tripwire looks for them |
+| 37 | preflight | same object as `preflight.json` |
+| 38 | experiment | `{name, file, sha256}` of the experiment file (`file` repo-relative) |
+| 39 | harness_git_sha | `git rev-parse HEAD` of this repository |
+| 40 | harness_dirty | true if `git status --porcelain -- harness fixture` was non-empty |
+| 41 | score_py_sha256 | sha256 of `harness/score.py` |
+| 42 | started_utc | cell start |
+| 43 | ended_utc | cell end (null until the call returns) |
+| 44 | wall_time_s | wall time of the client call |
+| 45 | exit_code | the client's exit status, 127 if it could not start; also `exit=<n>` in `exit.txt`. The api loop exits 0 for any model-driven stop (max turns included) and 1 only when the trial could not run |
+| 46 | observed | from the init event: `client_version` (`claude_code_version`, the loop's `loop_version`, or `codex --version` for codex), `model`, `tools`, `skills` and `agents` (the CLI's own lists; null for api); plus `compaction_events` from score.py's detector |
+| 47 | agent_loop | api: the loop's settings block from `agent_loop.json` (loop version, API version header, model and `response_models`, thinking, effort, temperature, max_turns, max_tokens, cache_control, price table, request ids, `result_subtype`); with provider openai also `api_base_url` (`set` when OPENAI_BASE_URL was non-empty, else empty; never the URL, which pack treats as a secret) and `response_format_supported` (false once the endpoint rejected `response_format` and the run went on without it), `thinking` and `effort` are `n/a`, and the price table and cost are null; null for cli |
+| 48 | system_under_test | summary block that score.py copies into each scores.jsonl row: `jaeger_image`, `jaeger_image_digest`, `jaeger_commit`, `otel_demo_ref`, `agent_client`, `harness_git_sha` (`-dirty` suffix when dirty), `python_version` (`platform.python_version()` of the interpreter running bench.py), `pinned_at_utc` |
 
 Other cell files: `prompt.txt`, `system-prompt.txt`, `mcp.json` (not a record file, so it
 carries the real, host-including URL the client connects to:
@@ -113,7 +114,11 @@ leak scan and oracle under the fault: `leak`, `readiness`, `containers`,
 `baseline_traces`, `fixture_leak_baseline`, `fixture_leak_under_fault`, `oracle`,
 `client`, `client_version` (PASS, FAIL or a count; null if not run; `oracle` stays null when no
 arm has tools, `client` unless `run.client` is api, `client_version` unless the experiment sets
-`run.client_version`), `sandbox_probe` (null unless `run.client` is cli).
+`run.client_version`), `sandbox_probe` (null unless `run.client` is cli), `leak_rendered` (PASS
+or FAIL: the leak-word scan of each arm's prompt and the system prompt as rendered into the
+client argv, and of the captured `tools/list` text, descriptions and input schemas included; the
+phrase `error flag`, the stock search_traces wording for a trace's error status, is exempt; a
+hit aborts before the flag is touched).
 
 `sandbox_probe` is `{result, tools}`: `result` PASS or FAIL, `tools` the tool names each arm's
 CLI sent, keyed by arm. Before the flag is touched, and in `--dry-run` too since it is
@@ -133,9 +138,11 @@ under the fault; in this order:
 - `scenario`, `batch_id`, `n_per_arm`, `arms` (the arms that ran: those pinned to the running image), `seed`, `order`
   (list of `{arm, trial_index, order_index}`), `file_hashes_sha256` (bench.py,
   tools.py, fixture_leak.py, score.py, system-prompt.txt, verdict-schema.json,
-  agent_loop.py, mcp_client.py, codex_client.py, leak-words.txt, judge.py, providers/*.py,
-  the scenario file, each arm's prompt), `system_under_test` (as in meta.json),
-  `tools_list_sha256`, `tools_list_path` (`tools.json`, relative to the batch directory).
+  agent_loop.py, mcp_client.py, codex_client.py, leak-words.txt, judge.py, grade.py,
+  grader-prompt.txt, providers/*.py, the scenario file, each arm's prompt), `system_under_test`
+  (as in meta.json), `tools_list_sha256`, `tools_list_path` (`tools.json`, relative to the batch
+  directory), `grader` (`model`, `prompt_sha256` of `harness/grader-prompt.txt`, `cli_version`:
+  `claude --version` at batch start, whatever `run.client` is).
 - With one arm: `arm_pin` (`arm`, `expected_image`, `sut_jaeger_image_at_run`) and
   `tools_description_check` (`mode`, `descriptions_file`, `descriptions_sha256`).
 - Then keys shared with meta.json: `schema_version`, `client`, `provider`, `scenario_sha256`,
@@ -144,7 +151,7 @@ under the fault; in this order:
   `verdict_schema_sha256`, `model_requested`, `effort`, `max_turns`, `max_budget_usd`,
   `history_policy`, `client_version_pre`, `mcp_endpoint`, `tools_count`,
   `jaeger_image`, `jaeger_image_id`, `jaeger_commit`, `otel_demo_ref`,
-  `fixture_overlay_sha256`, `fault` (without the flip fields), `preflight`,
+  `fixture_overlay_sha256`, `fault` (without the flip fields), `flag_names`, `preflight`,
   `experiment`, `harness_git_sha`, `harness_dirty`, `score_py_sha256`. In the manifest,
   `experiment` also holds `content`: the experiment file verbatim. judge.py reads
   `experiment.sha256`, `experiment.content` and `arm_pin`.
@@ -163,10 +170,28 @@ not 0). A cell stopped by a signal still gets a line, with `failed` and
 `call_sequence`, `non_jaeger_tool_calls`, `call_errors`, `read_skill_attempted`,
 `read_skill_succeeded`, `read_skill_errors`, `steps_to_evidence`, `tool_output_chars`,
 `input_tokens_total`, `output_tokens`, `num_turns`, `cost_usd`, `duration_s`,
-`stop`, `locus`, `mechanism`, `mechanism_value`, `cascade`, `abstained`, `verdict`,
+`stop`, `locus`, `mechanism`, `mechanism_value`, `mechanism_grade`, `mechanism_grade_reason`,
+`grader_model`, `grader_prompt_sha256`, `grader_cached`, `cascade`, `abstained`, `verdict`,
 `verdict_source`, `signal_leaked_in_prompt`, `system_under_test`, `effort`,
-`compaction_events`, `sandbox_ok`, `sandbox_violations`, `arm`. An unscorable cell is
+`compaction_events`, `sandbox_ok`, `sandbox_violations`, `leak_hits`, `arm`. An unscorable cell is
 `{dir, error, arm}`.
+
+`mechanism_value` is the agent's free-text `mechanism`; `mechanism_grade` is the grader's label
+for it against the scenario's `mechanism_truth` (`correct`, `incorrect` or `unclear`), with its
+one-sentence `mechanism_grade_reason`, the `grader_model` and `grader_prompt_sha256` that
+produced it, and `grader_cached` (true when the label came from `grades.jsonl`). All five are
+null when the answer abstained or there is no structured answer.
+
+`grades.jsonl` (batch directory, not copied to records/; `pack` includes it): one line per
+grader call, `{label, reason, key, model, prompt_sha256}`, where `key` is the sha256 of the JSON
+array `[model, prompt sha256, mechanism_truth, agent text]`. score.py reads it first; only the
+scoring step at the end of `bench.py run` may call the grader on a miss, and `verify` never does.
+
+`leak_hits` lists the tokens found in the agent's final answer (every field) or any assistant
+text block: the batch's `flag_names` (or fixture_leak.py's built-in list when a meta.json has
+none), `feature_flag` and `flagd`, case-insensitive and not inside a longer word. Only the
+tokens are recorded, never the surrounding text. Any hit makes the verdict LEAK, counted like
+INVALID.
 
 `sandbox_ok` is true when `sandbox_violations` is empty. The allowed Jaeger tools are the
 batch's `tools.json` names prefixed `mcp__jaeger__` (none for an arm with `tools: false`; with
@@ -181,7 +206,8 @@ items are not tool calls. A refused name such as `mcp__jaeger__StructuredOutput`
 Jaeger call. `attempted_unknown_tool` is recorded but does not clear `sandbox_ok`: the client
 refused the call, so the sandbox held. When `sandbox_ok` is false the verdict is INVALID, whatever the answer: `band`,
 the Results table and INDEX count it apart (like `err`), judge.py prints a WARNING line and
-never counts it as a PASS, and `bench.py verify` fails.
+never counts it as a PASS, and `bench.py verify` fails. A LEAK verdict (non-empty `leak_hits`,
+checked after the sandbox) is treated the same way, in its own column.
 
 `stop` is the `subtype` of the stream's final `result` event (`success`, else the
 client's reason such as `error_max_turns`; null with no result event). `band` and

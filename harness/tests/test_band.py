@@ -16,10 +16,11 @@ HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 sys.path.insert(0, os.path.join(HARNESS_DIR, "tests"))
 import bench  # noqa: E402
+from fake_grader import graded  # noqa: E402
 from test_score_effort_compaction import CALL, COMPACT, FINAL, INIT, RESULT  # noqa: E402
 
-VERDICT = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
-           "mechanism_detail": "x", "cascading": [{"service": "checkout"}], "confidence": "high",
+VERDICT = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token",
+           "cascading": [{"service": "checkout"}], "confidence": "high",
            "evidence_span_ids": [], "abstain": False}
 PASS_FINAL = dict(FINAL, structured_output=VERDICT)
 FAIL_FINAL = dict(FINAL, structured_output=dict(VERDICT, root_cause_service="checkout"))
@@ -40,7 +41,7 @@ def make_batch(root, runs):
     batch = os.path.join(scen, "batch-20260928T000000Z")
     os.makedirs(batch)
     with open(os.path.join(batch, "manifest.json"), "w") as f:
-        json.dump({"scenario": "paymentFailure"}, f)
+        json.dump({"scenario": "paymentFailure", "schema_version": 5}, f)
     with open(os.path.join(batch, "cells.jsonl"), "w") as cells:
         for i, events in enumerate(runs):
             name = "%d-noskill" % i
@@ -49,8 +50,10 @@ def make_batch(root, runs):
             with open(os.path.join(d, "stream.jsonl"), "w") as f:
                 f.writelines(json.dumps(e) + "\n" for e in events)
             with open(os.path.join(d, "meta.json"), "w") as f:
-                json.dump({"scenario": "paymentFailure"}, f)
+                json.dump({"scenario": "paymentFailure", "schema_version": 5}, f)
             cells.write(json.dumps({"arm": "noskill", "out_dir": name}) + "\n")
+            with graded(), contextlib.suppress(Exception):  # fills grades.jsonl, which band reads; junk streams raise
+                bench.score.score(d, call_grader=True)
     return batch
 
 
@@ -110,7 +113,7 @@ class TestBand(unittest.TestCase):
         lines = out.splitlines()
         head = next(l for l in lines if l.lstrip().startswith("arm "))
         row = lines[lines.index(head) + 1]
-        self.assertEqual(row.split(), ["noskill", "6/10", "0", "4", "0", "0", "0", "0.60", "[0.31,", "0.83]", "1", "19"])
+        self.assertEqual(row.split(), ["noskill", "6/10", "0", "4", "0", "0", "0", "0", "0.60", "[0.31,", "0.83]", "1", "19"])
         self.assertEqual(len(row), len(head))
 
     def test_errors_and_stops_counted_apart(self):
@@ -118,7 +121,7 @@ class TestBand(unittest.TestCase):
                 [INIT, CALL, RESULT]]
         _, out = run_band(make_batch(self.tmp, runs))
         self.assertIn("n=4 passes=1", out)
-        self.assertIn("ERROR=1 INVALID=0 stops=error_max_turns:1,no_result:1", out)
+        self.assertIn("ERROR=1 INVALID=0 LEAK=0 stops=error_max_turns:1,no_result:1", out)
 
     def test_tools_field_counts_runs_per_tool_excluding_read_skill(self):
         runs = [[INIT, CALL, RESULT, CALL_SEARCH, RESULT_SEARCH, PASS_FINAL],
@@ -129,7 +132,7 @@ class TestBand(unittest.TestCase):
 
     def test_no_errors_no_stops(self):
         _, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 2))
-        self.assertIn("ERROR=0 INVALID=0 stops=-", out)
+        self.assertIn("ERROR=0 INVALID=0 LEAK=0 stops=-", out)
 
     def test_missing_cells_is_2(self):
         out = []

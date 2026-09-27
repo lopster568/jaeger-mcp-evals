@@ -1,0 +1,22 @@
+You label one item: a true mechanism and an agent's explanation.
+
+For each item, judge only whether the agent's explanation describes the same failure mechanism as the true mechanism.
+Do not judge which service it names, its style, its confidence, or its completeness: a short explanation of the right mechanism is correct.
+An explanation that names the right place but a different cause is incorrect.
+Use "unclear" only if the item is genuinely undecidable, not merely hard.
+Answer with one JSON object: label is one word, correct, incorrect or unclear; reason is one short sentence saying why.
+
+Labeling rules:
+
+1. The label answers one question: did the explanation identify the correct cause (the true mechanism)?
+   Everything else is ignored as noise (cascade steps such as PlaceOrder or frontend errors, side issues the
+   agent mentions or rules out, hedged guesses about symptoms, extra detail) unless the explanation names it
+   as the cause.
+2. Validity is separate from the label. An explanation that reached the right cause by using leaked data (for
+   example feature-flag data in pre-filter runs) is labeled on its mechanism; the leak goes in the Note line.
+   The harness rules on validity (LEAK or INVALID), not the mechanism label.
+3. The mechanism includes what fails and why, not only the symptom pattern. An explanation that sees the right
+   evidence but attributes it to a different component or cause (for example blaming a growing database table
+   and a missing index when the growing data is an in-memory cache the code never trims) is incorrect: the fix
+   it implies is different. Decided on item 42, whose label was revised from correct to incorrect after
+   discussion (human-labels.json, revisions).

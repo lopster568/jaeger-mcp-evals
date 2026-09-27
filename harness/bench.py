@@ -58,6 +58,7 @@ from time import sleep
 
 import config
 import fixture_leak
+import grade
 import judge
 import otlp
 import score
@@ -210,25 +211,33 @@ def now_us():
 # ---- gates --------------------------------------------------------------------
 
 def leak(files, out=print):
-    words = score.leak_words(HARNESS)
-    if not words:
-        out("leak: missing or empty %s" % os.path.join(HARNESS, "leak-words.txt"))
-        return 2
     for f in files:
         if not os.path.isfile(f):
             out("leak: no such file: %s" % f)
             return 2
+    return leak_texts([(f, read_text(f)) for f in files], out)
+
+
+# The stock search_traces description says "error flag" (a trace's error status), which names no fault.
+TOOLS_ALLOW = re.compile(r"\berror flag\b", re.I)
+
+
+def leak_texts(named, out=print):
+    """leak() over (name, text) pairs: 0 clean, 1 a leak word found, 2 no word list."""
+    words = score.leak_words(HARNESS)
+    if not words:
+        out("leak: missing or empty %s" % os.path.join(HARNESS, "leak-words.txt"))
+        return 2
     hits = []
-    for f in files:
-        with open(f, encoding="utf-8", errors="replace") as fh:
-            for n, line in enumerate(fh, 1):
-                hits += [(f, n, w) for w in words if score.leak_present(line, [w])]
+    for name, text in named:
+        for n, line in enumerate(text.splitlines(), 1):
+            hits += [(name, n, w) for w in words if score.leak_present(line, [w])]
     for f, n, w in hits:
         out("%s:%d:%s" % (f, n, w))
     if hits:
         out("leak: FAIL - leak word(s) found (file:line:word above)")
         return 1
-    out("leak: PASS - no leak words found in: %s" % " ".join(files))
+    out("leak: PASS - no leak words found in: %s" % " ".join(name for name, _ in named))
     return 0
 
 
@@ -269,6 +278,7 @@ def readiness(scenario, out=print, harness=HARNESS):
         ("deterministic is yes/no/bucketed", det in ("yes", "no", "bucketed"), "deterministic=%r" % (det,)),
         ("ground_truth.service set", bool(gt.get("service")), "service=%r" % (gt.get("service"),)),
         ("ground_truth.operation set", bool(gt.get("operation")), "operation=%r" % (gt.get("operation"),)),
+        ("mechanism_truth set", isinstance(d.get("mechanism_truth"), str) and bool(d["mechanism_truth"]), ""),
         ("signal_regex present", bool(sig), ""),
         ("oracle is a non-empty list of {tool, arguments}", oracle_shape_ok(d.get("oracle")), "oracle=%r" % (d.get("oracle"),)),
         ("ground_truth_trace file exists", gt_exists, gt_path or "evidence.ground_truth_trace not set"),
@@ -399,7 +409,7 @@ def arm_row(arm, scored, n):
     med = lambda k: (lambda xs: round(statistics.median(xs), 2) if xs else None)(
         [s.get(k) for s in ss if isinstance(s.get(k), (int, float))])
     tool_names = sorted({t for s in ss for t in (s.get("call_sequence") or [])} - {"read_skill"})
-    r = {k: sum(s.get("verdict") == k for s in ss) for k in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID")}
+    r = {k: sum(s.get("verdict") == k for s in ss) for k in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID", "LEAK")}
     r.update(arm=arm, n=n, ERROR=n - len(ss), stops=stops(ss), calls=med("tool_calls"), steps=med("steps_to_evidence"),
              chars=med("tool_output_chars"), call_errors=sum(s.get("call_errors") or 0 for s in ss),
              rs_att=sum(bool(s.get("read_skill_attempted")) for s in ss),
@@ -415,20 +425,23 @@ def results(scenario, rows, out, detail=lambda m: None):
     code, warn = 0, []
     for r in rows:
         n = r["n"]
-        detail("%s: n=%d PASS=%d PARTIAL=%d FAIL=%d ABSTAIN=%d ERROR=%d INVALID=%d stops=%s median_tool_calls=%s "
+        detail("%s: n=%d PASS=%d PARTIAL=%d FAIL=%d ABSTAIN=%d ERROR=%d INVALID=%d LEAK=%d stops=%s median_tool_calls=%s "
                "median_steps_to_evidence=%s median_tool_output_chars=%s total_call_errors=%d read_skill_attempted=%d/%d "
-               "read_skill_succeeded=%d/%d" % (r["arm"], n, r["PASS"], r["PARTIAL"], r["FAIL"], r["ABSTAIN"], r["ERROR"], r["INVALID"],
+               "read_skill_succeeded=%d/%d" % (r["arm"], n, r["PASS"], r["PARTIAL"], r["FAIL"], r["ABSTAIN"], r["ERROR"], r["INVALID"], r["LEAK"],
                                                r["stops"], r["calls"], r["steps"], r["chars"], r["call_errors"],
                                                r["rs_att"], n, r["rs_ok"], n))
-        detail("band %s/%s: n=%d passes=%d pass_rate=%.2f%s ERROR=%d INVALID=%d stops=%s read_skill_attempted=%d/%d "
+        detail("band %s/%s: n=%d passes=%d pass_rate=%.2f%s ERROR=%d INVALID=%d LEAK=%d stops=%s read_skill_attempted=%d/%d "
                "read_skill_succeeded=%d/%d tools=%s" % (
                    scenario, r["arm"], n, r["PASS"], r["PASS"] / n if n else 0.0,
-                   " ci95=[%.2f,%.2f]" % wilson(r["PASS"], n) if n else "", r["ERROR"], r["INVALID"], r["stops"], r["rs_att"], n,
+                   " ci95=[%.2f,%.2f]" % wilson(r["PASS"], n) if n else "", r["ERROR"], r["INVALID"], r["LEAK"], r["stops"], r["rs_att"], n,
                    r["rs_ok"], n, ",".join("%s:%d" % kv for kv in r["tools"].items()) or "-"))
         warn += ["WARNING: %s: %s compaction event(s) in stream.jsonl" % c for c in r["compacted"]]
         if r["INVALID"]:
             warn.append("WARNING: %s: %d/%d runs INVALID (sandbox check failed, see sandbox_violations); never a pass"
                         % (r["arm"], r["INVALID"], n))
+        if r["LEAK"]:
+            warn.append("WARNING: %s: %d/%d runs LEAK (the answer names a flag, see leak_hits); never a pass"
+                        % (r["arm"], r["LEAK"], n))
         if r["compacted"]:
             # A warning, not a failure: the rate stands, but a compacted run's
             # context numbers are not comparable with an uncompacted one's.
@@ -441,9 +454,9 @@ def results(scenario, rows, out, detail=lambda m: None):
         note += "; " + paint(YELLOW, "below certification threshold (10); rank only")
     out("\n" + paint(BOLD_CYAN, "Results") + "  (" + note + ")")
     num = lambda x: "-" if x is None else format(int(x) if x == int(x) else x, ",")
-    head = ("arm", "pass", "partial", "fail", "abstain", "err", "invalid", "pass rate", "95% CI", "calls", "output chars")
+    head = ("arm", "pass", "partial", "fail", "abstain", "err", "invalid", "leak", "pass rate", "95% CI", "calls", "output chars")
     cells = [(r["arm"], "%d/%d" % (r["PASS"], r["n"]), str(r["PARTIAL"]), str(r["FAIL"]), str(r["ABSTAIN"]), str(r["ERROR"]),
-              str(r["INVALID"]),
+              str(r["INVALID"]), str(r["LEAK"]),
               "%.2f" % (r["PASS"] / r["n"]) if r["n"] else "-",
               "[%.2f, %.2f]" % wilson(r["PASS"], r["n"]) if r["n"] else "-", num(r["calls"]), num(r["chars"])) for r in rows]
     w = [max(map(len, col)) for col in zip(head, *cells)]
@@ -453,7 +466,7 @@ def results(scenario, rows, out, detail=lambda m: None):
         xs = pad(xs)
         if r["n"]:
             rate = r["PASS"] / r["n"]
-            xs[7] = paint(GREEN if rate == 1 else BOLD_RED if rate == 0 else YELLOW, xs[7])
+            xs[8] = paint(GREEN if rate == 1 else BOLD_RED if rate == 0 else YELLOW, xs[8])
         out("  " + "  ".join(xs))
         out("    tools used: " + (", ".join("%s %d" % kv for kv in r["tools"].items()) or "none"))
         extra = (["steps to evidence %s (median)" % num(r["steps"])] if r["steps"] is not None else []) + \
@@ -557,7 +570,8 @@ class Log:
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 BOLD_CYAN, GREEN, BOLD_RED, YELLOW, MAGENTA, CYAN, DIM = "1;36", "32", "1;31", "33", "35", "36", "2"
-VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BOLD_RED, "INVALID": BOLD_RED, "ABSTAIN": MAGENTA}
+VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BOLD_RED, "INVALID": BOLD_RED, "LEAK": BOLD_RED,
+                 "ABSTAIN": MAGENTA, "UNGRADED": CYAN}
 
 
 def use_color(stream):
@@ -850,7 +864,7 @@ def run(a, cfg):
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
-           "client_version": None, "sandbox_probe": None}
+           "client_version": None, "sandbox_probe": None, "leak_rendered": None}
     if a.client == "api" and a.provider == "openai":
         log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
         if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
@@ -899,6 +913,13 @@ def run(a, cfg):
         if not log.check(got == want, "client version %s" % want):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"))
+    try:
+        grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
+                                    stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        grader_cli = None
+    if not log.check(bool(grader_cli), "mechanism grader %s via %s" % (grade.GRADER_MODEL, grader_cli or "no Claude Code CLI")):
+        return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE)
     log.detail("== pre-flight: readiness ==")
     pre["readiness"] = "PASS" if readiness(a.scenario, out=log.detail) == 0 else "FAIL"
     log.check(pre["readiness"] == "PASS", "scenario %s ready" % a.scenario)
@@ -974,6 +995,18 @@ def run(a, cfg):
             if tools.report(tool_list, tools.expected_descriptions(load_json(desc[arm]["path"])), log.detail):
                 return die("ABORT - the fixture is not serving the pre-registered tool descriptions for arm %r" % arm)
             log.check(True, "arm %s: descriptions match %s" % (arm, os.path.basename(desc[arm]["file"])))
+
+    log.detail("== pre-flight: leak scan of the rendered prompts, system prompt and served tools/list ==")
+    rendered = []
+    for arm in arms:
+        argv = claude_argv(a, prompt_file[arm], "-")
+        rendered.append(("rendered prompt %s" % arm, argv[2]))
+    rendered.append(("rendered system prompt", argv[argv.index("--system-prompt") + 1]))
+    if tools_text:
+        rendered.append(("served tools/list", TOOLS_ALLOW.sub("", tools_text)))
+    pre["leak_rendered"] = "PASS" if leak_texts(rendered, out=log.detail) == 0 else "FAIL"
+    if not log.check(pre["leak_rendered"] == "PASS", "rendered prompts and served tool descriptions leak-free"):
+        return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched")
 
     if a.client == "cli":
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
@@ -1056,7 +1089,7 @@ def run(a, cfg):
         c["order_index"] = i
     hashes = {name: sha256_file(os.path.join(HARNESS, name)) for name in
               ("bench.py", "tools.py", "fixture_leak.py", "score.py", "system-prompt.txt", "verdict-schema.json",
-               "agent_loop.py", "mcp_client.py", "codex_client.py", "leak-words.txt", "judge.py",
+               "agent_loop.py", "mcp_client.py", "codex_client.py", "leak-words.txt", "judge.py", "grade.py", "grader-prompt.txt",
                "providers/__init__.py", "providers/base.py",
                "providers/anthropic_provider.py", "providers/openai_provider.py")}
     hashes["scenario_file"] = sha256_file(sf)
@@ -1067,7 +1100,7 @@ def run(a, cfg):
            "harness_git_sha": harness_sha + ("-dirty" if harness_dirty else ""),
            "python_version": platform.python_version(), "pinned_at_utc": utc()}
     common = {
-        "schema_version": 4, "client": a.client, "provider": a.provider, "batch_id": batch_id, "seed": seed,
+        "schema_version": score.SCHEMA_VERSION, "client": a.client, "provider": a.provider, "batch_id": batch_id, "seed": seed,
         "scenario": a.scenario, "scenario_sha256": hashes["scenario_file"], "scenario_version": scen.get("version"),
         "system_prompt_sha256": hashes["system-prompt.txt"], "verdict_schema_sha256": hashes["verdict-schema.json"],
         "model_requested": a.model, "effort": a.effort, "max_turns": a.max_turns, "max_budget_usd": budget,
@@ -1076,14 +1109,15 @@ def run(a, cfg):
         "jaeger_image": image, "jaeger_image_id": image_id, "jaeger_commit": sut["jaeger_commit"],
         "otel_demo_ref": otel_demo_ref, "fixture_overlay_sha256": overlay_sha,
         "fault": {"flag": flag, "activation_field": "defaultVariant", "activation_value": act["value"]},
-        "preflight": pre,
+        "flag_names": sorted(pristine_doc["flags"]), "preflight": pre,
         "experiment": {"name": a.experiment, "file": repo_relpath(a.experiment_file), "sha256": exp_sha},
         "harness_git_sha": harness_sha, "harness_dirty": harness_dirty,
         "score_py_sha256": hashes["score.py"],
     }
     manifest = {"scenario": a.scenario, "batch_id": batch_id, "n_per_arm": a.n_per_arm, "arms": arms, "seed": seed,
                 "order": order, "file_hashes_sha256": hashes, "system_under_test": sut, "tools_list_sha256": tools_sha,
-                "tools_list_path": "tools.json" if tools_text else None}
+                "tools_list_path": "tools.json" if tools_text else None,
+                "grader": {"model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"], "cli_version": grader_cli}}
     # ponytail: arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.
     if len(arms) == 1:
@@ -1218,7 +1252,7 @@ def run(a, cfg):
             fails = fails + 1 if rec["failed"] else 0
             verdict, calls, note = "ERROR", "-", "exit %s" % rec["trial_exit_code"]
             try:
-                s = done[rec["out_dir"]] = score.score(os.path.join(bdir, rec["out_dir"]))[0]
+                s = score.score(os.path.join(bdir, rec["out_dir"]))[0]  # grader runs after the restore
                 calls = str(s.get("tool_calls"))
                 verdict, note = (verdict, "%s, scored %s" % (note, s.get("verdict"))) if rec["failed"] else (s.get("verdict") or "ERROR", "")
             except Exception:
@@ -1236,7 +1270,7 @@ def run(a, cfg):
                 return None
         return None
 
-    early, interrupted, done = None, False, {}  # done: out_dir -> score, scored as each cell ends
+    early, interrupted = None, False
     old = {s: signal.signal(s, _interrupt) for s in STOP_SIGNALS}
     try:
         early = fault_and_cells()
@@ -1255,12 +1289,12 @@ def run(a, cfg):
         return early if restored else 5
 
     # ---- score, summary, band ----
-    log.detail("== scoring cells ==")
+    log.detail("== scoring cells (one %s grader call per new mechanism answer, cached in grades.jsonl) ==" % grade.GRADER_MODEL)
     rows, scored = [], []
     for rec in read_jsonl(cells_file):
         t = os.path.join(bdir, rec["out_dir"])
         try:
-            s = done.get(rec["out_dir"]) or score.score(t)[0]
+            s = score.score(t, call_grader=True)[0]
             scored.append((t, s))
         except Exception as e:
             # str(e) can carry the absolute trial path (e.g. a FileNotFoundError from open());
@@ -1293,7 +1327,7 @@ META_KEYS = (
     "effort", "max_turns", "max_budget_usd", "client_argv", "history_policy", "client_version_pre", "mcp_endpoint",
     "mcp_config_sha256", "tools_list_sha256", "tools_count", "tool_descriptions_file", "tool_descriptions_sha256",
     "tool_descriptions_check", "jaeger_image", "jaeger_image_id", "jaeger_commit", "otel_demo_ref",
-    "fixture_overlay_sha256", "fault", "preflight", "experiment", "harness_git_sha", "harness_dirty",
+    "fixture_overlay_sha256", "fault", "flag_names", "preflight", "experiment", "harness_git_sha", "harness_dirty",
     "score_py_sha256", "started_utc", "ended_utc", "wall_time_s", "exit_code", "observed", "agent_loop",
     "system_under_test")
 
@@ -1458,13 +1492,17 @@ def verify(cfg):
             if row.get("dir"):
                 stored[os.path.realpath(os.path.join(b, row["dir"]))] = row.get("verdict")
     cols = ["scenario", "arm", "dir", "verdict", "tool_calls", "call_errors", "steps_to_evidence", "tool_output_chars", "cost", "compaction"]
-    rows, mismatches, invalid = [], [], []
+    rows, mismatches, invalid, ungraded = [], [], [], []
     for p in sorted(glob.glob(os.path.join(runs, "**", "stream.jsonl"), recursive=True)):
         d = os.path.dirname(p)
         mp = os.path.join(d, "meta.json")
         arm = arm_of.get(os.path.realpath(d)) or (load_json(mp).get("arm") if os.path.isfile(mp) else None)
         try:
             s, _ = score.score(d)
+        except score.Legacy as e:
+            rows.append(dict({c: "" for c in cols}, scenario=load_json(mp).get("scenario"), arm=arm,
+                             dir=os.path.relpath(d, runs), verdict="%s (%s)" % (stored.get(os.path.realpath(d)) or "no stored score", e)))
+            continue
         except Exception as e:
             rows.append(dict({c: "" for c in cols}, scenario="?", arm=arm, dir=os.path.relpath(d, runs), verdict="ERROR: %s" % e))
             continue
@@ -1473,6 +1511,11 @@ def verify(cfg):
             mismatches.append("verify: MISMATCH %s: stored verdict %s, re-scored %s" % (os.path.relpath(d, runs), stored[key], s.get("verdict")))
         if s.get("verdict") == "INVALID":
             invalid.append("verify: INVALID %s: %s" % (os.path.relpath(d, runs), " ".join(s.get("sandbox_violations") or [])))
+        if s.get("verdict") == "LEAK":
+            invalid.append("verify: LEAK %s: %s" % (os.path.relpath(d, runs), " ".join(s.get("leak_hits") or [])))
+        if s.get("mechanism") == "UNGRADED":
+            ungraded.append("verify: UNGRADED %s: no cached grade in grades.jsonl (verify never calls the grader)"
+                            % os.path.relpath(d, runs))
         rows.append({"scenario": s.get("scenario_used"), "arm": arm, "dir": os.path.relpath(d, runs), "verdict": s.get("verdict"),
                      "tool_calls": s.get("tool_calls"), "call_errors": s.get("call_errors"),
                      "steps_to_evidence": s.get("steps_to_evidence"), "tool_output_chars": s.get("tool_output_chars"),
@@ -1486,7 +1529,7 @@ def verify(cfg):
                       % (r["dir"], r["compaction"]))
     else:
         print("verify: no stream.jsonl under %s (RUNS_DIR)" % runs)
-    for line in mismatches + invalid:
+    for line in mismatches + invalid + ungraded:
         print(line)
     idx = os.path.join(RECORDS, "INDEX.md")
     current = read_text(idx) if os.path.isfile(idx) else ""
@@ -1496,8 +1539,11 @@ def verify(cfg):
     if mismatches:
         print("verify: FAIL - %d stored verdict(s) in scores.jsonl differ from a re-score of the raw files" % len(mismatches))
     if invalid:
-        print("verify: FAIL - %d run(s) INVALID: the sandbox check failed, so no result from their batch stands" % len(invalid))
-    if stale or mismatches or invalid:
+        print("verify: FAIL - %d run(s) INVALID or LEAK: the sandbox check failed or the answer names a flag, so no "
+              "result from their batch stands" % len(invalid))
+    if ungraded:
+        print("verify: FAIL - %d run(s) have no cached mechanism grade" % len(ungraded))
+    if stale or mismatches or invalid or ungraded:
         return 1
     print("verify: %s matches the batch records" % idx)
     return 0
@@ -1528,8 +1574,10 @@ def index_text(runs):
             ", ".join("%s %d" % (arm, n[arm]) for arm in arms),
             "%s %s" % (m["client"], m["model_requested"]), ", ".join(observed) or NOT_RECORDED, m["effort"],
             m["client_version_pre"] or NOT_RECORDED, m["jaeger_image"], m["experiment"]["name"],
-            ", ".join("%s %s" % (arm, "/".join(str(sum(1 for s in by[arm] if s.get("verdict") == v)) for v in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID"))) for arm in arms),
+            ", ".join("%s %s" % (arm, "/".join(str(sum(1 for s in by[arm] if s.get("verdict") == v)) for v in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID", "LEAK"))) for arm in arms),
             ", ".join("%s %d" % (arm, band_code(n[arm], sum(1 for s in by[arm] if s.get("verdict") == "PASS"))) for arm in arms),
+            "%s (legacy schema, stored scores)" % m.get("schema_version") if m.get("schema_version", score.SCHEMA_VERSION) < score.SCHEMA_VERSION
+            else str(m.get("schema_version", score.SCHEMA_VERSION)),
         ])
     rows.sort(key=lambda r: (r[1], r[0]))
 
@@ -1544,7 +1592,7 @@ def index_text(runs):
     scen_head = ["scenario", "deterministic", "readiness", "batches recorded", "cells scored"]
 
     head = ["batch", "date", "scenario", "arms (cells)", "client and model requested", "model observed", "effort",
-            "client version", "jaeger image", "experiment", "PASS/PARTIAL/FAIL/ABSTAIN/INVALID", "band"]
+            "client version", "jaeger image", "experiment", "PASS/PARTIAL/FAIL/ABSTAIN/INVALID/LEAK", "band", "record schema"]
     lines = ["# Run index", "",
              "Generated by `harness/bench.py index` from each batch's manifest.json, cells.jsonl and scores.jsonl.",
              "Do not edit by hand: `harness/bench.py verify` fails when this file differs from what it would generate.",

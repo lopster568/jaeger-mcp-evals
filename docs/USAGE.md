@@ -102,15 +102,17 @@ Run everything from the repository root.
    `$RUNS_DIR/paymentFailure/soak-<UTC>.log`. Exit 0 pass, 5 after two bad samples in a row.
 3. `python3 harness/bench.py run harness/experiments/<name>.json --dry-run` runs the read-only
    pre-flight (it does read the fixture: ssh or local shell, `docker inspect`, HTTP to Jaeger
-   and OFREP, the MCP `tools/list` and description check, and the sandbox probe) and prints what a
+   and OFREP, the MCP `tools/list` and description check, the leak scan of the rendered prompts
+   and served tool descriptions, and the sandbox probe) and prints what a
    real batch would do, including the seed it drew. It writes nothing, never flips the flag, never
    calls a model.
 4. `python3 harness/bench.py run harness/experiments/<name>.json` runs pre-flight, the flag flip
    confirmed through OFREP, a wait for fresh fault traces, a second leak scan and the oracle
    under the fault, the cells in shuffled order, a guaranteed restore of the pristine flag
-   file, scoring and a band per arm. `--first-only` runs one cell. It writes
+   file, scoring (with one grader call per new mechanism answer, docs/TUNING.md, Mechanism
+   grader) and a band per arm. `--first-only` runs one cell. It writes
    `$RUNS_DIR/<scenario>/batch-<UTC>/` (`batch.log`, `preflight.json`, `manifest.json`,
-   `tools.json`, `cells.jsonl`, `restore.json`, `scores.jsonl`, one `<order_index>-<arm>/`
+   `tools.json`, `cells.jsonl`, `restore.json`, `scores.jsonl`, `grades.jsonl`, one `<order_index>-<arm>/`
    directory per cell), then copies `manifest.json`, `preflight.json`, `cells.jsonl`,
    `scores.jsonl` and `restore.json` to `records/<name>/batch-<UTC>/`. The copy also happens
    after an interrupt or an abort once the flag is restored. Trajectories are never copied.
@@ -122,7 +124,8 @@ Run everything from the repository root.
 
    Everything `run` prints goes to stderr, in sections: a one-line header, Pre-flight and
    Fault (one `ok` line per check), Trials (one line per cell as it ends: verdict, MCP tool
-   calls, wall time; a nonzero exit shows as ERROR with its code; on a terminal a `running...`
+   calls, wall time; a nonzero exit shows as ERROR with its code; a correct locus shows as
+   UNGRADED until the grader runs after the restore; on a terminal a `running...`
    line counts the seconds), Restore, and the Results table. A failed check or an abort
    prints that step's full detail under it. `batch.log` keeps every screen line plus all the
    detail (readiness checks, full hashes, polls, the per-arm key=value summary and band
@@ -131,8 +134,11 @@ Run everything from the repository root.
    planned order, fixture commands and files.
 5. `run` rewrites `records/INDEX.md` after copying the records (`python3 harness/bench.py index`
    does the same by hand); commit it with the new records. `python3 harness/bench.py verify` re-scores every `stream.jsonl` under `$RUNS_DIR`,
-   fails on a stored verdict that disagrees or on any INVALID run, writes nothing, and exits 1 if
-   `records/INDEX.md` differs from what `index` would generate.
+   fails on a stored verdict that disagrees, on any INVALID or LEAK run, or on a mechanism answer
+   with no cached grade in the batch's `grades.jsonl` (verify never calls the grader), writes
+   nothing, and exits 1 if `records/INDEX.md` differs from what `index` would generate. A trial
+   recorded under record schema 4 or older (the mechanism menu) is not re-scored: its stored
+   verdict is printed with "legacy schema, stored scores".
 6. `python3 harness/judge.py <baseline_batch_dir> <variant_batch_dir>` prints PASS or FAIL per
    threshold, then `EXPERIMENT PASS` or `EXPERIMENT FAIL`. Either the `$RUNS_DIR` batch
    directories or their copies under `records/` work. A judged pair (exit 0 or 1) is also
@@ -162,7 +168,7 @@ aborts before the flag flips. An arm with `tools: false` gets an empty `mcpServe
 in the batch has tools, the tools/list capture, description check and oracle are skipped.
 
 Pre-flight gates run alone: `bench.py leak <file>...` (no leak word in any prompt) and
-`bench.py readiness <scenario>` (positive integer `version`, captured fault trace matches the
+`bench.py readiness <scenario>` (positive integer `version`, a `mechanism_truth`, captured fault trace matches the
 signal, captured baseline does not). A scenario is ready only when `readiness` passes.
 
 `bench.py oracle <scenario>` runs the scenario's `oracle` list of MCP tool calls with no agent
@@ -186,11 +192,13 @@ Exit 0 if all pass, else 1.
   assertion.
 - `bench.py band <batch_dir> [--arm A]` (a `$RUNS_DIR` batch directory: it re-scores the
   trajectories) prints the same Results table as `run`: per arm PASS/n, PARTIAL, FAIL,
-  ABSTAIN, `err` (unscorable cells), `invalid` (sandbox check failed), pass rate, Wilson 95% CI, median tool calls and median
+  ABSTAIN, `err` (unscorable cells), `invalid` (sandbox check failed), `leak` (the answer names a
+  flag), pass rate, Wilson 95% CI, median tool calls and median
   tool output chars; under each row `tools used` (runs using each tool at least once,
   excluding `read_skill`), then, when present, median steps to evidence, `stops` (abnormal
   endings by stop value, `no_result` for a stream with no result event), read_skill counts
-  and call errors. `err`, `invalid` and stops count in n, never in PASS. Exit 0 certified, 2 when n is
+  and call errors. `err`, `invalid`, `leak` and stops count in n, never in PASS. band reads cached
+  grades only and never calls the grader. Exit 0 certified, 2 when n is
   under 10, 3 when the rate is 0 or 1.
 - `band` and `verify` flag runs with a compaction event (context numbers not comparable).
   Scenarios with deterministic set to no stay out of the certified pool.
@@ -209,11 +217,16 @@ CLI's own verdict tool is listed separately and never counted as investigation w
 the client validates against `verdict-schema.json`.
 
 - `locus`: PASS, PARTIAL or FAIL from service and operation against `pass_rule`.
-- `mechanism`: PASS if it equals `expected_mechanism` or is in `accepted_mechanisms`.
+- `mechanism`: the agent's free-text mechanism, graded against the scenario's `mechanism_truth`
+  by the pinned grader (docs/TUNING.md, Mechanism grader): `correct` PASS, `incorrect` FAIL,
+  `unclear` UNCLEAR (not a PASS); UNGRADED when no cached grade exists and the grader may not be
+  called (every path except the end of `run`).
 - `cascade`: every `cascade_rule.required_any` group must match.
-- `verdict`: PASS if locus and mechanism both PASS; PARTIAL if locus is PASS or PARTIAL but
-  mechanism is not; ABSTAIN if the agent abstained; else FAIL. INVALID replaces all of these
-  when `sandbox_ok` is false (docs/RECORD.md, scores.jsonl).
+- `verdict`: PASS if locus and mechanism both PASS; UNGRADED if locus is PASS and the mechanism
+  is ungraded; PARTIAL if locus is PASS or PARTIAL but mechanism is not; ABSTAIN if the agent
+  set `abstain`; else FAIL. INVALID replaces all of these when `sandbox_ok` is false, and LEAK
+  when `leak_hits` is not empty (the answer or any assistant text names a flag, `feature_flag` or
+  `flagd`; docs/RECORD.md, scores.jsonl).
 - No valid `structured_output` (schema-invalid answer, max turns, crash): locus, mechanism and
   cascade are MISSING, the verdict is FAIL and `verdict_source` is null.
 - Skill arms report `read_skill_attempted` and `read_skill_succeeded`; an error result is not

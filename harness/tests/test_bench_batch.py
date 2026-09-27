@@ -71,6 +71,13 @@ if sys.argv[1:] == ["--version"]:
     print("2.1.282 (Claude Code)"); sys.exit(0)
 if sys.argv[1:] == ["--help"]:
     print(os.environ.get("FAKE_CLAUDE_HELP", "@FLAGS@")); sys.exit(0)
+if "claude-fable-5-1" in sys.argv:  # the mechanism grader
+    with open(os.path.join(os.environ["FAKE_HOME"], "grader-calls.jsonl"), "a") as f:
+        f.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "claudecode": "CLAUDECODE" in os.environ,
+                            "api_key": "ANTHROPIC_API_KEY" in os.environ}) + "\\n")
+    print(json.dumps({"type": "result", "subtype": "success", "result": "",
+                      "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}))
+    sys.exit(0)
 if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one canned request, as the CLI would
     mcp = json.load(open(sys.argv[sys.argv.index("--mcp-config") + 1]))
     names = ["StructuredOutput"] + (["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors",
@@ -96,8 +103,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "claudecode": "CLAUDECODE" in os.environ,
                         "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir(".")}) + "\\n")
-verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
-           "mechanism_detail": "x", "cascading": [{"service": "checkout"}], "confidence": "high",
+verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [{"service": "checkout"}], "confidence": "high",
            "evidence_span_ids": [], "abstain": False}
 if os.environ.get("FAKE_JUNK"):
     print(json.dumps("not an event"))
@@ -123,8 +129,7 @@ if sys.argv[1:] == ["--version"]:
 with open(os.path.join(os.environ["FAKE_HOME"], "codex-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "stdin": sys.stdin.read(),
                         "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"))}) + "\\n")
-verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
-           "mechanism_detail": "x", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
+verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
 call = {"id": "item_0", "type": "mcp_tool_call", "server": "jaeger", "tool": "get_trace_errors", "arguments": {}}
 for e in [
     {"type": "thread.started", "thread_id": "th-1"},
@@ -313,7 +318,7 @@ META_V4_KEYS = [
     "effort", "max_turns", "max_budget_usd", "client_argv", "history_policy", "client_version_pre", "mcp_endpoint",
     "mcp_config_sha256", "tools_list_sha256", "tools_count", "tool_descriptions_file", "tool_descriptions_sha256",
     "tool_descriptions_check", "jaeger_image", "jaeger_image_id", "jaeger_commit", "otel_demo_ref",
-    "fixture_overlay_sha256", "fault", "preflight", "experiment", "harness_git_sha", "harness_dirty",
+    "fixture_overlay_sha256", "fault", "flag_names", "preflight", "experiment", "harness_git_sha", "harness_dirty",
     "score_py_sha256", "started_utc", "ended_utc", "wall_time_s", "exit_code", "observed", "agent_loop",
     "system_under_test"]
 
@@ -324,6 +329,7 @@ def text(name):
 
 class TestBatch(BenchCase):
     def test_full_batch(self):
+        Fake.served_descriptions = {"get_services": "Summaries with an error flag per trace."}  # stock Jaeger wording passes
         self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-test",
                                     OPENAI_API_KEY="sk-o", OPENAI_BASE_URL="http://x"), 0, self.err)
         b = self.batch_dir()
@@ -333,7 +339,7 @@ class TestBatch(BenchCase):
         for k in ("scenario", "batch_id", "n_per_arm", "model_requested", "effort", "arms", "seed", "order",
                   "file_hashes_sha256", "system_under_test", "tools_list_sha256", "tools_list_path", "schema_version"):
             self.assertIn(k, m)
-        self.assertEqual(m["schema_version"], 4)
+        self.assertEqual(m["schema_version"], 5)
         self.assertEqual(m["arms"], ["noskill", "skill"])
         self.assertEqual(m["batch_id"], os.path.basename(b))
         self.assertEqual(m["tools_list_sha256"], bench.sha256_file(os.path.join(b, "tools.json")))
@@ -353,7 +359,7 @@ class TestBatch(BenchCase):
             self.assertEqual(os.path.join(b, c["out_dir"]), trial)
             meta = load(os.path.join(trial, "meta.json"))
             self.assertEqual(list(meta), META_V4_KEYS)
-            self.assertEqual((meta["schema_version"], meta["client"], meta["provider"], meta["agent_loop"]), (4, "cli", None, None))
+            self.assertEqual((meta["schema_version"], meta["client"], meta["provider"], meta["agent_loop"]), (5, "cli", None, None))
             self.assertEqual(meta["experiment"], {k: m["experiment"][k] for k in ("name", "file", "sha256")})
             self.assertEqual(meta["run_id"], "%s/%d-%s" % (m["batch_id"], c["order_index"], c["arm"]))
             self.assertEqual(meta["arm"], c["arm"])
@@ -393,6 +399,19 @@ class TestBatch(BenchCase):
         self.assertFalse(calls[0]["claudecode"])
         self.assertFalse(calls[0]["api_key"])
         self.assertEqual([c["cwd_listing"] for c in calls], [[], []])
+        # The grader: sandboxed like the agent; both trials gave the same answer, so one call and one cache hit.
+        graders = bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))
+        self.assertEqual(len(graders), 1)
+        g = graders[0]["argv"]
+        for flag in ("--strict-mcp-config", "--restricted", "--no-session-persistence"):
+            self.assertIn(flag, g)
+        self.assertEqual([g[g.index(k) + 1] for k in ("--tools", "--setting-sources", "--model", "--system-prompt")],
+                         ["", "", "claude-fable-5-1", text("grader-prompt.txt")])
+        self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
+        self.assertNotEqual(graders[0]["cwd"], bench.ROOT)
+        self.assertEqual(m["grader"], {"model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
+                                       "prompt_sha256": bench.sha256_file(os.path.join(HARNESS_DIR, "grader-prompt.txt"))})
+        self.assertEqual(sorted((s["mechanism_grade"], s["grader_cached"]) for s in scores), [("correct", False), ("correct", True)])
         self.assertEqual(m["preflight"]["fixture_leak_under_fault"], "PASS")
         r = load(os.path.join(b, "restore.json"))
         self.assertTrue(r["cp_ok"] and r["default_confirmed"])
@@ -400,9 +419,9 @@ class TestBatch(BenchCase):
         blog = read(os.path.join(b, "batch.log"))
         self.assertIn("band paymentFailure/noskill: n=1 passes=1", blog)
         self.assertIn("pre-flight PASS", blog)
-        self.assertEqual(m["scenario_version"], 1)
+        self.assertEqual(m["scenario_version"], 2)
         self.assertEqual(m["preflight"]["oracle"], "PASS")
-        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 stops=- ", blog)
+        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 LEAK=0 stops=- ", blog)
         # One stream: everything a human reads is on stderr, and batch.log carries every screen line too.
         self.assertEqual(self.out, "")
         for line in ("ok    scenario paymentFailure ready", "[1/2] ", "tools used: get_trace_errors 1", "Records "):
@@ -428,8 +447,7 @@ class TestBatch(BenchCase):
         self.assertIn("runs on the logged-in plan and ignores it", self.err + self.out)
 
     def test_api_client_runs_the_owned_loop(self):
-        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
-                   "mechanism_detail": "x", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
+        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
         usage = {"input_tokens": 10, "output_tokens": 20}
         script = os.path.join(self.home, "script.json")
         pathlib.Path(script).write_text(json.dumps({"turns": [
@@ -459,7 +477,7 @@ class TestBatch(BenchCase):
         b = self.batch_dir()
         m = load(os.path.join(b, "manifest.json"))
         self.assertEqual((m["client"], m["provider"], m["model_requested"], m["schema_version"]),
-                         ("api", "anthropic", "claude-sonnet-5", 4))
+                         ("api", "anthropic", "claude-sonnet-5", 5))
         self.assertIn("providers/anthropic_provider.py", m["file_hashes_sha256"])
         self.assertEqual(load(os.path.join(b, "preflight.json"))["client"], "PASS")
         self.assertEqual([s["verdict"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["PASS", "PASS"])
@@ -467,7 +485,7 @@ class TestBatch(BenchCase):
             self.assertFalse(c["failed"])
             meta = load(os.path.join(b, "%d-%s" % (c["order_index"], c["arm"]), "meta.json"))
             self.assertEqual(list(meta), META_V4_KEYS)
-            self.assertEqual((meta["schema_version"], meta["client"], meta["model_requested"]), (4, "api", "claude-sonnet-5"))
+            self.assertEqual((meta["schema_version"], meta["client"], meta["model_requested"]), (5, "api", "claude-sonnet-5"))
             # recorded without absolute paths: repo-relative, trial-relative, else the basename
             self.assertEqual(meta["client_argv"][:3], [os.path.basename(sys.executable), "harness/tests/fake_loop.py", "script.json"])
             argv = meta["client_argv"]
@@ -479,8 +497,7 @@ class TestBatch(BenchCase):
             self.assertEqual((meta["agent_loop"]["effort"], meta["agent_loop"]["result_subtype"]), ("xhigh", "success"))
 
     def test_openai_provider_records_provider_and_base_url_never_the_key(self):
-        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
-                   "mechanism_detail": "x", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
+        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
         seen = []
 
         class Chat(http.server.BaseHTTPRequestHandler):
@@ -586,15 +603,15 @@ class TestBatch(BenchCase):
     def test_summary_counts_errors_and_stops(self):
         self.assertEqual(self.run_batch(1, FAKE_STOP="error_max_turns"), 0, self.err)
         blog = read(os.path.join(self.batch_dir(), "batch.log"))
-        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 stops=error_max_turns:1 ", blog)
-        self.assertIn("ERROR=0 INVALID=0 stops=error_max_turns:1 read_skill_attempted", blog)
+        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 LEAK=0 stops=error_max_turns:1 ", blog)
+        self.assertIn("ERROR=0 INVALID=0 LEAK=0 stops=error_max_turns:1 read_skill_attempted", blog)
         self.assertIn("stops error_max_turns:1", self.err)
         shutil.rmtree(self.runs)
         self.assertEqual(self.run_batch(1, FAKE_JUNK="1"), 0, self.err)
         blog = read(os.path.join(self.batch_dir(), "batch.log"))
-        self.assertIn("noskill: n=1 PASS=0 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=1 INVALID=0 stops=- ", blog)
+        self.assertIn("noskill: n=1 PASS=0 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=1 INVALID=0 LEAK=0 stops=- ", blog)
         self.assertIn("band paymentFailure/noskill: n=1 passes=0", blog)
-        self.assertIn("ERROR=1 INVALID=0 stops=- read_skill_attempted", blog)
+        self.assertIn("ERROR=1 INVALID=0 LEAK=0 stops=- read_skill_attempted", blog)
         self.assertRegex(self.err, r"noskill #0 +ERROR +- .*unscorable")
 
     def test_local_mode_runs_without_ssh(self):
@@ -809,6 +826,14 @@ class TestExperiment(BenchCase):
         self.assertEqual(self.calls(), [])
         self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
         self.assertEqual(self.flag_file(), self.pristine())
+
+    def test_leak_in_served_descriptions_aborts_before_the_flag(self):
+        Fake.served_descriptions = {"get_trace_errors": "Errors of a trace, e.g. the paymentFailure path."}
+        self.assertEqual(self.run_batch(1), 1)
+        self.assertIn("served tools/list:9:paymentFailure", self.err)
+        self.assertIn("ABORT - a leak word in what the agent would see", self.err)
+        self.assertEqual(self.flag_file(), self.pristine())
+        self.assertFalse(os.path.exists(os.path.join(self.home, "claude-calls.jsonl")))
 
     def test_image_pin_refuses_a_mismatch(self):
         rc = self.bench("run", self.shipped(), FAKE_IMAGE="other/jaeger:1")

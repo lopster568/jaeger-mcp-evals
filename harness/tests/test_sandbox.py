@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(HARNESS_DIR, "tests"))
 import bench  # noqa: E402
 import judge  # noqa: E402
 import score  # noqa: E402
+from fake_grader import graded  # noqa: E402
 from test_band import PASS_FINAL, make_batch, run_band  # noqa: E402
 
 J = ["mcp__jaeger__get_trace_errors", "mcp__jaeger__search_traces"]
@@ -59,8 +60,9 @@ class TestSandboxCheck(unittest.TestCase):
         with open(os.path.join(d, "stream.jsonl"), "w") as f:
             f.writelines(json.dumps(e) + "\n" for e in events)
         with open(os.path.join(d, "meta.json"), "w") as f:
-            json.dump(dict({"scenario": "paymentFailure", "client": "cli", "mcp_endpoint": ":1/mcp/"}, **(meta or {})), f)
-        return score.score(d)[0]
+            json.dump(dict({"scenario": "paymentFailure", "schema_version": 5, "client": "cli", "mcp_endpoint": ":1/mcp/"}, **(meta or {})), f)
+        with graded():
+            return score.score(d, call_grader=True)[0]
 
     def test_clean_run_passes_with_sandbox_ok(self):
         s = self.score([init()] + call(J[0]) + [PASS_FINAL], tools_json=["get_trace_errors", "search_traces"])
@@ -133,7 +135,7 @@ class TestInvalidCounted(unittest.TestCase):
             good = [init()] + call(J[0]) + [PASS_FINAL]
             rc, out = run_band(make_batch(tmp, [good, bad]))
         self.assertIn("n=2 passes=1", out)
-        self.assertIn("ERROR=0 INVALID=1 stops=", out)
+        self.assertIn("ERROR=0 INVALID=1 LEAK=0 stops=", out)
         self.assertIn("noskill: 1/2 runs INVALID", out)
 
     def test_verify_fails_on_an_invalid_run(self):

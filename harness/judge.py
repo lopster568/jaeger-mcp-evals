@@ -22,7 +22,8 @@ judge.py:
         tool_output_chars_median_drop_pct_min is measured against the
         baseline arm's median, from the baseline batch)
       - PASS count, using score.py's strict verdict == "PASS"; INVALID rows (sandbox check
-        failed) stay in n, are never a PASS, and each arm with any gets a WARNING line
+        failed) and LEAK rows (the answer names a flag) stay in n, are never a PASS, and
+        each arm with any gets a WARNING line
 
 Prints one PASS/FAIL line per threshold (per test arm, if there is more
 than one), then a final verdict line. A judged pair (exit 0 or 1) also writes those
@@ -67,6 +68,7 @@ def arm_metrics(rows, arm, tool_names):
         "chars_median": median([r.get("tool_output_chars") for r in arm_rows]),
         "pass_count": sum(1 for r in arm_rows if r.get("verdict") == "PASS"),
         "invalid": sum(1 for r in arm_rows if r.get("verdict") == "INVALID"),
+        "leak": sum(1 for r in arm_rows if r.get("verdict") == "LEAK"),
     }
 
 
@@ -138,6 +140,9 @@ def judge(baseline_batch_dir, variant_batch_dir):
         for label, mm in (("baseline", baseline_metrics), ("variant", m)):
             if mm["invalid"]:
                 lines.append(f"judge: WARNING - {prefix}{mm['invalid']} {label} row(s) INVALID (sandbox check failed), "
+                             "counted in n and never as a PASS")
+            if mm["leak"]:
+                lines.append(f"judge: WARNING - {prefix}{mm['leak']} {label} row(s) LEAK (the answer names a flag), "
                              "counted in n and never as a PASS")
 
         def check(name, ok, measured, op, required):

@@ -1,6 +1,6 @@
 {
  "flag": "paymentUnreachable",
- "version": 1,
+ "version": 2,
  "activation": {
   "field": "defaultVariant",
   "value": "on"
@@ -11,6 +11,7 @@
   "operation": "PaymentService/Charge",
   "mechanism": "checkout/main.go (lines 565-575) makes its own client span for oteldemo.PaymentService/Charge, which fails with grpc UNAVAILABLE, status description name resolver error: produced zero addresses. The payment service's own server span never exists anywhere in the trace's process list - checkout cannot resolve payment's address at all, rather than payment rejecting the call. Sibling calls inside prepareOrderItemsAndShippingQuoteFromCart (cart, product-catalog, currency) all succeed, isolating the fault to the charge call specifically."
  },
+ "mechanism_truth": "The calling service cannot obtain any network address for the service it needs, so its outgoing call fails before any request is delivered; the target service never receives the call at all.",
  "signal_regex": "produced zero addresses|name resolver error",
  "oracle": [{"tool": "search_traces", "arguments": {"service_name": "checkout", "with_errors": true}}, {"tool": "get_trace_errors", "arguments": {"trace_id": "$trace_id"}}],
  "pass_rule": {
@@ -22,12 +23,6 @@
    "oteldemo.CheckoutService/PlaceOrder"
   ]
  },
- "expected_mechanism": "dependency_unreachable",
- "accepted_mechanisms": [
-  "dependency_unreachable",
-  "dns_resolution_failure",
-  "grpc_unavailable"
- ],
  "cascade_rule": {
   "required_any": [
    [

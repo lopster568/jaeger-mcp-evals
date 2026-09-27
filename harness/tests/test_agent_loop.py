@@ -22,6 +22,7 @@ sys.path.insert(0, TESTS_DIR)
 
 import agent_loop  # noqa: E402
 import fake_mcp_server  # noqa: E402
+from fake_grader import graded  # noqa: E402
 from fake_provider import FakeProvider  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("score", os.path.join(HARNESS_DIR, "score.py"))
@@ -31,8 +32,7 @@ spec.loader.exec_module(score_mod)
 VERDICT = {
     "root_cause_service": "payment",
     "root_cause_operation": "charge",
-    "mechanism": "invalid_token",
-    "mechanism_detail": "The payment charge span carries an Invalid token status.",
+    "mechanism": "The payment charge span carries an Invalid token status.",
     "cascading": [{"service": "checkout", "operation": "oteldemo.PaymentService/Charge"}],
     "confidence": "high",
     "evidence_span_ids": ["12a540814b076b06"],
@@ -143,8 +143,9 @@ class TestFullRun(LoopTestBase):
             self.assertEqual(a.read(), b.read())
 
         with open(os.path.join(self.out_dir, "meta.json"), "w") as f:  # bench.py writes it around the loop
-            json.dump({"scenario": "paymentFailure"}, f)
-        summary, _ = score_mod.score(self.out_dir)
+            json.dump({"scenario": "paymentFailure", "schema_version": 5}, f)
+        with graded():
+            summary, _ = score_mod.score(self.out_dir, call_grader=True)
         self.assertEqual(summary["verdict_source"], "structured")
         self.assertEqual(summary["verdict"], "PASS")
         self.assertEqual(summary["tool_calls"], 2)
@@ -314,7 +315,7 @@ class TestEdgeCases(LoopTestBase):
         self.assertTrue(b["is_error"])
 
     def test_schema_invalid_answer_gives_null_structured_output(self):
-        bad = dict(VERDICT, mechanism="feature_flag_forced_error")
+        bad = dict(VERDICT, confidence="certain")
         rc = self.run_script({"turns": [{
             "content": [{"type": "text", "text": json.dumps(bad)}],
             "stop_reason": "end_turn", "usage": USAGE2, "request_id": "req_b"}]})
@@ -324,7 +325,7 @@ class TestEdgeCases(LoopTestBase):
         self.assertTrue(final["structured_output_errors"])
 
     def test_openai_schema_invalid_answer_gives_null_structured_output_too(self):
-        bad = dict(VERDICT, mechanism="feature_flag_forced_error")
+        bad = dict(VERDICT, confidence="certain")
         last = mock.Mock(content=[{"type": "text", "text": json.dumps(bad)}])
         with open(os.path.join(HARNESS_DIR, "verdict-schema.json")) as f:
             obj, errs = agent_loop.extract_json(last, json.load(f))
