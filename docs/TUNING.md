@@ -35,7 +35,7 @@ The agent states the mechanism in its own words; `harness/grade.py` labels it `c
 Model: `claude-fable-5-1`, pinned in `GRADER_MODEL`. Prompt: `harness/grader-prompt.txt` (the labeling instructions and three labeling rules the human labels were made under), recorded by sha256.
 It runs through the Claude Code CLI sandboxed like the agent: `--tools ""`, `--strict-mcp-config` with an empty MCP config, `--setting-sources ""`, `--restricted`, `--no-session-persistence`, a temporary working directory, no API keys or `CLAUDECODE` in the environment, and `--json-schema` forcing `{label, reason}`. The agent's text reaches it only in the user prompt.
 Caching: every label is stored in the batch's `grades.jsonl`, keyed by sha256 of (model, prompt sha256, truth, agent text). Only the scoring step at the end of `bench.py run` calls the grader, once per answer not already cached; `verify`, `band` and `score.py` read the cache, and `verify` fails on a miss instead of calling. Changing the model, the prompt or a `mechanism_truth` changes the key, so old labels are never reused for a new grader.
-Validation: validated on a 94-item blind set, see the private validation record.
+Validation: on a blind 94-item set of real and constructed explanations, the grader's labels matched a human labeler on all 21 items the human labeled, and were identical across 3 passes on all 94; human-labeled evidence on near-miss explanations (right place, wrong cause) is still thin. The validation record is kept outside this repository.
 
 Arms compared with each other, and batches compared across dates, must run at the same effort. An unset effort is the CLI's own default and is not recorded, so always set `run.effort`.
 
