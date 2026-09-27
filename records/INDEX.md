@@ -15,6 +15,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | adFailure | no | PASS | 0 | 0 |
 | paymentFailure | yes | PASS | 3 | 22 |
 | paymentUnreachable | yes | PASS | 1 | 6 |
+| recommendationCacheFailure | bucketed | PASS | 0 | 0 |
 
 ## Batches
 

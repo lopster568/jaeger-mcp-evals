@@ -287,7 +287,8 @@ def readiness(scenario, out=print, harness=HARNESS):
 def oracle(scenario, cfg, out=print):
     """Run the scenario's scripted MCP calls in order; PASS once their concatenated text
     output matches signal_regex. An argument value "$trace_id" runs that call once per
-    trace_id seen in earlier output, in order, until the signal is reached. Needs the
+    trace_id seen in earlier output, in order, until the signal is reached; "$span_id" runs it
+    once per 16-hex span id the earlier calls for that trace printed. Needs the
     fault active: at the default variant the signal is absent by design."""
     try:
         d = load_json(os.path.join(HARNESS, "scenarios", scenario + ".json"))
@@ -298,6 +299,7 @@ def oracle(scenario, cfg, out=print):
         out("oracle %s: FAIL - cannot read oracle and signal_regex from the scenario file: %r" % (scenario, e))
         return 1
     text, n = "", 0
+    per_trace = {}  # trace id -> output of the calls made for it; "$span_id" expands from it
     try:
         s = MCPClient(config.mcp_url(cfg), timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
         s.initialize()
@@ -305,15 +307,21 @@ def oracle(scenario, cfg, out=print):
             spec = json.dumps(c["arguments"])
             ids = list(dict.fromkeys(re.findall(r'"trace_id":\s*"([0-9a-fA-F]+)"', text))) if "$trace_id" in spec else [None]
             for tid in ids:
-                args = json.loads(spec.replace("$trace_id", tid)) if tid else c["arguments"]
-                n += 1
-                r = s.call_tool(c["tool"], args)
-                if r["is_error"] and not (r["raw"] or {}).get("isError"):  # transport or JSON-RPC error: stop here
-                    raise MCPError(r["text"])
-                text += r["text"] + "\n"
-                if sig.search(text):
-                    out("oracle %s: PASS - /%s/ reached at call %d: %s %s" % (scenario, sig.pattern, n, c["tool"], json.dumps(args)))
-                    return 0
+                s1 = spec.replace("$trace_id", tid) if tid else spec
+                # "$span_id": one call per 16-hex span id an earlier call for this trace printed, in order
+                sids = list(dict.fromkeys(re.findall(r"\b[0-9a-f]{16}\b", per_trace.get(tid, "")))) if "$span_id" in s1 else [None]
+                for sid in sids:
+                    args = json.loads(s1.replace("$span_id", sid) if sid else s1)
+                    n += 1
+                    r = s.call_tool(c["tool"], args)
+                    if r["is_error"] and not (r["raw"] or {}).get("isError"):  # transport or JSON-RPC error: stop here
+                        raise MCPError(r["text"])
+                    text += r["text"] + "\n"
+                    if tid:
+                        per_trace[tid] = per_trace.get(tid, "") + r["text"] + "\n"
+                    if sig.search(text):
+                        out("oracle %s: PASS - /%s/ reached at call %d: %s %s" % (scenario, sig.pattern, n, c["tool"], json.dumps(args)))
+                        return 0
     except Exception as e:
         out("oracle %s: FAIL - %s" % (scenario, e))
         return 1
@@ -749,6 +757,8 @@ def run(a, cfg):
     flag, act = scen.get("flag"), scen.get("activation") or {}
     gt_service = (scen.get("ground_truth") or {}).get("service", "")
     signal_re = scen.get("signal_regex") or ""
+    # A slow-building fault can set signal_wait_s; the default is 48 polls of 10 s.
+    poll_max = max(1, int(scen.get("signal_wait_s", TRACE_POLL_MAX * TRACE_POLL_SLEEP)) // TRACE_POLL_SLEEP)
     if not flag:
         return die("scenario %s: no 'flag' field" % a.scenario)
     if act.get("field") != "defaultVariant":
@@ -1029,7 +1039,7 @@ def run(a, cfg):
                                                     paint(DIM, "(FLIP_SCRIPT on stdin sets flags.%s.defaultVariant)" % flag))),
                 ("2", "confirm via OFREP: POST %s" % ofrep_url(cfg, flag)),
                 ("3", "poll up to %d x %ds for >= %d %s traces matching /%s/ since the flip: GET %s/api/traces?service=%s"
-                 % (TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT, gt_service, signal_re, config.jaeger_base(cfg), gt_service)),
+                 % (poll_max, TRACE_POLL_SLEEP, TRACE_MIN_COUNT, gt_service, signal_re, config.jaeger_base(cfg), gt_service)),
                 ("3b", "leak scan under the fault, then %s" % ("bench.py oracle %s" % a.scenario if any_tools else "no oracle (no arm has tools)")),
                 ("4", "each cell, e.g.: %s" % shlex.join(argv)),
                 ("5", "restore the pristine flag file: %s: %s" % (fixture_where(cfg), restore_cmd)),
@@ -1068,18 +1078,18 @@ def run(a, cfg):
         # leaves matching traces behind that would satisfy the wait instantly.
         flip_us, fault["flip_utc"] = now_us(), utc()
         sig = re.compile(signal_re, re.I)
-        for i in range(1, TRACE_POLL_MAX + 1):
+        for i in range(1, poll_max + 1):
             try:
                 fault["signal_traces_seen"] = sum(1 for t in traces(cfg, gt_service, flip_us, now_us(), 50, 30) if sig.search(json.dumps(t)))
-                log.detail("bench: poll %d/%d: %d matching traces" % (i, TRACE_POLL_MAX, fault["signal_traces_seen"]))
+                log.detail("bench: poll %d/%d: %d matching traces" % (i, poll_max, fault["signal_traces_seen"]))
             except Exception as e:
-                log.detail("bench: poll %d/%d: Jaeger query failed: %s" % (i, TRACE_POLL_MAX, e))
+                log.detail("bench: poll %d/%d: Jaeger query failed: %s" % (i, poll_max, e))
             if fault["signal_traces_seen"] >= TRACE_MIN_COUNT:
                 break
-            if i < TRACE_POLL_MAX:
+            if i < poll_max:
                 sleep(TRACE_POLL_SLEEP)
         if fault["signal_traces_seen"] < TRACE_MIN_COUNT:
-            return die("ABORT - never saw %d matching traces after %d polls" % (TRACE_MIN_COUNT, TRACE_POLL_MAX))
+            return die("ABORT - never saw %d matching traces after %d polls" % (TRACE_MIN_COUNT, poll_max))
         log.detail("bench: fault confirmed live")
         log.check(True, "%d traces match the signal after %s" % (fault["signal_traces_seen"], dur(time.monotonic() - t_flip)))
         # The worst leaks only exist while a fault is active (an event saying variant=on).

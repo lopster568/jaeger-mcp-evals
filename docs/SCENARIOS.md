@@ -25,7 +25,8 @@ Keys, from `harness/scenarios/paymentFailure.json`:
 - `oracle`: required non-empty list of `{tool, arguments}` MCP calls that
   `bench.py oracle` runs in order against the live fixture, proving the served
   tools reach the signal; an argument `"$trace_id"` expands to one call per trace
-  id seen in an earlier call's output.
+  id seen in an earlier call's output, and `"$span_id"` to one call per span id that
+  earlier calls for the same trace printed (get_span_details takes at most 20 ids).
 - `notes`: free text; `score.py` never reads it.
 
 ## The evidence traces

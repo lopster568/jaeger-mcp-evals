@@ -1,0 +1,11 @@
+{
+ "scenario": "recommendationCacheFailure",
+ "service_queried": "recommendation",
+ "lookback": "10m",
+ "traces_checked": 51,
+ "signal_regex": "demo\\.product\\.count\"(?:,\\s*\"type\":\\s*\"int64\",\\s*\"value\")?:\\s*\\d{3,}",
+ "signal_present": false,
+ "checked_utc": "2026-09-27T04:55:55Z",
+ "flag_state": "OFREP variant off and flag file equal to pristine at check time; window ended before the flip at 2026-09-27T04:57:26Z",
+ "note": "demo.product.count was 10 (the catalog size) on every get_product_list span in the window, and on all 287 in the hour before it"
+}
