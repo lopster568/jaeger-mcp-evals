@@ -33,6 +33,7 @@ import argparse
 import glob
 import gzip
 import hashlib
+import http.server
 import io
 import json
 import math
@@ -48,6 +49,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -397,7 +399,7 @@ def arm_row(arm, scored, n):
     med = lambda k: (lambda xs: round(statistics.median(xs), 2) if xs else None)(
         [s.get(k) for s in ss if isinstance(s.get(k), (int, float))])
     tool_names = sorted({t for s in ss for t in (s.get("call_sequence") or [])} - {"read_skill"})
-    r = {k: sum(s.get("verdict") == k for s in ss) for k in ("PASS", "PARTIAL", "FAIL", "ABSTAIN")}
+    r = {k: sum(s.get("verdict") == k for s in ss) for k in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID")}
     r.update(arm=arm, n=n, ERROR=n - len(ss), stops=stops(ss), calls=med("tool_calls"), steps=med("steps_to_evidence"),
              chars=med("tool_output_chars"), call_errors=sum(s.get("call_errors") or 0 for s in ss),
              rs_att=sum(bool(s.get("read_skill_attempted")) for s in ss),
@@ -413,17 +415,20 @@ def results(scenario, rows, out, detail=lambda m: None):
     code, warn = 0, []
     for r in rows:
         n = r["n"]
-        detail("%s: n=%d PASS=%d PARTIAL=%d FAIL=%d ABSTAIN=%d ERROR=%d stops=%s median_tool_calls=%s "
+        detail("%s: n=%d PASS=%d PARTIAL=%d FAIL=%d ABSTAIN=%d ERROR=%d INVALID=%d stops=%s median_tool_calls=%s "
                "median_steps_to_evidence=%s median_tool_output_chars=%s total_call_errors=%d read_skill_attempted=%d/%d "
-               "read_skill_succeeded=%d/%d" % (r["arm"], n, r["PASS"], r["PARTIAL"], r["FAIL"], r["ABSTAIN"], r["ERROR"],
+               "read_skill_succeeded=%d/%d" % (r["arm"], n, r["PASS"], r["PARTIAL"], r["FAIL"], r["ABSTAIN"], r["ERROR"], r["INVALID"],
                                                r["stops"], r["calls"], r["steps"], r["chars"], r["call_errors"],
                                                r["rs_att"], n, r["rs_ok"], n))
-        detail("band %s/%s: n=%d passes=%d pass_rate=%.2f%s ERROR=%d stops=%s read_skill_attempted=%d/%d "
+        detail("band %s/%s: n=%d passes=%d pass_rate=%.2f%s ERROR=%d INVALID=%d stops=%s read_skill_attempted=%d/%d "
                "read_skill_succeeded=%d/%d tools=%s" % (
                    scenario, r["arm"], n, r["PASS"], r["PASS"] / n if n else 0.0,
-                   " ci95=[%.2f,%.2f]" % wilson(r["PASS"], n) if n else "", r["ERROR"], r["stops"], r["rs_att"], n,
+                   " ci95=[%.2f,%.2f]" % wilson(r["PASS"], n) if n else "", r["ERROR"], r["INVALID"], r["stops"], r["rs_att"], n,
                    r["rs_ok"], n, ",".join("%s:%d" % kv for kv in r["tools"].items()) or "-"))
         warn += ["WARNING: %s: %s compaction event(s) in stream.jsonl" % c for c in r["compacted"]]
+        if r["INVALID"]:
+            warn.append("WARNING: %s: %d/%d runs INVALID (sandbox check failed, see sandbox_violations); never a pass"
+                        % (r["arm"], r["INVALID"], n))
         if r["compacted"]:
             # A warning, not a failure: the rate stands, but a compacted run's
             # context numbers are not comparable with an uncompacted one's.
@@ -436,8 +441,9 @@ def results(scenario, rows, out, detail=lambda m: None):
         note += "; " + paint(YELLOW, "below certification threshold (10); rank only")
     out("\n" + paint(BOLD_CYAN, "Results") + "  (" + note + ")")
     num = lambda x: "-" if x is None else format(int(x) if x == int(x) else x, ",")
-    head = ("arm", "pass", "partial", "fail", "abstain", "err", "pass rate", "95% CI", "calls", "output chars")
+    head = ("arm", "pass", "partial", "fail", "abstain", "err", "invalid", "pass rate", "95% CI", "calls", "output chars")
     cells = [(r["arm"], "%d/%d" % (r["PASS"], r["n"]), str(r["PARTIAL"]), str(r["FAIL"]), str(r["ABSTAIN"]), str(r["ERROR"]),
+              str(r["INVALID"]),
               "%.2f" % (r["PASS"] / r["n"]) if r["n"] else "-",
               "[%.2f, %.2f]" % wilson(r["PASS"], r["n"]) if r["n"] else "-", num(r["calls"]), num(r["chars"])) for r in rows]
     w = [max(map(len, col)) for col in zip(head, *cells)]
@@ -447,7 +453,7 @@ def results(scenario, rows, out, detail=lambda m: None):
         xs = pad(xs)
         if r["n"]:
             rate = r["PASS"] / r["n"]
-            xs[6] = paint(GREEN if rate == 1 else BOLD_RED if rate == 0 else YELLOW, xs[6])
+            xs[7] = paint(GREEN if rate == 1 else BOLD_RED if rate == 0 else YELLOW, xs[7])
         out("  " + "  ".join(xs))
         out("    tools used: " + (", ".join("%s %d" % kv for kv in r["tools"].items()) or "none"))
         extra = (["steps to evidence %s (median)" % num(r["steps"])] if r["steps"] is not None else []) + \
@@ -551,7 +557,7 @@ class Log:
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 BOLD_CYAN, GREEN, BOLD_RED, YELLOW, MAGENTA, CYAN, DIM = "1;36", "32", "1;31", "33", "35", "36", "2"
-VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BOLD_RED, "ABSTAIN": MAGENTA}
+VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BOLD_RED, "INVALID": BOLD_RED, "ABSTAIN": MAGENTA}
 
 
 def use_color(stream):
@@ -578,6 +584,66 @@ def shown(path):
 
 def dur(s):
     return "%dm%02ds" % divmod(int(s), 60) if s >= 60 else "%ds" % int(s)
+
+
+def write_mcp_config(path, mcp_url):
+    """The cell's mcp.json: the real, host-including URL (never a record file), or no server."""
+    servers = {"jaeger": {"type": "http", "url": mcp_url}} if mcp_url else {}
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"mcpServers": servers}, separators=(",", ":")))
+
+
+MEMORY_MARKERS = ("CLAUDE.md", "# CLAUDE", "auto-memory", "MEMORY.md")
+PROBE_TIMEOUT_S = 90
+
+
+def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
+    """Run a trial's CLI argv against a server on 127.0.0.1 that keeps the first POST body in memory
+    and answers 400, so no model is called. Returns (problems, tool names sent). The body is never
+    written anywhere: with a claude.ai login it carries the account's email."""
+    first = []
+
+    class Probe(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            if not first:
+                first.append(body)
+            reply = b'{"type":"error","error":{"type":"invalid_request_error","message":"sandbox probe"}}'
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Probe)
+    threading.Thread(target=srv.serve_forever, args=(0.05,), daemon=True).start()
+    try:
+        with tempfile.TemporaryDirectory() as work:
+            try:
+                subprocess.run(argv + ["--no-session-persistence"], cwd=work, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout,
+                               env=dict(env, ANTHROPIC_BASE_URL="http://127.0.0.1:%d" % srv.server_address[1]))
+            except subprocess.TimeoutExpired:
+                pass  # subprocess.run has killed it; judge whatever request arrived
+            except OSError as e:
+                return ["could not start %s: %s" % (argv[0], e)], []
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    try:
+        req = json.loads(first[0])
+        sent = req.get("tools") or []
+        names = [str(t.get("name")) for t in sent]
+    except (IndexError, ValueError, AttributeError):
+        return ["no model request with a JSON body reached the probe within %ds" % timeout], []
+    problems = [] if sorted(names) == sorted(expected) else ["tools sent %s, expected %s" % (sorted(names), sorted(expected))]
+    problems += ["server-side tool %s (type %s)" % (t.get("name"), t["type"]) for t in sent if "type" in t]
+    text = json.dumps([req.get("system"), req.get("messages")], ensure_ascii=False)
+    problems += ["memory marker %r in the request" % m for m in MEMORY_MARKERS if m in text]
+    return problems, names
 
 
 def claude_argv(a, prompt_file, mcp_config):
@@ -784,7 +850,7 @@ def run(a, cfg):
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
-           "client_version": None}
+           "client_version": None, "sandbox_probe": None}
     if a.client == "api" and a.provider == "openai":
         log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
         if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
@@ -888,10 +954,7 @@ def run(a, cfg):
             f = f if os.path.isfile(f) else None
         desc[arm] = {"file": repo_relpath(f) if f else None, "sha256": sha256_file(f) if f else None,
                      "check": "compared" if f else "recorded_only" if tools_for[arm] else "no_tools", "path": f}
-    if a.dry_run:
-        log.detail("pre-flight: DRY RUN - skipped the tools/list capture and description check")
-        log("  " + paint(DIM, "skip  tools/list capture and description check (dry run)"))
-    elif not any_tools:
+    if not any_tools:
         log.detail("pre-flight: no arm here has tools - no MCP server configured; tools/list capture, description check and oracle skipped")
         log("  " + paint(DIM, "skip  no arm here has tools: tools/list, description check and oracle"))
     else:
@@ -911,6 +974,24 @@ def run(a, cfg):
             if tools.report(tool_list, tools.expected_descriptions(load_json(desc[arm]["path"])), log.detail):
                 return die("ABORT - the fixture is not serving the pre-registered tool descriptions for arm %r" % arm)
             log.check(True, "arm %s: descriptions match %s" % (arm, os.path.basename(desc[arm]["file"])))
+
+    if a.client == "cli":
+        # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
+        log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+        probe = {"result": "PASS", "tools": {}}
+        for arm in arms:
+            expected = [score.VERDICT_TOOL] + ([score.JAEGER_PREFIX + t["name"] for t in tool_list] if tools_for[arm] else [])
+            with tempfile.TemporaryDirectory() as tmp:
+                write_mcp_config(os.path.join(tmp, "mcp.json"), mcp_url if tools_for[arm] else None)
+                problems, probe["tools"][arm] = sandbox_probe(claude_argv(a, prompt_file[arm], os.path.join(tmp, "mcp.json")),
+                                                              env, expected)
+            for m in problems:
+                log.detail("sandbox probe %s: FAIL - %s" % (arm, m))
+            probe["result"] = "FAIL" if problems else probe["result"]
+        pre["sandbox_probe"] = probe
+        if not log.check(probe["result"] == "PASS", "sandbox probe: the CLI sends only its verdict tool and the Jaeger tools"):
+            return die("ABORT - the sandbox probe failed (see above); the flag was not touched")
 
     log.detail("== pre-flight: container count (need >= %s) ==" % cfg["MIN_CONTAINERS"])
     r = fixture_sh(cfg, "docker ps -q | wc -l")
@@ -1231,11 +1312,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
         common = dict(common, mcp_endpoint=None, tools_list_sha256=None, tools_count=None)
         mcp_url = None
     mcp_path = os.path.join(trial, "mcp.json")
-    with open(mcp_path, "w", encoding="utf-8") as f:
-        # The real, host-including URL: mcp.json drives the live client connection and is
-        # never one of the copied record files (RECORD_FILES), so it may carry FIXTURE_HOST.
-        servers = {"jaeger": {"type": "http", "url": mcp_url}} if mcp_url else {}
-        f.write(json.dumps({"mcpServers": servers}, separators=(",", ":")))
+    write_mcp_config(mcp_path, mcp_url)
     argv = client_argv(a, arm, prompt_file[arm], mcp_path, trial)
     prompt_sha = sha256_file(prompt_file[arm])
     shown = recorded_argv(argv, bdir, trial)
@@ -1381,7 +1458,7 @@ def verify(cfg):
             if row.get("dir"):
                 stored[os.path.realpath(os.path.join(b, row["dir"]))] = row.get("verdict")
     cols = ["scenario", "arm", "dir", "verdict", "tool_calls", "call_errors", "steps_to_evidence", "tool_output_chars", "cost", "compaction"]
-    rows, mismatches = [], []
+    rows, mismatches, invalid = [], [], []
     for p in sorted(glob.glob(os.path.join(runs, "**", "stream.jsonl"), recursive=True)):
         d = os.path.dirname(p)
         mp = os.path.join(d, "meta.json")
@@ -1394,6 +1471,8 @@ def verify(cfg):
         key = os.path.realpath(d)
         if key in stored and stored[key] != s.get("verdict"):
             mismatches.append("verify: MISMATCH %s: stored verdict %s, re-scored %s" % (os.path.relpath(d, runs), stored[key], s.get("verdict")))
+        if s.get("verdict") == "INVALID":
+            invalid.append("verify: INVALID %s: %s" % (os.path.relpath(d, runs), " ".join(s.get("sandbox_violations") or [])))
         rows.append({"scenario": s.get("scenario_used"), "arm": arm, "dir": os.path.relpath(d, runs), "verdict": s.get("verdict"),
                      "tool_calls": s.get("tool_calls"), "call_errors": s.get("call_errors"),
                      "steps_to_evidence": s.get("steps_to_evidence"), "tool_output_chars": s.get("tool_output_chars"),
@@ -1407,7 +1486,7 @@ def verify(cfg):
                       % (r["dir"], r["compaction"]))
     else:
         print("verify: no stream.jsonl under %s (RUNS_DIR)" % runs)
-    for line in mismatches:
+    for line in mismatches + invalid:
         print(line)
     idx = os.path.join(RECORDS, "INDEX.md")
     current = read_text(idx) if os.path.isfile(idx) else ""
@@ -1416,7 +1495,9 @@ def verify(cfg):
         print("verify: FAIL - %s differs from what `bench.py index` generates; run it and commit the result" % idx)
     if mismatches:
         print("verify: FAIL - %d stored verdict(s) in scores.jsonl differ from a re-score of the raw files" % len(mismatches))
-    if stale or mismatches:
+    if invalid:
+        print("verify: FAIL - %d run(s) INVALID: the sandbox check failed, so no result from their batch stands" % len(invalid))
+    if stale or mismatches or invalid:
         return 1
     print("verify: %s matches the batch records" % idx)
     return 0
@@ -1447,7 +1528,7 @@ def index_text(runs):
             ", ".join("%s %d" % (arm, n[arm]) for arm in arms),
             "%s %s" % (m["client"], m["model_requested"]), ", ".join(observed) or NOT_RECORDED, m["effort"],
             m["client_version_pre"] or NOT_RECORDED, m["jaeger_image"], m["experiment"]["name"],
-            ", ".join("%s %s" % (arm, "/".join(str(sum(1 for s in by[arm] if s.get("verdict") == v)) for v in ("PASS", "PARTIAL", "FAIL", "ABSTAIN"))) for arm in arms),
+            ", ".join("%s %s" % (arm, "/".join(str(sum(1 for s in by[arm] if s.get("verdict") == v)) for v in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID"))) for arm in arms),
             ", ".join("%s %d" % (arm, band_code(n[arm], sum(1 for s in by[arm] if s.get("verdict") == "PASS"))) for arm in arms),
         ])
     rows.sort(key=lambda r: (r[1], r[0]))
@@ -1463,7 +1544,7 @@ def index_text(runs):
     scen_head = ["scenario", "deterministic", "readiness", "batches recorded", "cells scored"]
 
     head = ["batch", "date", "scenario", "arms (cells)", "client and model requested", "model observed", "effort",
-            "client version", "jaeger image", "experiment", "PASS/PARTIAL/FAIL/ABSTAIN", "band"]
+            "client version", "jaeger image", "experiment", "PASS/PARTIAL/FAIL/ABSTAIN/INVALID", "band"]
     lines = ["# Run index", "",
              "Generated by `harness/bench.py index` from each batch's manifest.json, cells.jsonl and scores.jsonl.",
              "Do not edit by hand: `harness/bench.py verify` fails when this file differs from what it would generate.",

@@ -21,7 +21,8 @@ judge.py:
       - median tool_output_chars (the drop percentage in
         tool_output_chars_median_drop_pct_min is measured against the
         baseline arm's median, from the baseline batch)
-      - PASS count, using score.py's strict verdict == "PASS"
+      - PASS count, using score.py's strict verdict == "PASS"; INVALID rows (sandbox check
+        failed) stay in n, are never a PASS, and each arm with any gets a WARNING line
 
 Prints one PASS/FAIL line per threshold (per test arm, if there is more
 than one), then a final verdict line. A judged pair (exit 0 or 1) also writes those
@@ -65,6 +66,7 @@ def arm_metrics(rows, arm, tool_names):
         "tool_used": tool_used,
         "chars_median": median([r.get("tool_output_chars") for r in arm_rows]),
         "pass_count": sum(1 for r in arm_rows if r.get("verdict") == "PASS"),
+        "invalid": sum(1 for r in arm_rows if r.get("verdict") == "INVALID"),
     }
 
 
@@ -133,6 +135,10 @@ def judge(baseline_batch_dir, variant_batch_dir):
         if m["n"] == 0:
             lines.append(f"judge: WARNING - no rows for arm '{arm}' found in {variant_batch_dir}")
         prefix = f"{arm}: " if len(test_arms) > 1 else ""
+        for label, mm in (("baseline", baseline_metrics), ("variant", m)):
+            if mm["invalid"]:
+                lines.append(f"judge: WARNING - {prefix}{mm['invalid']} {label} row(s) INVALID (sandbox check failed), "
+                             "counted in n and never as a PASS")
 
         def check(name, ok, measured, op, required):
             results.append(ok)

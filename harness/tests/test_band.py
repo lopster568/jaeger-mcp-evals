@@ -110,7 +110,7 @@ class TestBand(unittest.TestCase):
         lines = out.splitlines()
         head = next(l for l in lines if l.lstrip().startswith("arm "))
         row = lines[lines.index(head) + 1]
-        self.assertEqual(row.split(), ["noskill", "6/10", "0", "4", "0", "0", "0.60", "[0.31,", "0.83]", "1", "19"])
+        self.assertEqual(row.split(), ["noskill", "6/10", "0", "4", "0", "0", "0", "0.60", "[0.31,", "0.83]", "1", "19"])
         self.assertEqual(len(row), len(head))
 
     def test_errors_and_stops_counted_apart(self):
@@ -118,7 +118,7 @@ class TestBand(unittest.TestCase):
                 [INIT, CALL, RESULT]]
         _, out = run_band(make_batch(self.tmp, runs))
         self.assertIn("n=4 passes=1", out)
-        self.assertIn("ERROR=1 stops=error_max_turns:1,no_result:1", out)
+        self.assertIn("ERROR=1 INVALID=0 stops=error_max_turns:1,no_result:1", out)
 
     def test_tools_field_counts_runs_per_tool_excluding_read_skill(self):
         runs = [[INIT, CALL, RESULT, CALL_SEARCH, RESULT_SEARCH, PASS_FINAL],
@@ -129,7 +129,7 @@ class TestBand(unittest.TestCase):
 
     def test_no_errors_no_stops(self):
         _, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 2))
-        self.assertIn("ERROR=0 stops=-", out)
+        self.assertIn("ERROR=0 INVALID=0 stops=-", out)
 
     def test_missing_cells_is_2(self):
         out = []

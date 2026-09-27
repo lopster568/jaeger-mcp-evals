@@ -39,6 +39,7 @@ FLAGS = {"flags": {
 DESC_CHANGE = json.loads(pathlib.Path(HARNESS_DIR, "experiments", "descriptions", "desc-change.json").read_text())
 VARIANT_IMAGE = "jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981"
 STOCK_IMAGE = "quay.io/jaegertracing/jaeger:2.20.0"
+SYSTEM_NAMES = ("OpenTelemetry Demo", "otel demo", "opentelemetry-demo", "astronomy shop")
 RUN = {"client": "cli", "provider": None, "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2,
        "n_per_arm": 1, "seed": None}
 
@@ -65,11 +66,33 @@ case "$1 $2" in
 esac
 """
 CLAUDE = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, urllib.error, urllib.request
 if sys.argv[1:] == ["--version"]:
     print("2.1.282 (Claude Code)"); sys.exit(0)
 if sys.argv[1:] == ["--help"]:
     print(os.environ.get("FAKE_CLAUDE_HELP", "@FLAGS@")); sys.exit(0)
+if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one canned request, as the CLI would
+    mcp = json.load(open(sys.argv[sys.argv.index("--mcp-config") + 1]))
+    names = ["StructuredOutput"] + (["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors",
+                                     "get_trace_topology", "get_services")] if mcp["mcpServers"] else [])
+    tools, system, mode = [{"name": n, "input_schema": {}} for n in names], [{"type": "text", "text": "sys"}], os.environ.get("FAKE_PROBE")
+    if mode == "extra_tool":
+        tools.append({"name": "Bash", "input_schema": {}})
+    if mode == "server_tool":
+        tools.append({"type": "web_search_20250305", "name": "web_search"})
+    if mode == "memory":
+        system.append({"type": "text", "text": "Contents of /x/CLAUDE.md (project instructions)"})
+    with open(os.path.join(os.environ["FAKE_HOME"], "probe-calls.jsonl"), "a") as f:
+        f.write(json.dumps({"argv": sys.argv, "mcp": mcp, "cwd": os.getcwd()}) + "\\n")
+    body = {"model": "m", "system": system, "tools": tools,
+            "messages": [{"role": "user", "content": "userEmail probe-secret@example.com"}]}
+    if mode != "silent":
+        try:
+            urllib.request.urlopen(urllib.request.Request(os.environ["ANTHROPIC_BASE_URL"] + "/v1/messages?beta=true",
+                                                          json.dumps(body).encode(), {"Content-Type": "application/json"}))
+        except urllib.error.HTTPError:
+            sys.exit(1)
+    sys.exit(0)
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "claudecode": "CLAUDECODE" in os.environ,
                         "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir(".")}) + "\\n")
@@ -80,7 +103,8 @@ if os.environ.get("FAKE_JUNK"):
     print(json.dumps("not an event"))
 for e in [
     {"type": "system", "subtype": "init", "model": "claude-sonnet-5", "claude_code_version": "2.1.282",
-     "tools": ["StructuredOutput", "mcp__jaeger__get_trace_errors"], "skills": ["s1"], "agents": ["a1"]},
+     "tools": ["StructuredOutput"] + ["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")],
+     "mcp_servers": [{"name": "jaeger", "status": "connected"}], "skills": ["s1"], "agents": ["a1"]},
     {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "mcp__jaeger__get_trace_errors", "input": {}}]}},
     {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "Payment request failed. Invalid token."}]}},
     {"type": "result", "subtype": os.environ.get("FAKE_STOP", "success"), "num_turns": 2, "total_cost_usd": 0.01, "duration_ms": 1000,
@@ -214,6 +238,12 @@ class BenchCase(unittest.TestCase):
         patcher = mock.patch.object(bench, "RECORDS", self.records)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # The batch tests run the recorded prompts (noskill, skill), which name the system under
+        # test; the leak gate itself is tested in test_leak_readiness.py.
+        words = [w for w in bench.score.leak_words(HARNESS_DIR) if w not in SYSTEM_NAMES]
+        patcher = mock.patch.object(bench.score, "leak_words", lambda harness_dir=None: words)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.demo = os.path.join(self.home, "otel-demo-3.0.0")
         os.makedirs(os.path.join(self.demo, "src", "flagd"))
         os.makedirs(os.path.join(self.demo, "overlay"))
@@ -329,7 +359,8 @@ class TestBatch(BenchCase):
             self.assertEqual(meta["arm"], c["arm"])
             self.assertEqual(meta["exit_code"], 0)
             self.assertEqual(meta["observed"], {"client_version": "2.1.282", "model": "claude-sonnet-5",
-                                                "tools": ["StructuredOutput", "mcp__jaeger__get_trace_errors"],
+                                                "tools": ["StructuredOutput"] + ["mcp__jaeger__" + n for n in (
+                                                    "get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")],
                                                 "skills": ["s1"], "agents": ["a1"], "compaction_events": 0})
             self.assertEqual(meta["client_version_pre"], "2.1.282 (Claude Code)")
             self.assertEqual(meta["jaeger_image"], STOCK_IMAGE)
@@ -371,7 +402,7 @@ class TestBatch(BenchCase):
         self.assertIn("pre-flight PASS", blog)
         self.assertEqual(m["scenario_version"], 1)
         self.assertEqual(m["preflight"]["oracle"], "PASS")
-        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 stops=- ", blog)
+        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 stops=- ", blog)
         # One stream: everything a human reads is on stderr, and batch.log carries every screen line too.
         self.assertEqual(self.out, "")
         for line in ("ok    scenario paymentFailure ready", "[1/2] ", "tools used: get_trace_errors 1", "Records "):
@@ -555,15 +586,15 @@ class TestBatch(BenchCase):
     def test_summary_counts_errors_and_stops(self):
         self.assertEqual(self.run_batch(1, FAKE_STOP="error_max_turns"), 0, self.err)
         blog = read(os.path.join(self.batch_dir(), "batch.log"))
-        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 stops=error_max_turns:1 ", blog)
-        self.assertIn("ERROR=0 stops=error_max_turns:1 read_skill_attempted", blog)
+        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 stops=error_max_turns:1 ", blog)
+        self.assertIn("ERROR=0 INVALID=0 stops=error_max_turns:1 read_skill_attempted", blog)
         self.assertIn("stops error_max_turns:1", self.err)
         shutil.rmtree(self.runs)
         self.assertEqual(self.run_batch(1, FAKE_JUNK="1"), 0, self.err)
         blog = read(os.path.join(self.batch_dir(), "batch.log"))
-        self.assertIn("noskill: n=1 PASS=0 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=1 stops=- ", blog)
+        self.assertIn("noskill: n=1 PASS=0 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=1 INVALID=0 stops=- ", blog)
         self.assertIn("band paymentFailure/noskill: n=1 passes=0", blog)
-        self.assertIn("ERROR=1 stops=- read_skill_attempted", blog)
+        self.assertIn("ERROR=1 INVALID=0 stops=- read_skill_attempted", blog)
         self.assertRegex(self.err, r"noskill #0 +ERROR +- .*unscorable")
 
     def test_local_mode_runs_without_ssh(self):
@@ -1150,6 +1181,65 @@ class TestSoak(BenchCase):
         logs = glob.glob(os.path.join(self.runs, "paymentFailure", "soak-*.log"))
         self.assertEqual(len(logs), 1)
         self.assertIn("payment_calls_180s=5", read(logs[0]))
+
+
+class TestSandboxProbe(BenchCase):
+    """Pre-flight's sandbox probe: the trial's own claude argv against a local 400 server."""
+    SERVED = ["StructuredOutput"] + ["mcp__jaeger__" + n for n in
+                                     ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")]
+
+    def probes(self):
+        p = os.path.join(self.home, "probe-calls.jsonl")
+        return bench.read_jsonl(p) if os.path.isfile(p) else []
+
+    def test_pass_records_result_and_tool_names_and_runs_the_trial_argv(self):
+        arms = {"noskill": arm("noskill"), "off": arm("noskill", tools=False)}
+        self.assertEqual(self.run_batch(1, arms=arms, ANTHROPIC_API_KEY="sk-test"), 0, self.err)
+        pre = load(os.path.join(self.batch_dir(), "preflight.json"))
+        self.assertEqual(pre["sandbox_probe"], {"result": "PASS", "tools": {"noskill": self.SERVED, "off": ["StructuredOutput"]}})
+        probes = {bool(p["mcp"]["mcpServers"]): p for p in self.probes()}
+        url = "http://127.0.0.1:%s/jaeger/ui/api/ai/mcp/" % self.port
+        self.assertEqual(probes[True]["mcp"], {"mcpServers": {"jaeger": {"type": "http", "url": url}}})
+        trial = self.calls()[0]["argv"]  # both arms use prompt noskill: argvs differ only in --mcp-config
+        self.assertEqual(probes[True]["argv"][-1], "--no-session-persistence")
+        drop = lambda argv: [x for i, x in enumerate(argv) if i == 0 or argv[i - 1] != "--mcp-config"]
+        self.assertEqual(drop(probes[True]["argv"][1:-1]), drop(trial[1:]))
+        self.assertNotIn(self.home, probes[True]["cwd"])
+        for root in (self.runs, self.records):
+            for dirpath, _, files in os.walk(root):
+                for f in files:
+                    self.assertNotIn("probe-secret", read(os.path.join(dirpath, f)), f)
+
+    def test_failures_abort_before_the_flag(self):
+        for mode, why in (("extra_tool", "tools sent"), ("server_tool", "server-side tool web_search"),
+                          ("memory", "memory marker 'CLAUDE.md'"), ("silent", "no model request")):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.run_batch(1, FAKE_PROBE=mode), 1, self.err)
+                self.assertIn("sandbox probe", self.err)
+                self.assertIn(why, self.err)
+                self.assertNotIn("probe-secret", self.err)
+                self.assertEqual(self.calls(), [])
+                self.assertEqual(self.flag_file(), self.pristine())
+                self.assertNotIn("python3 -", read(os.path.join(self.home, "ssh.log")))
+                self.assertFalse(os.path.exists(self.runs))
+
+    def test_dry_run_probes_too(self):
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
+        self.assertEqual(len(self.probes()), 2)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.run_batch(1, "--dry-run", FAKE_PROBE="extra_tool"), 1, self.err)
+
+    def test_api_and_codex_are_not_probed(self):
+        self.assertEqual(self.run_batch(1, run={"client": "codex", "model": "gpt-t"}), 0, self.err)
+        self.assertIsNone(load(os.path.join(self.batch_dir(), "preflight.json"))["sandbox_probe"])
+        self.assertEqual(self.probes(), [])
+
+    def test_a_hung_cli_is_killed_at_the_timeout(self):
+        t0 = bench.time.monotonic()
+        problems, names = bench.sandbox_probe([sys.executable, "-c", "import time; time.sleep(60)"], dict(os.environ), [], timeout=1)
+        self.assertLess(bench.time.monotonic() - t0, 10)
+        self.assertEqual((names, len(problems)), ([], 1))
+        self.assertIn("no model request", problems[0])
 
 
 if __name__ == "__main__":

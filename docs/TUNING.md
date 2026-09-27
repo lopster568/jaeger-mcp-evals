@@ -26,6 +26,8 @@ Tune a run by editing its experiment file, `harness/experiments/<name>.json` (do
 
 Numbers do not compare across clients or providers: `num_turns` and cost are counted differently by each.
 
+With the cli client on a claude.ai login the CLI adds the account's email to the model's context (seen in the sandbox probe's captured request, 2026-09-27); it is the same in every arm, and API-key auth avoids it.
+
 Arms compared with each other, and batches compared across dates, must run at the same effort. An unset effort is the CLI's own default and is not recorded, so always set `run.effort`.
 
 The model these runs use rejects a temperature parameter and the CLI has no flag for it; the substitutes are effort, the model id and the trial count.

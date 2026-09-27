@@ -43,7 +43,8 @@ class TestVerifyCrossCheck(unittest.TestCase):
         final = {"type": "result", "subtype": "success", "result": "x", "usage": {}, "structured_output": {
             "root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
             "cascading": [{"service": "checkout"}], "abstain": False}}
-        pathlib.Path(t, "stream.jsonl").write_text(json.dumps(final) + "\n")
+        init = {"type": "system", "subtype": "init", "tools": [], "mcp_servers": [{"name": "jaeger"}]}
+        pathlib.Path(t, "stream.jsonl").write_text(json.dumps(init) + "\n" + json.dumps(final) + "\n")
         pathlib.Path(t, "meta.json").write_text(json.dumps({"scenario": "paymentFailure", "arm": "noskill"}))
         pathlib.Path(b, "cells.jsonl").write_text(json.dumps({"arm": "noskill", "out_dir": "0-noskill"}) + "\n")
         pathlib.Path(b, "scores.jsonl").write_text(json.dumps({"dir": "0-noskill", "arm": "noskill", "verdict": stored_verdict}) + "\n")

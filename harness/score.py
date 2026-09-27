@@ -11,7 +11,8 @@ Grading is an equality/membership check against the scenario, not a regex over p
 - cascade: PASS/FAIL against cascade_rule.
 - abstained: verdict.abstain, or mechanism == cannot_determine.
 - verdict: PASS only if locus PASS and mechanism PASS; PARTIAL if locus PASS or
-  PARTIAL but mechanism is not PASS; ABSTAIN if abstained; FAIL otherwise.
+  PARTIAL but mechanism is not PASS; ABSTAIN if abstained; FAIL otherwise; INVALID,
+  whatever the answer, when the sandbox check fails (sandbox_ok false).
 A run with no valid structured_output (schema-invalid answer, max turns, crash)
 scores locus, mechanism and cascade MISSING and verdict FAIL; verdict_source is
 "structured" or null so the two cases stay apart.
@@ -144,6 +145,65 @@ def check_abstain_structured(verdict):
 
 
 JAEGER_PREFIX = "mcp__jaeger__"
+VERDICT_TOOL = "StructuredOutput"  # the CLI's own tool for the --json-schema answer
+# tool_result text for a name the client does not have: the CLI's, then agent_loop.py's
+REJECTED = ("No such tool available", "unknown tool: ")
+
+
+def tools_on(meta):
+    """False only for an arm with tools off (bench.py records its mcp_endpoint as null)."""
+    return meta.get("mcp_endpoint", "") is not None
+
+
+def jaeger_names(out_dir, meta, init_tools):
+    """The exact mcp__jaeger__ tool names this trial was meant to see: the batch's tools.json
+    (the pre-flight tools/list), none for an arm with tools off, else the init event's
+    mcp__jaeger__ names, else None (no list anywhere: any mcp__jaeger__ name counts)."""
+    if not tools_on(meta):
+        return set()
+    path = os.path.join(os.path.dirname(os.path.abspath(out_dir)), "tools.json")
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            return {JAEGER_PREFIX + t["name"] for t in json.load(f)}
+    if init_tools is not None:
+        return {t for t in init_tools if t.startswith(JAEGER_PREFIX)}
+    return None
+
+
+def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_tools):
+    """Violations of the trial's sandbox, as strings; empty means sandbox_ok. The init event
+    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (never for
+    api; codex lists no tools), and exactly one MCP server, jaeger (none for an arm with tools
+    off). Every tool_use must name an allowed tool; one the client refused (REJECTED) is
+    attempted_unknown_tool, any other executed_unknown_tool. codex_client's "error" items are
+    not tool calls."""
+    if init is None:
+        return ["no_init_event"]
+    out, verdict_tool = [], {VERDICT_TOOL} if client != "api" else set()
+    allowed = (allowed_jaeger or set()) | verdict_tool
+    if "tools" in init and allowed_jaeger is not None:
+        got = set(init["tools"] or [])
+        out += ["init_tool_extra:%s" % t for t in sorted(got - allowed)]
+        out += ["init_tool_missing:%s" % t for t in sorted((allowed_jaeger - got) | ({VERDICT_TOOL} - got if client == "cli" else set()))]
+    servers = [m.get("name") for m in init.get("mcp_servers") or [] if isinstance(m, dict)]
+    if servers != (["jaeger"] if with_tools else []):
+        out.append("mcp_servers:%s" % ",".join(map(str, servers)))
+    for c in all_calls:
+        name = c["name"]
+        if client == "codex" and name == "error":
+            continue
+        ok = name in allowed if allowed_jaeger is not None else name in verdict_tool or is_jaeger_name(name)
+        if not ok:
+            r = results_by_id.get(c["id"]) or {}
+            kind = "attempted_unknown_tool" if r.get("rejected") else "executed_unknown_tool"
+            out.append("%s:%s" % (kind, name))
+    return out
+
+
+def is_jaeger_name(name):
+    """A Jaeger MCP tool name when no exact list is known: the prefix, and never the verdict tool's
+    name under it (mcp__jaeger__StructuredOutput is a model's invention, refused by the CLI)."""
+    return name.startswith(JAEGER_PREFIX) and name != JAEGER_PREFIX + VERDICT_TOOL
 
 
 def is_compaction_event(event, raw_line):
@@ -166,8 +226,8 @@ def score(out_dir):
     """Read the raw files in out_dir and return (summary_dict, final_answer_text).
 
     Tool-call metrics (tool_calls, call_sequence, call_errors,
-    steps_to_evidence, tool_output_chars) are computed over calls whose
-    tool name starts with "mcp__jaeger__" only. The CLI delivers the
+    steps_to_evidence, tool_output_chars) are computed over calls to the
+    batch's Jaeger tools only (jaeger_names). The CLI delivers the
     structured verdict through an internal tool (e.g. "StructuredOutput")
     that is not a Jaeger MCP tool and must not be counted as investigation
     work; tool_result blocks are matched back to their tool_use by
@@ -183,9 +243,10 @@ def score(out_dir):
     raw_lines = [l for l in open(os.path.join(out_dir, "stream.jsonl")) if l.strip()]
     events = [json.loads(l) for l in raw_lines]
     compaction_events = sum(1 for e, l in zip(events, raw_lines) if is_compaction_event(e, l))
-    all_calls, results_by_id, final, model, tools = [], {}, None, None, []
+    all_calls, results_by_id, final, model, tools, init = [], {}, None, None, [], None
     for e in events:
         if e.get("type") == "system" and e.get("subtype") == "init":
+            init = init or e
             model = e.get("model")
             tools = [t for t in e.get("tools", []) if t.startswith("mcp__")]
         if e.get("type") == "assistant":
@@ -201,12 +262,16 @@ def score(out_dir):
                         "is_error": bool(b.get("is_error")),
                         "chars": len(text),
                         "signal": bool(signal.search(text)),
+                        "rejected": bool(b.get("is_error")) and any(m in text for m in REJECTED),
                     }
         if e.get("type") == "result":
             final = e
 
-    calls = [c for c in all_calls if c["name"].startswith(JAEGER_PREFIX)]
-    non_jaeger_tool_calls = [c["name"] for c in all_calls if not c["name"].startswith(JAEGER_PREFIX)]
+    allowed_jaeger = jaeger_names(out_dir, meta, init.get("tools") if init and "tools" in init else None)
+    is_jaeger = (lambda n: n in allowed_jaeger) if allowed_jaeger is not None else is_jaeger_name
+    calls = [c for c in all_calls if is_jaeger(c["name"])]
+    non_jaeger_tool_calls = [c["name"] for c in all_calls if not is_jaeger(c["name"])]
+    sandbox_violations = sandbox_check(init, all_calls, results_by_id, allowed_jaeger, meta.get("client"), tools_on(meta))
     results = [results_by_id[c["id"]] for c in calls if c["id"] in results_by_id]
 
     # read_skill directory-path failure: a read_skill call can be
@@ -236,7 +301,7 @@ def score(out_dir):
     else:
         locus = mechanism = cascade = "MISSING"
         abstained, mechanism_value = False, None
-    verdict = compute_verdict(locus, mechanism, abstained)
+    verdict = "INVALID" if sandbox_violations else compute_verdict(locus, mechanism, abstained)
     final_text = str((final or {}).get("result", "<none>"))
 
     prompt_path = os.path.join(out_dir, "prompt.txt")
@@ -276,6 +341,8 @@ def score(out_dir):
         "system_under_test": meta.get("system_under_test"),
         "effort": meta.get("effort"),
         "compaction_events": compaction_events,
+        "sandbox_ok": not sandbox_violations,
+        "sandbox_violations": sandbox_violations,
     }
     return summary, final_text
 
