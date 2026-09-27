@@ -2,7 +2,7 @@
 
 Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreachable); the pre-registered experiment desc-change-sep28 failed its thresholds on 2026-09-26 ([records/INDEX.md](records/INDEX.md), [records/desc-change-sep28/NOTES.md](records/desc-change-sep28/NOTES.md)).
 
-A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. With the `cli` client the Claude Code CLI starts with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
+A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. With the `cli` client the Claude Code CLI starts with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed; a free pre-flight probe checks what the CLI would send, and a trial whose stream shows any other tool scores INVALID. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
 
 ## Before you start
 

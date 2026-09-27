@@ -14,3 +14,9 @@ injected
 scenario
 ground-truth
 feature flag
+# The system under test by name (2026-09-27): a prompt that names it lets the agent recall
+# the demo's known faults instead of reading traces.
+OpenTelemetry Demo
+otel demo
+opentelemetry-demo
+astronomy shop

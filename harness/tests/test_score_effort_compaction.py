@@ -20,7 +20,8 @@ import score as score_mod  # noqa: E402
 # The init event of a real CLI 2.1.x stream lists "compact" and "autocompact"
 # among its slash_commands; a detector must not count that.
 INIT = {"type": "system", "subtype": "init", "model": "claude-test",
-        "tools": ["mcp__jaeger__get_trace_errors"],
+        "tools": ["mcp__jaeger__get_trace_errors", "mcp__jaeger__search_traces", "mcp__jaeger__read_skill"],
+        "mcp_servers": [{"name": "jaeger", "status": "connected"}],
         "slash_commands": ["autocompact", "clear", "compact", "config"]}
 CALL = {"type": "assistant", "message": {"content": [
     {"type": "tool_use", "id": "t1", "name": "mcp__jaeger__get_trace_errors", "input": {}}]}}

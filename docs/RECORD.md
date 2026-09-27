@@ -113,7 +113,19 @@ leak scan and oracle under the fault: `leak`, `readiness`, `containers`,
 `baseline_traces`, `fixture_leak_baseline`, `fixture_leak_under_fault`, `oracle`,
 `client`, `client_version` (PASS, FAIL or a count; null if not run; `oracle` stays null when no
 arm has tools, `client` unless `run.client` is api, `client_version` unless the experiment sets
-`run.client_version`).
+`run.client_version`), `sandbox_probe` (null unless `run.client` is cli).
+
+`sandbox_probe` is `{result, tools}`: `result` PASS or FAIL, `tools` the tool names each arm's
+CLI sent, keyed by arm. Before the flag is touched, and in `--dry-run` too since it is
+read-only and free, pre-flight runs each arm's exact trial argv (same `claude_argv`,
+an `mcp.json` pointing at the real Jaeger MCP endpoint, the trial's environment without API
+keys, a temporary working directory, plus `--no-session-persistence`) with
+`ANTHROPIC_BASE_URL` set to a server on 127.0.0.1 that keeps the first POST body in memory and
+answers 400, so no model is called. It fails when the request's `tools` are not exactly
+`StructuredOutput` plus that arm's Jaeger tools, when any tool has a `type` (a server-side
+tool), or when its system or messages text contains `CLAUDE.md`, `# CLAUDE`, `auto-memory` or
+`MEMORY.md`; any failure aborts the batch. The request itself is never written anywhere: on a
+claude.ai login it carries the account's email.
 
 `manifest.json`, written before the fault flip and rewritten after the leak scan
 under the fault; in this order:
@@ -153,7 +165,22 @@ not 0). A cell stopped by a signal still gets a line, with `failed` and
 `input_tokens_total`, `output_tokens`, `num_turns`, `cost_usd`, `duration_s`,
 `stop`, `locus`, `mechanism`, `mechanism_value`, `cascade`, `abstained`, `verdict`,
 `verdict_source`, `signal_leaked_in_prompt`, `system_under_test`, `effort`,
-`compaction_events`, `arm`. An unscorable cell is `{dir, error, arm}`.
+`compaction_events`, `sandbox_ok`, `sandbox_violations`, `arm`. An unscorable cell is
+`{dir, error, arm}`.
+
+`sandbox_ok` is true when `sandbox_violations` is empty. The allowed Jaeger tools are the
+batch's `tools.json` names prefixed `mcp__jaeger__` (none for an arm with `tools: false`; with
+no `tools.json`, the init event's `mcp__jaeger__` names). Each violation is a string
+`<kind>:<detail>`: `init_tool_extra` and `init_tool_missing` when the init event's `tools` is
+not exactly those names plus `StructuredOutput` (required for cli, refused for api; codex
+lists none); `mcp_servers` when the init event does not name exactly one server, `jaeger`
+(none for an arm with `tools: false`); `executed_unknown_tool` for a tool_use outside the
+allowed set; `attempted_unknown_tool` for one the client refused (`No such tool available`
+from the CLI, `unknown tool:` from the api loop); `no_init_event`. codex_client's `error`
+items are not tool calls. A refused name such as `mcp__jaeger__StructuredOutput` is never a
+Jaeger call. When `sandbox_ok` is false the verdict is INVALID, whatever the answer: `band`,
+the Results table and INDEX count it apart (like `err`), judge.py prints a WARNING line and
+never counts it as a PASS, and `bench.py verify` fails.
 
 `stop` is the `subtype` of the stream's final `result` event (`success`, else the
 client's reason such as `error_max_turns`; null with no result event). `band` and

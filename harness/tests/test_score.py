@@ -38,6 +38,7 @@ def build_run_dir_structured(root, verdict, scenario="paymentFailure", name="fak
             "type": "system",
             "subtype": "init",
             "model": "claude-test",
+            "mcp_servers": [{"name": "jaeger"}],
             "tools": ["mcp__jaeger__get_trace_errors"],
         },
         {
@@ -86,6 +87,7 @@ def build_run_dir_with_read_skill(root, read_skill_calls, name, scenario="paymen
             "type": "system",
             "subtype": "init",
             "model": "claude-test",
+            "mcp_servers": [{"name": "jaeger"}],
             "tools": ["mcp__jaeger__read_skill", "mcp__jaeger__get_trace_errors"],
         },
     ]
@@ -267,6 +269,7 @@ class TestScore(unittest.TestCase):
                 "type": "system",
                 "subtype": "init",
                 "model": "claude-test",
+                "mcp_servers": [{"name": "jaeger"}],
                 "tools": ["mcp__jaeger__get_trace_errors", "mcp__jaeger__search_traces"],
             },
             {

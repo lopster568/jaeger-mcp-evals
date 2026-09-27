@@ -31,6 +31,8 @@ processors:
       span:
         - 'resource.attributes["service.name"] == "flagd"'
         - 'IsMatch(name, "^flagd\\.evaluation\\.")'
+        # The load generator's own flag lookup span, feature_flag.evaluate (2026-09-27).
+        - 'IsMatch(name, "^feature_flag\\.")'
         # Found by harness/fixture-leak.py on the saved traces, both leaf client spans:
         # ad's OpenFeature provider span (scope name ends in ".flagd") and cart's HTTP
         # POST to flagd (server.address = flagd).
