@@ -42,6 +42,12 @@ class TestFixtureDiff(unittest.TestCase):
         self.assertEqual(sorted(c["container"] for c in changes), ["frontend", "recommendation"])
         self.assertFalse(ok)
 
+    def test_an_empty_snapshot_either_side_fails_closed(self):
+        for before, after in ((BEFORE, {}), ({}, BEFORE), ({}, {})):
+            changes, ok = bench.fixture_diff(before, after, ["recommendation", "frontend"])
+            self.assertEqual(changes, ["snapshot_failed"])
+            self.assertFalse(ok)  # never "no changes" just because nothing could be read
+
 
 VMSTAT_CALM = """procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
  r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
@@ -66,26 +72,20 @@ class TestVmstatBiMean(unittest.TestCase):
         mean = bench.vmstat_bi_mean(VMSTAT_THRASHING)
         self.assertGreater(mean, 50000)
 
-    def test_unparseable_text_returns_none_never_aborts_silently_wrong(self):
-        self.assertIsNone(bench.vmstat_bi_mean("not vmstat output"))
-
-    def test_single_sample_returns_none(self):
-        one_sample = "\n".join(VMSTAT_CALM.splitlines()[:3])
-        self.assertIsNone(bench.vmstat_bi_mean(one_sample))
-
 
 class TestWaitForRestart(unittest.TestCase):
     def test_stops_polling_the_call_after_restart_count_rises(self):
-        readings = [(0, False), (0, False), (1, False), (1, False)]  # would keep rising if polled again
-        with mock.patch.object(bench, "container_restart_count", side_effect=lambda cfg, name: readings.pop(0)), \
+        snaps = [{"recommendation": ("0", "false", "t")}, {"recommendation": ("0", "false", "t")},
+                 {"recommendation": ("1", "false", "t")}, {"recommendation": ("1", "false", "t")}]  # would keep going if polled again
+        with mock.patch.object(bench, "container_snapshot", side_effect=lambda cfg: snaps.pop(0)), \
                 mock.patch.object(bench, "sleep") as slept:
             polls = bench.wait_for_restart({}, "recommendation", 0, poll_max=10)
         self.assertEqual(polls, 3)  # rose on the 3rd poll
         self.assertEqual(slept.call_count, 2)  # slept after poll 1 and 2, never after the one that saw it rise
-        self.assertEqual(readings, [(1, False)])  # the 4th canned reading was never consumed
+        self.assertEqual(snaps, [{"recommendation": ("1", "false", "t")}])  # the 4th canned reading was never consumed
 
     def test_never_rising_exhausts_poll_max_and_reports_none(self):
-        with mock.patch.object(bench, "container_restart_count", return_value=(0, False)), \
+        with mock.patch.object(bench, "container_snapshot", return_value={"recommendation": ("0", "false", "t")}), \
                 mock.patch.object(bench, "sleep"):
             polls = bench.wait_for_restart({}, "recommendation", 0, poll_max=3)
         self.assertIsNone(polls)

@@ -60,8 +60,15 @@ cd "$FAKE_HOME" && exec bash -c "$cmd"
 DOCKER = """#!/bin/bash
 case "$1 $2" in
   "ps -q") for i in $(seq 1 "${FAKE_CONTAINERS:-22}"); do echo "c$i"; done ;;
+  "ps -aq") for i in $(seq 1 "${FAKE_CONTAINERS:-22}"); do echo "c$i"; done ;;
   "ps --format") echo "Up 2 hours (healthy)" ;;
   "inspect jaeger") echo "$FAKE_IMAGE sha256:feedface" ;;
+  "inspect -f")
+    # container_snapshot's one-liner: inspect -f '<fmt>' <id...>; a stable RestartCount and
+    # StartedAt for every id, so a trial's before/after snapshots match unless a test says otherwise.
+    shift 3
+    for id in "$@"; do echo "/$id 0 false 2026-01-01T00:00:00Z"; done
+    ;;
   *) exit 1 ;;
 esac
 """
