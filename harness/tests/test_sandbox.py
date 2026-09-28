@@ -127,6 +127,21 @@ class TestSandboxCheck(unittest.TestCase):
         s = self.score(call(J[0]) + [PASS_FINAL])
         self.assertEqual((s["sandbox_violations"], s["verdict"]), (["no_init_event"], "INVALID"))
 
+    def test_fixture_ok_false_is_invalid_without_touching_sandbox_ok(self):
+        # meta.json round-trips through JSON, so before/after come back as lists, not tuples.
+        changes = [{"container": "recommendation", "before": ["0", "false", "t0"], "after": ["1", "true", "t1"]}]
+        s = self.score([init()] + call(J[0]) + [PASS_FINAL], meta={"fixture_ok": False, "fixture_changes": changes})
+        self.assertEqual((s["verdict"], s["fixture_ok"], s["fixture_changes"]), ("INVALID", False, changes))
+        self.assertEqual((s["sandbox_ok"], s["sandbox_violations"]), (True, []))  # a fixture change is not a sandbox breach
+
+    def test_fixture_ok_true_scores_normally(self):
+        s = self.score([init()] + call(J[0]) + [PASS_FINAL], meta={"fixture_ok": True, "fixture_changes": []})
+        self.assertEqual((s["verdict"], s["fixture_ok"]), ("PASS", True))
+
+    def test_fixture_ok_absent_defaults_true(self):
+        s = self.score([init()] + call(J[0]) + [PASS_FINAL])
+        self.assertEqual((s["verdict"], s["fixture_ok"], s["fixture_changes"]), ("PASS", True, []))
+
 
 class TestInvalidCounted(unittest.TestCase):
     def test_band_counts_invalid_apart_and_never_as_pass(self):

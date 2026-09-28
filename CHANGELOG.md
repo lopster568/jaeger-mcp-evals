@@ -40,6 +40,26 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - paymentUnreachable: version 1 to 2, comparable: no. Same change; `expected_mechanism` and `accepted_mechanisms` (three menu values) removed.
 - recommendationCacheFailure: version 1 to 2, comparable: no. Same change; `expected_mechanism` removed.
 
+## 2026-09-28
+
+- Fixture stability: `run_cell` snapshots every container's RestartCount, OOMKilled and StartedAt
+  (`docker inspect`) before and after each trial; a change to a container not in the scenario's
+  new optional `expected_restarts` makes `fixture_ok` false and scores the trial INVALID, the
+  same path `sandbox_ok` false takes (docs/USAGE.md, Scoring). Pre-flight also runs `vmstat 5 3`
+  and `cat /proc/loadavg` once and aborts before the flag is touched if the host is thrashing
+  (mean `bi` over the non-first samples over 50000); load average is recorded only.
+- Signal gate: a scenario can set `signal_after_restart` (a container name) so a batch waits for
+  that container's first restart after the fault is confirmed live, before any trial starts,
+  bounded by the same poll budget as the signal wait.
+- recommendationCacheFailure: version 2 to 3, comparable: no. `mechanism_truth` and
+  `ground_truth.mechanism` revised to state the OOM-restart cycle plainly (the v2 claim "no
+  request returns an error" held only until the first OOM); `expected_restarts: ["recommendation"]`
+  and `signal_after_restart: "recommendation"` added, so a batch now waits for the recommendation
+  container's first restart before running trials. batch-20260928T101313Z and
+  batch-20260928T172256Z (scenario v2) are not comparable: the restart fell inside their trials.
+- screen-recommendationcache: status text updated to say it runs scenario v3; run settings and
+  the experiment file's own `version` (fixed at 2, the experiment-file schema) are unchanged.
+
 ## 2026-09-29
 
 - Fixture: memory limits raised for load-generator (1G), ad (600M), quote (80M) and fraud-detection (600M), which thrashed the page cache at their old limits. Batches before this change ran with the old limits.
