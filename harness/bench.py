@@ -228,26 +228,22 @@ def container_snapshot(cfg):
 def fixture_diff(before, after, expected):
     """Containers whose snapshot differs between before and after (appeared, disappeared, or a
     changed RestartCount/OOMKilled/StartedAt), and fixture_ok: false iff any of them is not in
-    expected (a scenario's expected_restarts, container names)."""
+    expected (a scenario's expected_restarts, container names). Fails closed: an empty before or
+    after (container_snapshot could not read the fixture) is never treated as "no changes"."""
+    if not before or not after:
+        return ["snapshot_failed"], False
     changed = [{"container": n, "before": before.get(n), "after": after.get(n)}
                for n in sorted(set(before) | set(after)) if before.get(n) != after.get(n)]
     return changed, all(c["container"] in expected for c in changed)
 
 
-def container_restart_count(cfg, name):
-    """(restart_count, oom_killed) for one container, or (None, None) on any failure."""
-    r = fixture_sh(cfg, "docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}}' %s" % shlex.quote(name))
-    parts = r.stdout.split()
-    if r.returncode != 0 or len(parts) != 2 or not parts[0].isdigit():
-        return None, None
-    return int(parts[0]), parts[1] == "true"
-
-
 def wait_for_restart(cfg, name, restart0, poll_max, out=lambda *a: None):
-    """Poll name's RestartCount every TRACE_POLL_SLEEP until it rises above restart0, up to
-    poll_max times. Returns the poll number it rose on, or None if it never did."""
+    """Poll name's RestartCount (container_snapshot()[name][0]) every TRACE_POLL_SLEEP until it
+    rises above restart0, up to poll_max times. Returns the poll number it rose on, or None if
+    it never did (name missing from a poll's snapshot counts as no change yet)."""
     for i in range(1, poll_max + 1):
-        cur, oom = container_restart_count(cfg, name)
+        snap = container_snapshot(cfg).get(name)
+        cur, oom = (int(snap[0]), snap[1]) if snap else (None, None)
         out(i, cur, oom)
         if cur is not None and cur > restart0:
             return i
@@ -256,31 +252,12 @@ def wait_for_restart(cfg, name, restart0, poll_max, out=lambda *a: None):
     return None
 
 
-def vmstat_bi(text):
-    """vmstat's own 'bi' column values, found by its header line so no column index is
-    hardcoded; [] if the text does not look like vmstat output."""
-    lines = [l for l in text.splitlines() if l.strip()]
-    if len(lines) < 2:
-        return []
-    header = lines[1].split()
-    if "bi" not in header:
-        return []
-    i = header.index("bi")
-    out = []
-    for line in lines[2:]:
-        parts = line.split()
-        if len(parts) > i:
-            try:
-                out.append(int(parts[i]))
-            except ValueError:
-                pass
-    return out
-
-
 def vmstat_bi_mean(text):
-    """Mean of vmstat_bi()'s values over its non-first sample (the first sample is the average
-    since boot, not live), or None with fewer than two samples."""
-    bi = vmstat_bi(text)
+    """Mean of vmstat's 'bi' column (procps' fixed field 9, index 8; no header lookup) over the
+    non-first sample (the first sample is the average since boot, not live), skipping vmstat's
+    own two header lines and any line without a digit there. None with fewer than two samples."""
+    lines = [l for l in text.splitlines() if l.strip()][2:]
+    bi = [int(parts[8]) for parts in (l.split() for l in lines) if len(parts) > 8 and parts[8].isdigit()]
     return statistics.mean(bi[1:]) if len(bi) > 1 else None
 
 
@@ -1119,8 +1096,8 @@ def run(a, cfg):
     r = fixture_sh(cfg, "vmstat 5 3; echo ---; cat /proc/loadavg", timeout=30)
     vmstat_out, _, loadavg_out = r.stdout.partition("---")
     bi_mean = vmstat_bi_mean(vmstat_out)
-    pre["thrash"] = {"vmstat_bi": vmstat_bi(vmstat_out), "bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
-    log.detail("pre-flight: vmstat bi=%s mean(non-first)=%s loadavg=%s" % (pre["thrash"]["vmstat_bi"], bi_mean, pre["thrash"]["loadavg"]))
+    pre["thrash"] = {"bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
+    log.detail("pre-flight: vmstat bi mean(non-first)=%s loadavg=%s" % (bi_mean, pre["thrash"]["loadavg"]))
     if not log.check(bi_mean is None or bi_mean <= 50000, "host not thrashing (vmstat bi mean %s <= 50000)" % bi_mean):
         return die("ABORT - host thrashing: vmstat bi mean %s over 50000 (non-first samples)" % bi_mean)
 
@@ -1297,9 +1274,10 @@ def run(a, cfg):
         log.check(True, "%d traces match the signal after %s" % (fault["signal_traces_seen"], dur(time.monotonic() - t_flip)))
         if signal_after_restart:
             log.detail("== waiting for %s to restart (signal_after_restart) ==" % signal_after_restart)
-            restart0, _ = container_restart_count(cfg, signal_after_restart)
-            if restart0 is None:
+            snap0 = container_snapshot(cfg).get(signal_after_restart)
+            if snap0 is None:
                 return die("ABORT - could not read %s's restart count for signal_after_restart" % signal_after_restart)
+            restart0 = int(snap0[0])
             polls = wait_for_restart(cfg, signal_after_restart, restart0, poll_max, out=lambda i, cur, oom: log.detail(
                 "bench: restart poll %d/%d: %s RestartCount=%s (was %d) OOMKilled=%s" % (i, poll_max, signal_after_restart, cur, restart0, oom)))
             if polls is None:
