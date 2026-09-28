@@ -208,6 +208,82 @@ def now_us():
     return int(time.time() * 1e6)
 
 
+# ---- fixture stability (per-trial snapshots, host thrash, restart gate) --------
+
+def container_snapshot(cfg):
+    """{container_name: (restart_count, oom_killed, started_at)} for every container docker ps
+    -aq lists, from one ssh or local call; {} if the call fails."""
+    r = fixture_sh(cfg, "docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}' $(docker ps -aq)")
+    if r.returncode != 0:
+        return {}
+    out = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 4:
+            name, restarts, oom, started = parts
+            out[name.lstrip("/")] = (restarts, oom, started)
+    return out
+
+
+def fixture_diff(before, after, expected):
+    """Containers whose snapshot differs between before and after (appeared, disappeared, or a
+    changed RestartCount/OOMKilled/StartedAt), and fixture_ok: false iff any of them is not in
+    expected (a scenario's expected_restarts, container names)."""
+    changed = [{"container": n, "before": before.get(n), "after": after.get(n)}
+               for n in sorted(set(before) | set(after)) if before.get(n) != after.get(n)]
+    return changed, all(c["container"] in expected for c in changed)
+
+
+def container_restart_count(cfg, name):
+    """(restart_count, oom_killed) for one container, or (None, None) on any failure."""
+    r = fixture_sh(cfg, "docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}}' %s" % shlex.quote(name))
+    parts = r.stdout.split()
+    if r.returncode != 0 or len(parts) != 2 or not parts[0].isdigit():
+        return None, None
+    return int(parts[0]), parts[1] == "true"
+
+
+def wait_for_restart(cfg, name, restart0, poll_max, out=lambda *a: None):
+    """Poll name's RestartCount every TRACE_POLL_SLEEP until it rises above restart0, up to
+    poll_max times. Returns the poll number it rose on, or None if it never did."""
+    for i in range(1, poll_max + 1):
+        cur, oom = container_restart_count(cfg, name)
+        out(i, cur, oom)
+        if cur is not None and cur > restart0:
+            return i
+        if i < poll_max:
+            sleep(TRACE_POLL_SLEEP)
+    return None
+
+
+def vmstat_bi(text):
+    """vmstat's own 'bi' column values, found by its header line so no column index is
+    hardcoded; [] if the text does not look like vmstat output."""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if len(lines) < 2:
+        return []
+    header = lines[1].split()
+    if "bi" not in header:
+        return []
+    i = header.index("bi")
+    out = []
+    for line in lines[2:]:
+        parts = line.split()
+        if len(parts) > i:
+            try:
+                out.append(int(parts[i]))
+            except ValueError:
+                pass
+    return out
+
+
+def vmstat_bi_mean(text):
+    """Mean of vmstat_bi()'s values over its non-first sample (the first sample is the average
+    since boot, not live), or None with fewer than two samples."""
+    bi = vmstat_bi(text)
+    return statistics.mean(bi[1:]) if len(bi) > 1 else None
+
+
 # ---- gates --------------------------------------------------------------------
 
 def leak(files, out=print):
@@ -839,6 +915,8 @@ def run(a, cfg):
     signal_re = scen.get("signal_regex") or ""
     # A slow-building fault can set signal_wait_s; the default is 48 polls of 10 s.
     poll_max = max(1, int(scen.get("signal_wait_s", TRACE_POLL_MAX * TRACE_POLL_SLEEP)) // TRACE_POLL_SLEEP)
+    expected_restarts = scen.get("expected_restarts") or []
+    signal_after_restart = scen.get("signal_after_restart")
     if not flag:
         return die("scenario %s: no 'flag' field" % a.scenario)
     if act.get("field") != "defaultVariant":
@@ -864,7 +942,7 @@ def run(a, cfg):
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
-           "client_version": None, "sandbox_probe": None, "leak_rendered": None}
+           "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None}
     if a.client == "api" and a.provider == "openai":
         log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
         if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
@@ -1037,6 +1115,15 @@ def run(a, cfg):
     log.detail("pre-flight: container count OK (%d)" % pre["containers"])
     log.check(True, "%d containers running (need >= %s)" % (pre["containers"], cfg["MIN_CONTAINERS"]))
 
+    log.detail("== pre-flight: host thrash (vmstat 5 3, cat /proc/loadavg) ==")
+    r = fixture_sh(cfg, "vmstat 5 3; echo ---; cat /proc/loadavg", timeout=30)
+    vmstat_out, _, loadavg_out = r.stdout.partition("---")
+    bi_mean = vmstat_bi_mean(vmstat_out)
+    pre["thrash"] = {"vmstat_bi": vmstat_bi(vmstat_out), "bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
+    log.detail("pre-flight: vmstat bi=%s mean(non-first)=%s loadavg=%s" % (pre["thrash"]["vmstat_bi"], bi_mean, pre["thrash"]["loadavg"]))
+    if not log.check(bi_mean is None or bi_mean <= 50000, "host not thrashing (vmstat bi mean %s <= 50000)" % bi_mean):
+        return die("ABORT - host thrashing: vmstat bi mean %s over 50000 (non-first samples)" % bi_mean)
+
     pristine, flagfile = shlex.quote(cfg["FIXTURE_PRISTINE_FLAG_FILE"]), shlex.quote(cfg["FIXTURE_FLAG_FILE"])
     log.detail("== pre-flight: flag %r currently at default per OFREP ==" % flag)
     r = fixture_sh(cfg, "cat %s" % pristine)
@@ -1169,7 +1256,8 @@ def run(a, cfg):
         return 0
 
     # ---- fault, cells, restore ----
-    fault = dict(common["fault"], flip_utc=None, ofrep_confirmed=False, signal_traces_seen=0)
+    fault = dict(common["fault"], flip_utc=None, ofrep_confirmed=False, signal_traces_seen=0,
+                restart_seen_utc=None, restart_seen_after_s=None)
     st = {"ran": 0, "aborted": False}
 
     def fault_and_cells():
@@ -1207,6 +1295,18 @@ def run(a, cfg):
             return die("ABORT - never saw %d matching traces after %d polls" % (TRACE_MIN_COUNT, poll_max))
         log.detail("bench: fault confirmed live")
         log.check(True, "%d traces match the signal after %s" % (fault["signal_traces_seen"], dur(time.monotonic() - t_flip)))
+        if signal_after_restart:
+            log.detail("== waiting for %s to restart (signal_after_restart) ==" % signal_after_restart)
+            restart0, _ = container_restart_count(cfg, signal_after_restart)
+            if restart0 is None:
+                return die("ABORT - could not read %s's restart count for signal_after_restart" % signal_after_restart)
+            polls = wait_for_restart(cfg, signal_after_restart, restart0, poll_max, out=lambda i, cur, oom: log.detail(
+                "bench: restart poll %d/%d: %s RestartCount=%s (was %d) OOMKilled=%s" % (i, poll_max, signal_after_restart, cur, restart0, oom)))
+            if polls is None:
+                return die("ABORT - %s never restarted within %d polls after the flip (signal_after_restart)" % (signal_after_restart, poll_max))
+            fault["restart_seen_utc"] = utc()
+            fault["restart_seen_after_s"] = round(time.monotonic() - t_flip, 1)
+            log.check(True, "%s restarted %s after the flip" % (signal_after_restart, dur(fault["restart_seen_after_s"])))
         # The worst leaks only exist while a fault is active (an event saying variant=on).
         log.detail("== leak scan under fault ==")
         rc = fixture_leak.scan_live(list(pristine_doc["flags"]), 240, out=log.detail)
@@ -1237,7 +1337,8 @@ def run(a, cfg):
             tick = lambda: log.live(label + paint(CYAN, "running...".ljust(16) + dur(time.monotonic() - t0).rjust(6)))
             tick()
             try:
-                rec = run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, secrets, tick=tick)
+                rec = run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg,
+                               expected_restarts, secrets, tick=tick)
             except KeyboardInterrupt:
                 # Every trial dir on disk gets a cells row, so band and INDEX see what verify sees.
                 trial = os.path.join(bdir, "%d-%s" % (c["order_index"], c["arm"]))
@@ -1329,13 +1430,14 @@ META_KEYS = (
     "tool_descriptions_check", "jaeger_image", "jaeger_image_id", "jaeger_commit", "otel_demo_ref",
     "fixture_overlay_sha256", "fault", "flag_names", "preflight", "experiment", "harness_git_sha", "harness_dirty",
     "score_py_sha256", "started_utc", "ended_utc", "wall_time_s", "exit_code", "observed", "agent_loop",
-    "system_under_test")
+    "system_under_test", "fixture_changes", "fixture_ok")
 
 
 SECRET_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
 
 
-def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, secrets=None, tick=lambda: None):
+def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg, expected_restarts,
+            secrets=None, tick=lambda: None):
     arm, oi = c["arm"], c["order_index"]
     name = "%d-%s" % (oi, arm)
     trial = os.path.join(bdir, name)
@@ -1358,7 +1460,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                   mcp_config_sha256=sha256_file(mcp_path), tool_descriptions_file=desc[arm]["file"],
                   tool_descriptions_sha256=desc[arm]["sha256"], tool_descriptions_check=desc[arm]["check"],
                   fault=fault, started_utc=utc(), ended_utc=None, wall_time_s=None, exit_code=None,
-                  observed=None, agent_loop=None, system_under_test=sut)
+                  observed=None, agent_loop=None, system_under_test=sut, fixture_changes=None, fixture_ok=None)
     meta = {k: merged[k] for k in META_KEYS}
     write_json(os.path.join(trial, "meta.json"), meta)
     # cli: no API key in the environment, so claude bills the logged-in plan.
@@ -1366,6 +1468,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     if a.client == "api":
         env.update(secrets or {})  # environment only: never argv, never a record
     stream = os.path.join(trial, "stream.jsonl")
+    before = container_snapshot(cfg)
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory() as work, open(stream, "w") as so, open(os.path.join(trial, "stderr.txt"), "w") as se:
         try:
@@ -1390,8 +1493,10 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     with open(os.path.join(trial, "exit.txt"), "w") as f:
         f.write("exit=%d\n" % rc)
     loop_meta = os.path.join(trial, "agent_loop.json")
+    fixture_changes, fixture_ok = fixture_diff(before, container_snapshot(cfg), expected_restarts)
     meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=observe(stream),
-                agent_loop=load_json(loop_meta).get("agent_loop") if os.path.isfile(loop_meta) else None)
+                agent_loop=load_json(loop_meta).get("agent_loop") if os.path.isfile(loop_meta) else None,
+                fixture_changes=fixture_changes, fixture_ok=fixture_ok)
     write_json(os.path.join(trial, "meta.json"), meta)
     return {"order_index": oi, "arm": arm, "trial_index": c["trial_index"], "model": a.model,
             "out_dir": name, "trial_exit_code": rc, "wall_time_s": meta["wall_time_s"],

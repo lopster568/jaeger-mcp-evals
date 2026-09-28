@@ -14,8 +14,10 @@ mechanism, cascading, confidence, evidence_span_ids, abstain).
 - verdict: PASS only if locus PASS and mechanism PASS; UNGRADED if locus PASS and the
   mechanism is ungraded; PARTIAL if locus PASS or PARTIAL but mechanism is not PASS;
   ABSTAIN if abstained; FAIL otherwise. INVALID, whatever the answer, when the sandbox
-  check fails (sandbox_ok false); else LEAK when the answer or any assistant text names a
-  flag, "feature_flag" or "flagd" (leak_hits).
+  check fails (sandbox_ok false) or the fixture changed under the trial in a way the
+  scenario did not declare (fixture_ok false, bench.py's before/after container snapshot);
+  else LEAK when the answer or any assistant text names a flag, "feature_flag" or "flagd"
+  (leak_hits).
 A run with no valid structured_output (schema-invalid answer, max turns, crash)
 scores locus, mechanism and cascade MISSING and verdict FAIL; verdict_source is
 "structured" or null so the two cases stay apart.
@@ -325,8 +327,12 @@ def score(out_dir, call_grader=False):
     leak_hits = answer_leaks(texts + [final_text, json.dumps((final or {}).get("structured_output"))],
                              meta.get("flag_names") or fixture_leak.FLAGS)
     # A call the client refused shows the sandbox held; it is recorded, not disqualifying.
+    fixture_changes = meta.get("fixture_changes") or []
+    fixture_ok = meta.get("fixture_ok", True)
     breached = [v for v in sandbox_violations if not v.startswith("attempted_unknown_tool:")]
-    verdict = "INVALID" if breached else "LEAK" if leak_hits else compute_verdict(locus, mechanism, abstained)
+    # fixture_ok false scores INVALID the same way a sandbox breach does (below), without
+    # folding it into sandbox_ok/sandbox_violations, which stay about the agent's own conduct.
+    verdict = "INVALID" if breached or not fixture_ok else "LEAK" if leak_hits else compute_verdict(locus, mechanism, abstained)
 
     prompt_path = os.path.join(out_dir, "prompt.txt")
     signal_leaked_in_prompt = False
@@ -373,6 +379,8 @@ def score(out_dir, call_grader=False):
         "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,
         "leak_hits": leak_hits,
+        "fixture_ok": fixture_ok,
+        "fixture_changes": fixture_changes,
     }
     return summary, final_text
 

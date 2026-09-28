@@ -232,6 +232,20 @@ the client validates against `verdict-schema.json`.
 - Skill arms report `read_skill_attempted` and `read_skill_succeeded`; an error result is not
   a read.
 
+`fixture_ok` (meta.json and scores.jsonl) is the same kind of check as `sandbox_ok`, over the
+fixture instead of the agent: `run` snapshots every container's `RestartCount`, `OOMKilled` and
+`StartedAt` (`docker inspect`) before and after each trial, and records the ones that changed as
+`fixture_changes`. A change to a container not named in the scenario's optional
+`expected_restarts` list makes `fixture_ok` false and the trial INVALID, exactly the path
+`sandbox_ok` false takes. A scenario whose fault ends in a restart (a memory leak that gets
+OOM-killed, say) can also set `signal_after_restart` to that container's name: once the
+signal_regex poll confirms the fault, `run` polls the container's `RestartCount` every
+`TRACE_POLL_SLEEP` (same poll budget as the signal wait) until it rises, records
+`fault.restart_seen_utc`, and only then starts trials; it aborts if the restart never comes.
+Pre-flight also runs `vmstat 5 3` and `cat /proc/loadavg` once (`preflight.json`, `thrash`) and
+aborts before the flag is touched if the mean of `bi` over the non-first samples is over 50000
+(the host is thrashing); the load average is recorded only, never a gate.
+
 ## Export to Phoenix
 
 `python3 harness/bench.py export <RUNS_DIR>/<scenario>/<batch-id> [--endpoint URL]` sends every

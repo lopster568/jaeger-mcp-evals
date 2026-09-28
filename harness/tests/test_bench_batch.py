@@ -65,6 +65,17 @@ case "$1 $2" in
   *) exit 1 ;;
 esac
 """
+# A calm, fixed vmstat: bi comfortably under bench.py's 50000 abort threshold, so pre-flight
+# never slows down or aborts a test on the real vmstat (which "vmstat 5 3" would take ~10s to run).
+VMSTAT = """#!/bin/bash
+cat <<'EOF'
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 0  0      0 4000000  30000 1000000    0    0   200   100 1000 1000  1  1 98  0  0
+ 0  0      0 4000000  30000 1000000    0    0   150    80 1000 1000  0  0 100  0  0
+ 0  0      0 4000000  30000 1000000    0    0   180    90 1000 1000  0  0 100  0  0
+EOF
+"""
 CLAUDE = """#!/usr/bin/env python3
 import json, os, sys, urllib.error, urllib.request
 if sys.argv[1:] == ["--version"]:
@@ -260,7 +271,7 @@ class BenchCase(unittest.TestCase):
         subprocess.run(git + ["init", "-q"], check=True)
         subprocess.run(git + ["add", "-A"], check=True)
         subprocess.run(git + ["commit", "-qm", "demo"], check=True)
-        for name, text in (("ssh", SSH), ("docker", DOCKER), ("claude", CLAUDE), ("codex", CODEX)):
+        for name, text in (("ssh", SSH), ("docker", DOCKER), ("vmstat", VMSTAT), ("claude", CLAUDE), ("codex", CODEX)):
             p = os.path.join(binp, name)
             pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(bench.CLAUDE_FLAGS)))
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
@@ -320,7 +331,7 @@ META_V4_KEYS = [
     "tool_descriptions_check", "jaeger_image", "jaeger_image_id", "jaeger_commit", "otel_demo_ref",
     "fixture_overlay_sha256", "fault", "flag_names", "preflight", "experiment", "harness_git_sha", "harness_dirty",
     "score_py_sha256", "started_utc", "ended_utc", "wall_time_s", "exit_code", "observed", "agent_loop",
-    "system_under_test"]
+    "system_under_test", "fixture_changes", "fixture_ok"]
 
 
 def text(name):
