@@ -252,6 +252,44 @@ def wait_for_restart(cfg, name, restart0, poll_max, out=lambda *a: None):
     return None
 
 
+def restart_before_run(cfg, names, service, poll_max, out=lambda *a: None):
+    """Hygiene restart that keeps itself out of the trace store: docker restart names, poll
+    container_snapshot until each StartedAt is newer than before, and only then docker restart
+    jaeger and poll its query API until it answers (any HTTP reply counts). Returns
+    {"containers": {name: utc}, "jaeger": utc}; raises RuntimeError if a step does not finish
+    within poll_max polls of TRACE_POLL_SLEEP."""
+    before = container_snapshot(cfg)
+    if not all(n in before for n in names):
+        raise RuntimeError("restart_before_run: %s not all in the container snapshot" % names)
+    rec = {"containers": {}}
+    for n in names:
+        if fixture_sh(cfg, "docker restart %s" % shlex.quote(n)).returncode != 0:
+            raise RuntimeError("docker restart %s failed" % n)
+        rec["containers"][n] = utc()
+    for i in range(1, poll_max + 1):
+        snap = container_snapshot(cfg)
+        pending = [n for n in names if n not in snap or snap[n][2] <= before[n][2]]
+        out(i, pending)
+        if not pending:
+            break
+        if i == poll_max:
+            raise RuntimeError("%s did not come back running after %d polls" % (pending, poll_max))
+        sleep(TRACE_POLL_SLEEP)
+    if fixture_sh(cfg, "docker restart jaeger").returncode != 0:
+        raise RuntimeError("docker restart jaeger failed")
+    rec["jaeger"] = utc()
+    for i in range(1, poll_max + 1):
+        try:
+            traces(cfg, service, now_us() - 60 * 10**6, now_us(), 1, 10)
+            return rec
+        except urllib.error.HTTPError:
+            return rec
+        except Exception:
+            out(i, ["jaeger"])
+            sleep(TRACE_POLL_SLEEP)
+    raise RuntimeError("jaeger query API did not answer after %d polls" % poll_max)
+
+
 def vmstat_bi_mean(text):
     """Mean of vmstat's 'bi' column (procps' fixed field 9, index 8; no header lookup) over the
     non-first sample (the first sample is the average since boot, not live), skipping vmstat's
@@ -919,7 +957,8 @@ def run(a, cfg):
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
-           "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None}
+           "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
+           "restarted_before_run": None}
     if a.client == "api" and a.provider == "openai":
         log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
         if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
@@ -1115,11 +1154,26 @@ def run(a, cfg):
     log.detail("pre-flight: flag %r at default (%r) - OK" % (flag, default_variant))
     log.check(True, "flag %s at default (%s)" % (flag, default_variant))
 
+    if scen.get("restart_before_run"):
+        log.detail("== pre-flight: restart %s, then jaeger (so jaeger never records the restart) ==" % scen["restart_before_run"])
+        try:
+            pre["restarted_before_run"] = restart_before_run(cfg, scen["restart_before_run"], gt_service, TRACE_POLL_MAX,
+                                                             out=lambda i, p: log.detail("  poll %d: waiting on %s" % (i, p)))
+        except RuntimeError as e:
+            return die("ABORT - %s; nothing was flipped" % e)
+        log.check(True, "restarted %s, then jaeger" % ", ".join(scen["restart_before_run"]))
     log.detail("== pre-flight: baseline traffic (service=%s needs >= 3 traces in the last %ds) ==" % (gt_service, BASELINE_LOOKBACK_S))
-    try:
-        pre["baseline_traces"] = len(traces(cfg, gt_service, now_us() - BASELINE_LOOKBACK_S * 10**6, now_us(), 20, 10))
-    except Exception:
-        pre["baseline_traces"] = 0
+    # After a restart the store starts empty, so wait for traffic within the TRACE_POLL_MAX budget.
+    for i in range(TRACE_POLL_MAX if pre["restarted_before_run"] else 1):
+        try:
+            pre["baseline_traces"] = len(traces(cfg, gt_service, now_us() - BASELINE_LOOKBACK_S * 10**6, now_us(), 20, 10))
+        except Exception:
+            pre["baseline_traces"] = 0
+        if pre["baseline_traces"] >= 3:
+            break
+        if pre["restarted_before_run"]:
+            log.detail("  poll %d: %d baseline traces so far" % (i + 1, pre["baseline_traces"]))
+            sleep(TRACE_POLL_SLEEP)
     if pre["baseline_traces"] < 3:
         return die("ABORT - only %d baseline traces for service=%s; the fixture is up but not completing requests "
                    "through it. Check upstream services before flipping any flag." % (pre["baseline_traces"], gt_service))
@@ -1563,6 +1617,25 @@ def soak(cfg, scenario, samples, interval):
     return 0
 
 
+def scenario_at_batch_sha(d):
+    """The scenario JSON as it was at the batch's recorded harness_git_sha (a -dirty suffix is
+    stripped: the committed file is the nearest record), so verify scores a batch against the
+    truth it ran. None (score.py loads the current file) if git cannot resolve it; says so."""
+    mp = os.path.join(d, "meta.json")
+    meta = load_json(mp) if os.path.isfile(mp) else {}
+    sha, name = str(meta.get("harness_git_sha") or ""), meta.get("scenario")
+    if not sha:  # legacy batch: nothing recorded to resolve
+        return None
+    if sha.endswith("-dirty"):
+        sha = sha[:-len("-dirty")]
+        print("verify: %s: harness_git_sha is -dirty, using the committed %s" % (d, sha))
+    r = subprocess.run(["git", "-C", ROOT, "show", "%s:harness/scenarios/%s.json" % (sha, name)], capture_output=True, text=True)
+    if r.returncode == 0:
+        return json.loads(r.stdout)
+    print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))
+    return None
+
+
 def verify(cfg):
     runs = runs_root(cfg)
     arm_of, stored = {}, {}
@@ -1581,7 +1654,7 @@ def verify(cfg):
         mp = os.path.join(d, "meta.json")
         arm = arm_of.get(os.path.realpath(d)) or (load_json(mp).get("arm") if os.path.isfile(mp) else None)
         try:
-            s, _ = score.score(d)
+            s, _ = score.score(d, scenario=scenario_at_batch_sha(d))
         except score.Legacy as e:
             rows.append(dict({c: "" for c in cols}, scenario=load_json(mp).get("scenario"), arm=arm,
                              dir=os.path.relpath(d, runs), verdict="%s (%s)" % (stored.get(os.path.realpath(d)) or "no stored score", e)))

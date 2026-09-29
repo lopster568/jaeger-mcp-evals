@@ -242,6 +242,11 @@ OOM-killed, say) can also set `signal_after_restart` to that container's name: o
 signal_regex poll confirms the fault, `run` polls the container's `RestartCount` every
 `TRACE_POLL_SLEEP` (same poll budget as the signal wait) until it rises, records
 `fault.restart_seen_utc`, and only then starts trials; it aborts if the restart never comes.
+A scenario can set `restart_before_run` (container names): pre-flight restarts them, waits until each
+is running again, then restarts Jaeger and waits for its query API, so Jaeger's store never holds the
+restart; the baseline-traffic check then polls (TRACE_POLL_MAX x TRACE_POLL_SLEEP) while the empty store
+fills. `preflight.json` records `restarted_before_run`. `verify` scores each batch against its scenario file
+at the batch's `harness_git_sha` (current file if git cannot resolve it).
 Pre-flight also runs `vmstat 5 3` and `cat /proc/loadavg` once (`preflight.json`, `thrash`) and
 aborts before the flag is touched if the mean of `bi` over the non-first samples is over 50000
 (the host is thrashing); the load average is recorded only, never a gate.
