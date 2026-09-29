@@ -12,20 +12,24 @@ DEMO := set -e; . fixture/lib.sh; \
 COMPOSE := docker compose --env-file .env --env-file .env.override \
 	-f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml
 
-.PHONY: help setup fixture up phoenix smoke test verify
+.PHONY: help setup preflight fixture up phoenix smoke test verify
 
 help:
-	@echo "make setup    fixture + up + phoenix: everything except the paid smoke trial"
-	@echo "make fixture  clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR and install the overlay"
-	@echo "make up       bring the demo up and wait (about 10 min at most) until the smoke dry run passes pre-flight"
-	@echo "make phoenix  start the optional Phoenix trajectory store and wait until it answers"
-	@echo "make smoke    dry run, then ONE paid agent trial of $(SMOKE)"
-	@echo "make test     offline unit tests"
-	@echo "make verify   re-score every trajectory under RUNS_DIR and check records/INDEX.md"
+	@echo "make setup      fixture + up + phoenix: everything except the paid smoke trial"
+	@echo "make preflight  check docker, compose v2, git, curl, python 3.11 and the fixture ports"
+	@echo "make fixture    clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR and install the overlay"
+	@echo "make up         bring the demo up and wait (about 10 min at most) until the smoke dry run passes pre-flight"
+	@echo "make phoenix    start the optional Phoenix trajectory store and wait until it answers"
+	@echo "make smoke      dry run, then ONE paid agent trial of $(SMOKE)"
+	@echo "make test       offline unit tests"
+	@echo "make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
 
 # Everything free, in order. The paid trial stays a separate step.
-setup: fixture up phoenix
+setup: preflight fixture up phoenix
 	@echo "setup done; next: make smoke (one paid agent trial) or bench.py run <experiment>.json"
+
+preflight:
+	@bash fixture/preflight.sh
 
 # FIXTURE.md, Install. Never overwrites fixture.env or the pristine flag file.
 fixture:
@@ -59,7 +63,7 @@ phoenix:
 	done; echo "Phoenix did not answer 200 on port $$PHOENIX_PORT within 5 minutes"; exit 1
 
 # Makes ONE paid agent call (Claude Code CLI, sonnet, effort xhigh, budget cap 2 USD).
-smoke:
+smoke: preflight
 	python3 harness/bench.py run $(SMOKE) --dry-run
 	python3 harness/bench.py run $(SMOKE)
 
