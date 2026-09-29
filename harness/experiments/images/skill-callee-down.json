@@ -8,5 +8,6 @@
   "base_image": "evals-baseimg-alpine:latest",
   "base_image_recipe": "scripts/build/docker/base/Dockerfile (FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
   "built_at_utc": "2026-09-29T07:13:04Z",
-  "built_on": "fixture host"
+  "built_on": "fixture host",
+  "descriptions": null
 }
