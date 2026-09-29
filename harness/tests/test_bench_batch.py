@@ -479,7 +479,9 @@ class TestBatch(BenchCase):
         self.assertEqual(real(types.SimpleNamespace(client="api", provider="anthropic", scenario="paymentFailure", model="m",
                                                     effort="high", max_turns=1, max_budget_usd="1"), "a", "p", "c", "t")[:2],
                          [sys.executable, bench.AGENT_LOOP])
-        with mock.patch.object(bench, "client_argv", lambda *a: [sys.executable, fake_loop, script] + real(*a)[2:]):
+        real_probe = bench.probe_argv
+        with mock.patch.object(bench, "client_argv", lambda *a: [sys.executable, fake_loop, script] + real(*a)[2:]), \
+                mock.patch.object(bench, "probe_argv", lambda a: [sys.executable, fake_loop, script] + real_probe(a)[2:]):
             # Without a key the api client (the default) is refused in pre-flight, before any batch directory exists.
             api = {"client": "api", "provider": "anthropic", "model": "claude-sonnet-5"}
             self.assertEqual(self.run_batch(1, run=api, ANTHROPIC_API_KEY=""), 1)
@@ -516,7 +518,7 @@ class TestBatch(BenchCase):
 
     def test_openai_provider_records_provider_and_base_url_never_the_key(self):
         verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
-        seen = []
+        seen, wrong = [], []
 
         class Chat(http.server.BaseHTTPRequestHandler):
             def log_message(self, *a):
@@ -528,7 +530,7 @@ class TestBatch(BenchCase):
                 msg = ({"role": "assistant", "content": json.dumps(verdict)} if body["messages"][-1]["role"] == "tool" else
                        {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
                            "name": "mcp__jaeger__get_trace_errors", "arguments": "{}"}}]})
-                out = json.dumps({"id": "x", "model": "m", "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                out = json.dumps({"id": "x", "model": "other-model" if wrong else body["model"], "usage": {"prompt_tokens": 1, "completion_tokens": 1},
                                   "choices": [{"message": msg, "finish_reason": "stop" if msg["content"] else "tool_calls"}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(out)))
@@ -543,6 +545,11 @@ class TestBatch(BenchCase):
         openai = {"client": "api", "provider": "openai", "model": "vendor/model-x"}
         self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY="", OPENAI_BASE_URL=base), 1)
         self.assertIn("bench: set OPENAI_API_KEY and OPENAI_BASE_URL in fixture.env for provider openai\n", self.err + self.out)
+        wrong.append(1)  # the endpoint answers as another model: refused before any batch directory exists
+        self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY=key, OPENAI_BASE_URL=base), 1)
+        self.assertIn("run.model is vendor/model-x but the endpoint answered as other-model", self.err + self.out)
+        self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
+        wrong.clear()
         self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY=key, OPENAI_BASE_URL=base, ANTHROPIC_API_KEY=""), 0, self.err)
         self.assertEqual({s for s in seen}, {("/v1/chat/completions", "Bearer " + key)})
         leaks = [p for p in glob.glob(os.path.join(self.runs, "**"), recursive=True) if os.path.isfile(p) and key in read(p)]

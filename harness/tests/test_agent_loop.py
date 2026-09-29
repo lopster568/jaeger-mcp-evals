@@ -613,6 +613,9 @@ TOOL_CALL = _chat({"content": None, "tool_calls": [{"id": "call_1", "type": "fun
     "name": "mcp__jaeger__get_trace_errors", "arguments": json.dumps({"trace_id": "abc"})}}]}, "tool_calls")
 
 
+from providers.openai_provider import from_openai as agent_loop_from_openai  # noqa: E402
+
+
 class TestOpenAIProvider(unittest.TestCase):
     def setUp(self):
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), _FakeMessagesHandler)
@@ -645,12 +648,12 @@ class TestOpenAIProvider(unittest.TestCase):
         self.assertEqual(body["tool_choice"], "auto")
         rf = body["response_format"]
         self.assertEqual((rf["type"], rf["json_schema"]["name"], rf["json_schema"]["strict"]), ("json_schema", "verdict", False))
-        for k in ("temperature", "thinking", "reasoning_effort", "stream", "top_p"):
+        for k in ("temperature", "thinking", "reasoning_effort", "stream", "top_p"):  # no effort set on this provider
             self.assertNotIn(k, body)
         self.assertEqual(r.content, [{"type": "tool_use", "id": "call_1", "name": "mcp__jaeger__get_trace_errors",
                                       "input": {"trace_id": "abc"}}])
         self.assertEqual((r.stop_reason, r.usage, r.request_id, r.model, r.message_id),
-                         ("tool_use", {"input_tokens": 11, "output_tokens": 7}, "req_local_2", "gpt-local", "chatcmpl_local"))
+                         ("tool_use", {"input_tokens": 11, "output_tokens": 7, "reasoning_tokens": 0}, "req_local_2", "gpt-local", "chatcmpl_local"))
 
         # Second turn: the loop's Anthropic-shaped history goes out as assistant.tool_calls and a tool message.
         self.srv.replies = [(200, _chat({"content": "done"}, "stop"))]
@@ -716,7 +719,8 @@ class TestOpenAIProvider(unittest.TestCase):
             with open(os.path.join(out, "agent_loop.json")) as f:
                 al = json.load(f)["agent_loop"]
             self.assertEqual((al["provider"], al["api_base_url"], al["thinking"], al["effort"], al["response_format_supported"]),
-                             ("openai", "set", "n/a", "n/a", True))  # never the URL itself
+                             ("openai", "set", "reasoning_effort", "high", True))
+            self.assertTrue(al["effort_applied"])  # never the URL itself
             # default_provider_factory strips the schema's "$schema" keyword before anything is sent
             with open(os.path.join(out, "output-schema-sent.json")) as f:
                 self.assertNotIn("$schema", json.load(f))
@@ -724,6 +728,37 @@ class TestOpenAIProvider(unittest.TestCase):
             for name in os.listdir(out):
                 with open(os.path.join(out, name)) as f:
                     self.assertNotIn("local-test-not-a-key", f.read(), name)
+
+    def test_effort_sends_reasoning_effort_and_echoes_signed_thinking_blocks(self):
+        think = {"type": "thinking", "thinking": "plan", "signature": "sig1"}
+        first = _chat({"content": None, "reasoning_content": "plan", "thinking_blocks": [think],
+                       "tool_calls": TOOL_CALL["choices"][0]["message"]["tool_calls"]}, "tool_calls",
+                      {"prompt_tokens": 5, "completion_tokens": 9, "completion_tokens_details": {"reasoning_tokens": 4}})
+        self.srv.replies = [(200, first), (200, _chat({"content": "done"}, "stop"))]
+        self.p.effort = "high"
+        r = self.p.create([{"role": "user", "content": "hi"}], self.tools, "sys")
+        self.assertEqual(self.srv.seen[0][1]["reasoning_effort"], "high")
+        self.assertEqual((r.content[0], r.usage["reasoning_tokens"]), (think, 4))
+        history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": r.content},
+                   {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1", "content": "x"}]}]
+        self.p.create(history, self.tools, "sys")
+        asst = self.srv.seen[1][1]["messages"][2]
+        self.assertEqual((asst["role"], asst["thinking_blocks"]), ("assistant", [think]))
+        # reasoning_content alone (no signature) is recorded but never echoed
+        r2 = agent_loop_from_openai({"content": "x", "reasoning_content": "raw"})
+        self.assertEqual(r2[0], {"type": "thinking", "thinking": "raw"})
+        from providers.openai_provider import to_openai
+        self.assertNotIn("thinking_blocks", to_openai([{"role": "assistant", "content": r2}], "s")[1])
+
+    def test_probe_model_refuses_a_mismatch(self):
+        for served, want in (("gpt-local", 0), ("other", 3)):
+            self.srv.replies = [(200, dict(_chat({"content": "ok"}, "stop"), model=served))]
+            env = {"OPENAI_API_KEY": "local-test-not-a-key", "OPENAI_BASE_URL": self.base}
+            with mock.patch.dict(os.environ, env):
+                rc = agent_loop.main(["--probe-model", "--provider", "openai", "--model", "gpt-local", "--effort", "high"])
+            self.assertEqual(rc, want)
+            body = self.srv.seen[-1][1]
+            self.assertEqual((body["max_tokens"], "reasoning_effort" in body, "response_format" in body), (256, False, False))
 
     def test_validate_only_needs_no_endpoint(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}

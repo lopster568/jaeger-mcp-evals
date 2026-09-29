@@ -193,6 +193,8 @@ def parse_args(argv):
     ap.add_argument("--effort", default="high", choices=EFFORTS)
     ap.add_argument("--provider", default="api", choices=("api", "openai"),
                     help="openai: any chat completions endpoint, OPENAI_API_KEY and OPENAI_BASE_URL from the environment")
+    ap.add_argument("--probe-model", action="store_true",
+                    help="one tiny call; exit 3 if the model the endpoint reports differs from --model")
     ap.add_argument("--validate-only", action="store_true",
                     help="check the model id and arguments, write nothing, exit 0 or 2")
     return ap.parse_args(argv)
@@ -200,14 +202,14 @@ def parse_args(argv):
 
 def validate_args(args):
     if args.provider == "openai":
-        # The model id passes through unchanged; no price, thinking or effort applies.
+        # The model id passes through unchanged; no price applies; effort goes out as reasoning_effort.
         if not args.model.strip():
             raise ArgError("--model is required with --provider openai")
     else:
         validate_anthropic_args(args)
     if args.max_turns < 1:
         raise ArgError("--max-turns must be >= 1")
-    if args.validate_only:
+    if args.validate_only or args.probe_model:
         return
     for name in ("scenario", "arm", "prompt_file", "system_prompt_file", "schema_file", "mcp_config", "out_dir"):
         if not getattr(args, name):
@@ -249,7 +251,8 @@ def default_provider_factory(args, output_schema):
     if args.provider == "openai":
         from providers.openai_provider import OpenAIProvider
         return OpenAIProvider(model=args.model, max_tokens=MAX_TOKENS, output_schema=schema,
-                              api_key=os.environ.get("OPENAI_API_KEY", ""), base_url=os.environ.get("OPENAI_BASE_URL", ""))
+                              api_key=os.environ.get("OPENAI_API_KEY", ""), base_url=os.environ.get("OPENAI_BASE_URL", ""),
+                              effort=args.effort)
     from providers.anthropic_provider import AnthropicProvider
     return AnthropicProvider(model=args.model, max_tokens=MAX_TOKENS, effort=args.effort, output_schema=schema,
                              api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
@@ -545,6 +548,7 @@ def build_meta(args):
         "response_models": [],
         "thinking": THINKING,
         "effort": args.effort,
+        "effort_applied": True,
         "temperature": "not_sent",
         "top_p": "not_sent",
         "top_k": "not_sent",
@@ -562,7 +566,7 @@ def build_meta(args):
     }
     if args.provider == "openai":
         meta["agent_loop"].update(
-            api_base_url="set" if os.environ.get("OPENAI_BASE_URL") else "", thinking="n/a", effort="n/a",
+            api_base_url="set" if os.environ.get("OPENAI_BASE_URL") else "", thinking="reasoning_effort",
             cache_control=None, price_table_usd_per_mtok=None, response_format_supported=True,
             structured_output="response_format json_schema (strict false) until the endpoint rejects it; "
                               "final content parsed as JSON, code fences stripped; schema errors recorded, not dropped")
@@ -625,12 +629,25 @@ class RunRecorder:
                 pass
 
 
+def probe_model(args, provider_factory):
+    """One call as cheap as it goes (short prompt, 256 max_tokens, no schema, no reasoning on openai)."""
+    p = provider_factory(args, {})
+    p.max_tokens = 256
+    if args.provider == "openai":
+        p.effort, p._schema = None, None
+    r = p.create([{"role": "user", "content": "Reply with the word ok."}], [], "Connectivity check.")
+    print("probe: endpoint reports model %s (requested %s), request_id %s" % (r.model, args.model, r.request_id))
+    return 0 if r.model == args.model else 3
+
+
 def main(argv=None, provider_factory=None, mcp_client_factory=None):
     try:
         args = parse_args(argv if argv is not None else sys.argv[1:])
         validate_args(args)
         if args.validate_only:
             return 0
+        if args.probe_model:
+            return probe_model(args, provider_factory or default_provider_factory)
         meta = build_meta(args)
     except ArgError as e:
         print("agent_loop: " + str(e), file=sys.stderr)
