@@ -1093,10 +1093,14 @@ def run(a, cfg):
         f = None
         base = exp["baseline_arm"]
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
-            # desc-change.json is what build-variant.sh bakes into a variant image; an arm sharing
-            # the baseline's image serves the baseline's wording, so it is only recorded.
-            f = os.path.join(HARNESS, "experiments", "descriptions", "desc-change.json")
-            f = f if os.path.isfile(f) else None
+            # A variant image's record (experiments/images/*.json, matched by tag) may say which
+            # descriptions it serves: a file under descriptions/, or null for the stock wording
+            # (recorded only). Without that key, desc-change.json, what build-variant.sh bakes in.
+            rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
+                        if r.get("tag") == image_for[arm]), {})
+            name = rec.get("descriptions", "desc-change.json")
+            f = os.path.join(HARNESS, "experiments", "descriptions", name) if name else None
+            f = f if f and os.path.isfile(f) else None
         desc[arm] = {"file": repo_relpath(f) if f else None, "sha256": sha256_file(f) if f else None,
                      "check": "compared" if f else "recorded_only" if tools_for[arm] else "no_tools", "path": f}
     if not any_tools:
