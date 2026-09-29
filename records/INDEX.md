@@ -15,7 +15,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | adFailure | no | PASS | 0 | 0 |
 | paymentFailure | yes | PASS | 3 | 22 |
 | paymentUnreachable | yes | PASS | 1 | 6 |
-| recommendationCacheFailure | bucketed | PASS | 0 | 0 |
+| recommendationCacheFailure | bucketed | PASS | 2 | 20 |
 
 ## Batches
 
@@ -25,6 +25,8 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [desc-change-sep28/batch-20260926T141252Z](desc-change-sep28/batch-20260926T141252Z/) | 2026-09-26 | paymentFailure | baseline 10 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | quay.io/jaegertracing/jaeger:2.20.0 | desc-change-sep28 | baseline 10/0/0/0/0/0 | baseline 3 | 4 (legacy schema, stored scores) |
 | [sanity-paymentfailure/batch-20260926T135500Z](sanity-paymentfailure/batch-20260926T135500Z/) | 2026-09-26 | paymentFailure | noskill 2 | cli sonnet | claude-sonnet-5 | xhigh | 2.1.283 (Claude Code) | jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981 | sanity-paymentfailure | noskill 2/0/0/0/0/0 | noskill 2 | 4 (legacy schema, stored scores) |
 | [screen-paymentunreachable/batch-20260926T211206Z](screen-paymentunreachable/batch-20260926T211206Z/) | 2026-09-26 | paymentUnreachable | noskill 3, vague 3 | cli sonnet | claude-sonnet-5 | high | 2.1.283 (Claude Code) | quay.io/jaegertracing/jaeger:2.20.0 | screen-paymentunreachable | noskill 3/0/0/0/0/0, vague 3/0/0/0/0/0 | noskill 2, vague 2 | 4 (legacy schema, stored scores) |
+| [cert-recommendationcache-api/batch-20260929T084130Z](cert-recommendationcache-api/batch-20260929T084130Z/) | 2026-09-29 | recommendationCacheFailure | neutral 10 | api claude-sonnet-5 | claude-sonnet-5 | high | agent_loop 0.1.0 | quay.io/jaegertracing/jaeger:2.20.0 | cert-recommendationcache-api | neutral 0/9/1/0/0/0 | neutral 3 | 5 |
+| [skill-callee-down-api/batch-20260929T124013Z](skill-callee-down-api/batch-20260929T124013Z/) | 2026-09-29 | recommendationCacheFailure | skillchange 10 | api claude-sonnet-5 | claude-sonnet-5 | high | agent_loop 0.1.0 | jaeger-mcp-evals/jaeger:skill-callee-down-da737d02 | skill-callee-down-api | skillchange 3/5/2/0/0/0 | skillchange 0 | 5 |
 
 ## Results
 
@@ -33,3 +35,4 @@ One row per records/<experiment>/RESULT.md, the last `harness/judge.py` answer f
 | experiment | verdict | result |
 |---|---|---|
 | desc-change-sep28 | EXPERIMENT FAIL | [RESULT.md](desc-change-sep28/RESULT.md) |
+| skill-callee-down-api | EXPERIMENT FAIL | [RESULT.md](skill-callee-down-api/RESULT.md) |

@@ -1,0 +1,36 @@
+From da737d025e7812e65cae98872e305bd5af4b3899 Mon Sep 17 00:00:00 2001
+From: Roshan Singh <rosh.s568@gmail.com>
+Date: Tue, 29 Sep 2026 12:27:51 +0530
+Subject: [PATCH] error-root-cause skill: a refused connection with no server
+ span points at the callee
+
+Signed-off-by: Roshan Singh <rosh.s568@gmail.com>
+---
+ .../internal/mcptools/skills/error-root-cause/SKILL.md     | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/cmd/jaeger/internal/extension/jaegerquery/internal/mcptools/skills/error-root-cause/SKILL.md b/cmd/jaeger/internal/extension/jaegerquery/internal/mcptools/skills/error-root-cause/SKILL.md
+index 56035d98..3abd5b64 100644
+--- a/cmd/jaeger/internal/extension/jaegerquery/internal/mcptools/skills/error-root-cause/SKILL.md
++++ b/cmd/jaeger/internal/extension/jaegerquery/internal/mcptools/skills/error-root-cause/SKILL.md
+@@ -8,7 +8,7 @@ license: Apache-2.0
+ metadata:
+   author: jaegertracing
+   version: "1.0"
+-allowed-tools: get_trace_errors get_trace_topology get_span_details
++allowed-tools: get_trace_errors get_trace_topology get_span_details search_traces
+ ---
+ 
+ # Error Root Cause Analysis
+@@ -35,3 +35,8 @@ originating failure, not just the symptoms.
+ - Timeouts at a parent may mask the real cause in a child that was cancelled —
+   check children of timed-out spans even if they do not have error status.
+ - Multiple independent root causes can exist in a single trace.
++- A client span that failed to connect (connection refused, unavailable) and
++  has no server-side child is not the origin: the callee was down or
++  restarting. Use `search_traces` on the callee for the period before the
++  failure and `get_span_details` on its own spans to find why it went down,
++  such as spans getting slower or attribute values that stand out.
+-- 
+2.43.0
+
