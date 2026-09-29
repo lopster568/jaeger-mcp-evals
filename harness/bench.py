@@ -586,6 +586,21 @@ def claude_argv(a, prompt_file, mcp_config):
             "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd]
 
 
+# The claude flags the harness passes that `claude --help` lists (--max-turns and --allowedTools are hidden there).
+CLAUDE_FLAGS = ("--restricted", "--setting-sources", "--strict-mcp-config", "--json-schema", "--effort",
+                "--tools", "--mcp-config", "--system-prompt", "--max-budget-usd")
+
+
+def claude_missing_flags():
+    """(version, flags the installed claude does not list), or None when claude cannot be run."""
+    try:
+        h = subprocess.run(["claude", "--help"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
+        v = subprocess.run(["claude", "--version"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (v.strip() or "unknown version", [f for f in CLAUDE_FLAGS if f not in h])
+
+
 def client_argv(a, arm, prompt_file, mcp_config, trial):
     if a.client == "cli":
         return claude_argv(a, prompt_file, mcp_config)
@@ -768,6 +783,17 @@ def run(a, cfg):
         log.detail("== pre-flight: api client (ANTHROPIC_API_KEY, model and effort) ==")
         if not cfg.get("ANTHROPIC_API_KEY"):
             return die("set ANTHROPIC_API_KEY in fixture.env (or set run.client to cli to use the Claude Code CLI)")
+    elif a.client == "cli":
+        log.detail("== pre-flight: cli client (claude flags) ==")
+        found = claude_missing_flags()
+        if found is None:
+            return die("claude is not on PATH; install the Claude Code CLI and log in (run `claude` once), or pick another run.client")
+        if found[1]:
+            return die("ABORT - Claude Code CLI %s does not accept %s; update with `claude update`; nothing was touched"
+                       % (found[0], " ".join(found[1])))
+        log.check(True, "claude accepts the flags the harness passes")
+        if cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
+            log("        ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
         log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
         if not shutil.which(a.codex_bin):

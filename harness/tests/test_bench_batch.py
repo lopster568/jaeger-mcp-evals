@@ -68,6 +68,8 @@ CLAUDE = """#!/usr/bin/env python3
 import json, os, sys
 if sys.argv[1:] == ["--version"]:
     print("2.1.282 (Claude Code)"); sys.exit(0)
+if sys.argv[1:] == ["--help"]:
+    print(os.environ.get("FAKE_CLAUDE_HELP", "@FLAGS@")); sys.exit(0)
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "claudecode": "CLAUDECODE" in os.environ,
                         "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir(".")}) + "\\n")
@@ -225,7 +227,7 @@ class BenchCase(unittest.TestCase):
         subprocess.run(git + ["commit", "-qm", "demo"], check=True)
         for name, text in (("ssh", SSH), ("docker", DOCKER), ("claude", CLAUDE), ("codex", CODEX)):
             p = os.path.join(binp, name)
-            pathlib.Path(p).write_text(text)
+            pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(bench.CLAUDE_FLAGS)))
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
         Fake.oracle_signal, Fake.oracle_malformed = True, False
@@ -382,6 +384,18 @@ class TestBatch(BenchCase):
                          [["noskill", "1/1"], ["skill", "1/1"]])
         self.assertEqual(sum(1 for l in lines if l.lstrip().startswith(("noskill ", "skill ")) and "/1 " in l), 2)
 
+    def test_cli_refused_before_anything_is_touched_when_claude_lacks_a_flag(self):
+        self.assertEqual(self.run_batch(1, FAKE_CLAUDE_HELP="--restricted --effort"), 1)
+        out = self.err + self.out
+        self.assertIn("does not accept --setting-sources --strict-mcp-config --json-schema", out)
+        self.assertIn("claude update", out)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
+
+    def test_cli_says_the_api_key_is_ignored(self):
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="sk-x"), 0, self.err)
+        self.assertIn("runs on the logged-in plan and ignores it", self.err + self.out)
+
     def test_api_client_runs_the_owned_loop(self):
         verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid_token",
                    "mechanism_detail": "x", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
@@ -407,6 +421,7 @@ class TestBatch(BenchCase):
             self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
             self.assertEqual(self.run_batch(1, run=api, ANTHROPIC_API_KEY=key), 0, self.err)
         self.assertEqual(self.calls(), [])  # claude never ran
+
         leaks = [p for p in glob.glob(os.path.join(self.runs, "**"), recursive=True)
                  if os.path.isfile(p) and key in read(p)]
         self.assertEqual(leaks, [])
