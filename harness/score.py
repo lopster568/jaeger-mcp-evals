@@ -234,8 +234,10 @@ def is_compaction_event(event, raw_line):
     return '"compact_boundary"' in raw_line
 
 
-def score(out_dir, call_grader=False):
+def score(out_dir, call_grader=False, scenario=None):
     """Read the raw files in out_dir and return (summary_dict, final_answer_text).
+    scenario: the scenario dict to score against (verify passes the one at the batch's git sha);
+    default is the current file.
     call_grader: on a grade cache miss, call the grader (bench.py run only); otherwise the
     mechanism of a miss is UNGRADED.
 
@@ -254,7 +256,7 @@ def score(out_dir, call_grader=False):
     if meta.get("schema_version", 0) < SCHEMA_VERSION:
         raise Legacy("legacy schema, stored scores")
     scenario_name = meta["scenario"]
-    scenario = load_scenario(scenario_name)
+    scenario = scenario or load_scenario(scenario_name)
     signal = re.compile(scenario["signal_regex"], re.I)
     raw_lines = [l for l in open(os.path.join(out_dir, "stream.jsonl")) if l.strip()]
     events = [json.loads(l) for l in raw_lines]

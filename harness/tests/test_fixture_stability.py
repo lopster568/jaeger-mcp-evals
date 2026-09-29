@@ -6,8 +6,10 @@ signal_after_restart gate).
 Run with: python3 -m unittest discover harness/tests
 Python 3 stdlib only, no network, no LLM, no ssh, no docker.
 """
+import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -89,6 +91,67 @@ class TestWaitForRestart(unittest.TestCase):
                 mock.patch.object(bench, "sleep"):
             polls = bench.wait_for_restart({}, "recommendation", 0, poll_max=3)
         self.assertIsNone(polls)
+
+
+class TestRestartBeforeRun(unittest.TestCase):
+    def test_recommendation_restarts_first_and_jaeger_only_once_it_is_running(self):
+        log = []
+        snaps = [{"recommendation": ("0", "false", "t1")}, {"recommendation": ("0", "false", "t1")},
+                 {"recommendation": ("0", "false", "t2")}]  # 2nd poll still old, 3rd is running again
+
+        def snap(cfg):
+            log.append("snapshot")
+            return snaps.pop(0)
+
+        def sh(cfg, cmd, **kw):
+            log.append(cmd)
+            return mock.Mock(returncode=0)
+
+        answers = [OSError("down"), []]  # jaeger refuses once, then answers
+
+        def traces(*a):
+            log.append("traces")
+            r = answers.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        with mock.patch.object(bench, "container_snapshot", side_effect=snap), mock.patch.object(bench, "fixture_sh", side_effect=sh), \
+                mock.patch.object(bench, "traces", side_effect=traces), mock.patch.object(bench, "sleep"):
+            rec = bench.restart_before_run({}, ["recommendation"], "recommendation", poll_max=5)
+        self.assertEqual([c for c in log if c != "snapshot" and c != "traces"], ["docker restart recommendation", "docker restart jaeger"])
+        self.assertEqual(log.index("docker restart jaeger"), 4)  # snapshot(before), restart, 2 polls (old, then new StartedAt), then jaeger
+        self.assertEqual(log.count("traces"), 2)
+        self.assertEqual(set(rec), {"containers", "jaeger"})
+
+    def test_never_running_aborts_before_jaeger_is_touched(self):
+        cmds = []
+        with mock.patch.object(bench, "container_snapshot", return_value={"recommendation": ("0", "false", "t1")}), \
+                mock.patch.object(bench, "fixture_sh", side_effect=lambda cfg, cmd, **kw: cmds.append(cmd) or mock.Mock(returncode=0)), \
+                mock.patch.object(bench, "sleep"):
+            with self.assertRaises(RuntimeError):
+                bench.restart_before_run({}, ["recommendation"], "recommendation", poll_max=2)
+        self.assertEqual(cmds, ["docker restart recommendation"])
+
+
+class TestScenarioAtBatchSha(unittest.TestCase):
+    def _batch(self, sha):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump({"scenario": "s", "harness_git_sha": sha}, f)
+        return d
+
+    def test_loads_the_scenario_at_the_recorded_sha_and_strips_dirty(self):
+        with mock.patch.object(bench.subprocess, "run", return_value=mock.Mock(returncode=0, stdout='{"version": 2}')) as run, \
+                mock.patch("builtins.print"):
+            self.assertEqual(bench.scenario_at_batch_sha(self._batch("abc123-dirty")), {"version": 2})
+        self.assertIn("abc123:harness/scenarios/s.json", run.call_args[0][0])
+
+    def test_unresolvable_sha_falls_back_to_the_current_file(self):
+        with mock.patch.object(bench.subprocess, "run", return_value=mock.Mock(returncode=128, stdout="")), \
+                mock.patch("builtins.print") as pr:
+            self.assertIsNone(bench.scenario_at_batch_sha(self._batch("abc123")))
+        self.assertIn("using the current file", pr.call_args[0][0])
 
 
 if __name__ == "__main__":
