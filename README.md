@@ -4,6 +4,13 @@ Status: three scenarios pass readiness (paymentFailure, adFailure, paymentUnreac
 
 A harness for evaluating the MCP tools and skills Jaeger serves to AI agents against trace-solvable faults, as jaegertracing/jaeger#9135 asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. With the `cli` client the Claude Code CLI starts with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
 
+## Before you start
+
+- Python 3.11 or newer (standard library only), Docker with Compose v2, git and curl; `make preflight` checks them and the ports. Agent client, set by `run.client` in the experiment file: `cli` (Claude Code CLI on your logged-in plan, the default and what `make smoke` uses), `api` (own loop, experimental, provider key in fixture.env) or `codex`.
+- The fixture is 28 containers (29 with Phoenix): about 5.3 GB RAM idle and 6 cores busy under load (measured on a 6-core 24 GB host), a large first image pull, and free ports 16686, 8013, 8016, 4000 and 16006.
+- `make` targets run on the fixture host, this machine by default; `bench.py` can drive a fixture on a remote host over ssh.
+- Success: `make up` prints "fixture ready", http://localhost:16686/jaeger/ui shows traces and Phoenix answers on http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Times and details: docs/USAGE.md.
+
 ## Quick Start
 
 `make setup`, `make smoke` and the Phoenix export have not yet been run from a fresh clone; every recorded batch ran against a fixture on a separate host.
@@ -37,7 +44,6 @@ Everything a batch does is set in one checked-in file, `harness/experiments/<nam
 - `harness/tests/`: the offline test suite
 - `fixture/`: the overlay for the OpenTelemetry Demo and the scripts that apply it and build variant images
 - `records/`: batch records, one `RESULT.md` per judged experiment, and `INDEX.md`
-- `docs/`: the manual
 
 ## Docs
 
@@ -47,12 +53,6 @@ Everything a batch does is set in one checked-in file, `harness/experiments/<nam
 - docs/TUNING.md: each factor that can change a result and where it is recorded
 - fixture/FIXTURE.md: installing and operating the fixture
 - CHANGELOG.md: scenario versions and comparability; CONTRIBUTING.md: tests and DCO sign-off
-
-## Requirements
-
-- Python 3.11 or newer, standard library only
-- One agent client, chosen by `run.client`: `api` (experimental; `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` and `OPENAI_BASE_URL` for provider `openai`), `cli` (the Claude Code CLI, logged in) or `codex` (the OpenAI Codex CLI)
-- Docker and Docker Compose running the OpenTelemetry Demo 3.0.0 with the overlay in `fixture/`, locally or on a remote host over ssh
 
 ## License
 

@@ -5,7 +5,7 @@ run records; docs/TUNING.md maps each factor that can change a result to its key
 
 ## Prerequisites
 
-Python 3 (standard library only), bash, git, and one agent client (below). Every trial is
+Python 3.11 or newer (standard library only), bash, git, and one agent client (below). Every trial is
 one paid agent run; 10 per arm with two arms is 20. Docker and Docker Compose on this machine
 (or on a remote host reachable over ssh, see fixture/FIXTURE.md) run the OpenTelemetry Demo
 3.0.0 with the overlay in `fixture/`; its ports 16686 (Jaeger query) and 8016 (flagd OFREP)
@@ -14,6 +14,24 @@ must be reachable from you.
 `fixture.env` (copied from `fixture.env.example`, gitignored) holds only where the fixture
 runs, where trajectories go (`RUNS_DIR`), the API keys and the Codex command. An environment
 variable of the same name wins over the file. Nothing in it changes what a run does.
+
+## Before you start
+
+`make preflight` (run first by `make setup` and `make smoke`) checks docker, Docker Compose v2, git, curl,
+Python 3.11 and that the fixture ports 16686, 8013, 8016, 4000 and 16006 are free. It skips the port check
+once a container named `jaeger` exists, so re-running `make setup` works.
+
+The fixture starts 28 containers (29 with Phoenix). Measured on a 6-core 24 GB host: about 5.3 GB RAM in use
+at idle, 6 cores busy under load. The first `make setup` pulls a large set of images, so allow for the
+download and for disk. `make up` waits up to 10 minutes for the fixture to pass pre-flight and Phoenix
+takes one to two minutes more; Jaeger needs a few minutes of load-generator traffic before it shows traces.
+
+The `make` targets run where the demo runs. With a remote fixture host (`FIXTURE_SSH_USER` in fixture.env)
+clone this repo on that host and run `make setup` there; `bench.py` then drives it over ssh
+(fixture/FIXTURE.md, Remote host).
+
+`make down` stops the containers and keeps their data. `make clean` removes the containers and network;
+Jaeger's in-memory traces are lost, and volumes and pulled images stay.
 
 ## The experiment file
 
