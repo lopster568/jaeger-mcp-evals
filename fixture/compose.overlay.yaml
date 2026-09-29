@@ -66,6 +66,29 @@ services:
       resources:
         limits:
           memory: 300M
+  # Fourth round, same deviation. Containers pinned at their memory limit thrashed the page
+  # cache: sustained disk reads near 1 GB/s and a load of about 13 on 6 cores. load-generator
+  # (k6 with headless chromium) and ad sat at 78 to 99% of their limits. Limits only.
+  load-generator:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  ad:
+    deploy:
+      resources:
+        limits:
+          memory: 600M
+  quote:
+    deploy:
+      resources:
+        limits:
+          memory: 80M
+  fraud-detection:
+    deploy:
+      resources:
+        limits:
+          memory: 600M
   # Trajectory store, off by default: started only with `--profile store`. UI and OTLP HTTP
   # (/v1/traces) share container port 6006. Pinned by digest.
   phoenix:
