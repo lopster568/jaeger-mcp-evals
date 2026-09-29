@@ -9,8 +9,9 @@ command -v docker >/dev/null || fail "docker is not installed; install Docker En
 docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compose v2 is missing or docker does not run; install the Docker Compose plugin or start Docker"
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
-command -v python3 >/dev/null || fail "python3 is not installed; install Python 3.11 or newer"
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "python3 is $(python3 -V 2>&1), need 3.11 or newer"
+PY="${PYTHON:-python3}"
+command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 or newer, or point make at one: make setup PYTHON=python3.12"
+"$PY" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "$PY is $("$PY" -V 2>&1), need 3.11 or newer; install it, or point make at one: make setup PYTHON=python3.12"
 
 # The stack is ours when a container named jaeger exists (running or stopped): its ports are expected
 # to be taken, so re-running setup works. Otherwise a busy port belongs to something else.
