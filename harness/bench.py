@@ -794,6 +794,18 @@ def client_argv(a, arm, prompt_file, mcp_config, trial):
             ] + loop_provider(a)
 
 
+def probe_argv(a):
+    return [sys.executable, AGENT_LOOP, "--probe-model", "--model", a.model, "--effort", a.effort] + loop_provider(a)
+
+
+def api_secrets(a, cfg):
+    return {k: cfg.get(k, "") for k in (SECRET_KEYS[1:] if a.provider == "openai" else SECRET_KEYS[:1])}
+
+
+def is_full_model_id(m):
+    return bool(re.fullmatch(r"claude-[a-z]+(?:-[a-z0-9]+)*", m) and re.search(r"\d", m))
+
+
 def loop_provider(a):
     return ["--provider", "openai"] if a.provider == "openai" else []
 
@@ -976,6 +988,8 @@ def run(a, cfg):
             return die("ABORT - Claude Code CLI %s does not accept %s; update with `claude update`; nothing was touched"
                        % (found[0], " ".join(found[1])))
         log.check(True, "claude accepts the flags the harness passes")
+        if not is_full_model_id(a.model):
+            log("        WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
         if cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
             log("        ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
@@ -992,6 +1006,17 @@ def run(a, cfg):
             return die("ABORT - the api client refuses these arguments: %s" % r.stderr.strip())
         pre["client"] = "PASS"
         log.check(True, "api client (%s) accepts %s at effort %s" % (a.provider, a.model, a.effort))
+        log.detail("pre-flight: model pin probe: one call, prompt 'Reply with the word ok.', max_tokens 256, no reasoning")
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+        r = subprocess.run(probe_argv(a), capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300,
+                           env=dict(env, **api_secrets(a, cfg)))
+        seen = re.search(r"endpoint reports model (\S+)", r.stdout)
+        if r.returncode == 3 and seen:
+            return die("ABORT - model pin: run.model is %s but the endpoint answered as %s; nothing was touched"
+                       % (a.model, seen.group(1)))
+        if r.returncode != 0:
+            return die("ABORT - the model probe failed: %s" % (r.stderr.strip() or r.stdout.strip()))
+        log.check(True, "endpoint answers as %s" % a.model)
     try:
         client_pre = subprocess.run({"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"]}.get(
                                         a.client, [sys.executable, AGENT_LOOP, "--version"]),
@@ -1365,7 +1390,7 @@ def run(a, cfg):
             return die("ABORT - the oracle's scripted MCP calls never reached the signal under the fault; no trials run")
 
         fails = 0
-        secrets = {k: cfg.get(k, "") for k in (SECRET_KEYS[1:] if a.provider == "openai" else SECRET_KEYS[:1])}
+        secrets = api_secrets(a, cfg)
         labels = ["[%*d/%d] %s #%d" % (len(str(len(plan))), i + 1, len(plan), c["arm"], c["trial_index"]) for i, c in enumerate(plan)]
         w = max(map(len, labels))
         log.section("Trials".ljust(w + 4), paint(DIM, "verdict  calls    time"))
@@ -1388,6 +1413,12 @@ def run(a, cfg):
                 raise
             append_line(cells_file, rec)
             st["ran"] += 1
+            seen = a.client == "cli" and is_full_model_id(a.model) and observe(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))["model"]
+            if seen and seen != a.model:
+                log(paint(BOLD_RED, "bench: ABORTING remaining cells - model pin: run.model is %s but the stream reports %s"
+                          % (a.model, seen)))
+                st["aborted"] = True
+                return None
             fails = fails + 1 if rec["failed"] else 0
             verdict, calls, note = "ERROR", "-", "exit %s" % rec["trial_exit_code"]
             try:
