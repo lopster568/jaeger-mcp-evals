@@ -23,6 +23,8 @@ The ports it publishes must match `JAEGER_UI_PORT` and `OFREP_PORT` in fixture.e
 The overlay disables six of the demo's services with the Compose profile `unused`, which is never enabled: opensearch, prometheus, grafana, opamp-server, flagd-ui and telemetry-docs. The benchmark reads traces from Jaeger only, and flags are flipped by editing the flag file and checked through flagd's OFREP, so none of the six is read or written.
 That leaves 22 containers (23 with Phoenix); before this change a batch ran 28. The overlay replaces the `depends_on` lists of frontend-proxy and otel-collector that named them, which needs Docker Compose 2.24 or newer, and the collector config drops their exporters and the opamp extension so it does not retry dead endpoints. frontend-proxy still routes /grafana, /opamp, /telemetry and /feature; those clusters resolve by DNS and have no backend.
 
+Upgrading a stack that already runs: `make clean && make setup`. `up -d` alone keeps the six running and does not reload the collector config, which is a bind-mounted file.
+
 ## Install
 
 Clone into `FIXTURE_DEMO_DIR` (default `~/otel-demo-3.0.0`) and add the overlay:

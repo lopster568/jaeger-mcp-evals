@@ -7,7 +7,7 @@ A harness for evaluating the MCP tools and skills Jaeger serves to AI agents aga
 ## Before you start
 
 - Python 3.11 or newer (standard library only), Docker with Compose v2, git and curl; `make preflight` checks them and the ports. Agent client, set by `run.client` in the experiment file: `cli` (Claude Code CLI on your logged-in plan, the default and what `make smoke` uses), `api` (own loop, experimental, provider key in fixture.env) or `codex`.
-- The fixture is 22 containers (23 with Phoenix): about 3.5 GB RAM idle (an estimate: the six services removed in the trim measured about 1.9 GB of the earlier 5.3 GB) and 6 cores busy under load (measured on a 6-core 24 GB host), a large first image pull, and free ports 16686, 8013, 8016 and 16006.
+- The fixture is 22 containers (23 with Phoenix): about 2.9 GB RAM in use a few minutes after start and 6 cores busy under load (measured on a 6-core 24 GB host), a large first image pull, and free ports 16686, 8013, 8016 and 16006.
 - `make` targets run on the fixture host, this machine by default; `bench.py` can drive a fixture on a remote host over ssh.
 - Success: `make up` prints "fixture ready", http://localhost:16686/jaeger/ui shows traces and Phoenix answers on http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Times and details: docs/USAGE.md.
 
