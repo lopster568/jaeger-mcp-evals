@@ -1,0 +1,12 @@
+{
+  "name": "skill-callee-down",
+  "tag": "jaeger-mcp-evals/jaeger:skill-callee-down-da737d02",
+  "digest": "sha256:ea29d23dc85572149c73e33f7fe1dcb514e45b4696ff01a434bc389594b6d1d1",
+  "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
+  "branch": "evals/skill-callee-down-2200",
+  "branch_commit": "da737d025e7812e65cae98872e305bd5af4b3899",
+  "base_image": "evals-baseimg-alpine:latest",
+  "base_image_recipe": "scripts/build/docker/base/Dockerfile (FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
+  "built_at_utc": "2026-09-29T07:13:04Z",
+  "built_on": "fixture host"
+}
