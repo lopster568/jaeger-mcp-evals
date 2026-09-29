@@ -1049,6 +1049,11 @@ def run(a, cfg):
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
     r = fixture_sh(cfg, "sha256sum overlay/* .env.override")
     overlay_sha = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else None
+    # Same overlay without the *.bak files make setup writes and without the image line, so two arms on
+    # different images hash equal (judge.py's cross-experiment check). POSIX sh only: ssh login shells vary.
+    r = fixture_sh(cfg, "{ sha256sum $(ls overlay/* | grep -v '\\.bak$'); "
+                        "grep -v '^JAEGERTRACING_IMAGE=' .env.override | sha256sum; }")
+    overlay_sha_sans_image = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else None
     git = lambda *args: subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True).stdout.strip()
     harness_sha, harness_dirty = git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--", "harness", "fixture"))
 
@@ -1226,6 +1231,7 @@ def run(a, cfg):
         "mcp_endpoint": mcp_endpoint, "tools_list_sha256": tools_sha, "tools_count": len(tool_list) if tool_list else None,
         "jaeger_image": image, "jaeger_image_id": image_id, "jaeger_commit": sut["jaeger_commit"],
         "otel_demo_ref": otel_demo_ref, "fixture_overlay_sha256": overlay_sha,
+        "fixture_overlay_sha256_sans_image": overlay_sha_sans_image,
         "fault": {"flag": flag, "activation_field": "defaultVariant", "activation_value": act["value"]},
         "flag_names": sorted(pristine_doc["flags"]), "preflight": pre,
         "experiment": {"name": a.experiment, "file": repo_relpath(a.experiment_file), "sha256": exp_sha},

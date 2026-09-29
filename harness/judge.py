@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""judge.py <baseline_batch_dir> <variant_batch_dir>
+"""judge.py <baseline_batch_dir> <variant_batch_dir> [--overlay-checked "<text>"]
 
 Scores two batches of one experiment against each other, against the thresholds
 fixed in the experiment file. Each manifest.json carries that file verbatim under
@@ -88,25 +88,36 @@ CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name"
                 "fixture_overlay_sha256", "system_prompt_sha256"]
 
 
-def _cross_values(m):
+OVERLAY, OVERLAY_NOIMG = "fixture_overlay_sha256", "fixture_overlay_sha256_sans_image"
+
+
+def _cross_values(m, fields=CROSS_FIELDS):
     """The comparison-defining fields of one manifest (everything but the arm's image)."""
     exp = m["experiment"]["content"]
     arm = (m.get("arm_pin") or {}).get("arm") or next(iter(exp["arms"]))
     prompt = exp["arms"][arm]["prompt"]
-    v = {k: m.get(k) for k in CROSS_FIELDS if k not in ("prompt name", "prompt sha256")}
+    v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256")}
     v["prompt name"] = prompt
     v["prompt sha256"] = (m.get("file_hashes_sha256") or {}).get("prompts/%s.txt" % prompt)
     return v
 
 
-def _cross_diffs(a, b):
-    """[(field, baseline value, variant value)] for every CROSS_FIELDS entry that differs."""
-    va, vb = _cross_values(a), _cross_values(b)
+def _cross_fields(a, b):
+    """CROSS_FIELDS with the overlay entry swapped for the image-free hash when both manifests have
+    it, else without the overlay entry (the caller must then have checked it by hand)."""
+    if a.get(OVERLAY_NOIMG) and b.get(OVERLAY_NOIMG):
+        return [OVERLAY_NOIMG if k == OVERLAY else k for k in CROSS_FIELDS]
+    return [k for k in CROSS_FIELDS if k != OVERLAY]
+
+
+def _cross_diffs(a, b, fields=CROSS_FIELDS):
+    """[(field, baseline value, variant value)] for every entry of fields that differs."""
+    va, vb = _cross_values(a, fields), _cross_values(b, fields)
     # a manifest that recorded no scenario hash proves nothing about agreement
-    return [(k, va[k], vb[k]) for k in CROSS_FIELDS if va[k] != vb[k] or (k == "scenario_sha256" and va[k] is None)]
+    return [(k, va[k], vb[k]) for k in fields if va[k] != vb[k] or (k == "scenario_sha256" and va[k] is None)]
 
 
-def judge(baseline_batch_dir, variant_batch_dir):
+def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
     """Returns (lines, exit_code). lines is the full list of printed lines,
     in order, including the final verdict (or the refusal line)."""
     baseline_manifest, err = _load_manifest(baseline_batch_dir)
@@ -120,7 +131,11 @@ def judge(baseline_batch_dir, variant_batch_dir):
     variant_sha = variant_manifest["experiment"]["sha256"]
     cross = baseline_sha != variant_sha
     if cross:
-        diffs = _cross_diffs(baseline_manifest, variant_manifest)
+        fields = _cross_fields(baseline_manifest, variant_manifest)
+        if OVERLAY_NOIMG not in fields and not overlay_checked:
+            return ([f"judge: different experiment files and a manifest lacks {OVERLAY_NOIMG}; the fixture "
+                     "overlay cannot be compared by manifest (pass --overlay-checked \"<what you checked>\"); refusing to compare"], 2)
+        diffs = _cross_diffs(baseline_manifest, variant_manifest, fields)
         if diffs:
             return ([
                 "judge: baseline and variant batches ran different experiment files "
@@ -136,7 +151,9 @@ def judge(baseline_batch_dir, variant_batch_dir):
         test_arms = [vpin] if vpin else list(exp["arms"])
         lines0 = [f"judge: CROSS-EXPERIMENT comparison: baseline from {baseline_manifest['experiment']['name']} "
                   f"({baseline_sha}), variant from {variant_manifest['experiment']['name']} ({variant_sha}); "
-                  "thresholds from the variant's experiment; manifests agree on: " + ", ".join(CROSS_FIELDS)]
+                  "thresholds from the variant's experiment; manifests agree on: " + ", ".join(fields)]
+        if OVERLAY_NOIMG not in fields:
+            lines0.append("fixture overlay compared by hand, not by manifest: " + overlay_checked)
     else:
         baseline_arm = exp["baseline_arm"]
         test_arms = [a for a in exp["arms"] if a != baseline_arm]
@@ -240,10 +257,15 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage: judge.py <baseline_batch_dir> <variant_batch_dir>", file=sys.stderr)
+    args, overlay_checked = sys.argv[1:], None
+    if "--overlay-checked" in args:
+        i = args.index("--overlay-checked")
+        overlay_checked, args = " ".join(args[i + 1:i + 2]), args[:i] + args[i + 2:]
+    if len(args) != 2 or overlay_checked == "":
+        print("usage: judge.py <baseline_batch_dir> <variant_batch_dir> [--overlay-checked \"<text>\"]", file=sys.stderr)
         sys.exit(2)
-    lines, code = judge(sys.argv[1], sys.argv[2])
+    sys.argv[1:] = args
+    lines, code = judge(sys.argv[1], sys.argv[2], overlay_checked)
     for line in lines:
         print(line)
     if code in (0, 1):
