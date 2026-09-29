@@ -211,6 +211,36 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("wrong batch directory", lines[0])
 
+    def _cross_pair(self, variant_edit=None):
+        write_manifest(self.baseline_dir, arm_pin="baseline", sha256="aaa")
+        write_scores(self.baseline_dir, baseline_rows())
+        write_manifest(self.variant_dir, arm_pin="descchange", sha256="bbb")
+        if variant_edit:
+            mp = os.path.join(self.variant_dir, "manifest.json")
+            m = json.load(open(mp))
+            variant_edit(m)
+            json.dump(m, open(mp, "w"))
+        write_scores(self.variant_dir, descchange_rows_all_thresholds_met())
+        for d in (self.baseline_dir, self.variant_dir):  # shared fields the cross check reads
+            mp = os.path.join(d, "manifest.json")
+            m = json.load(open(mp))
+            for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1"}.items():
+                m.setdefault(k, v)
+            m.setdefault("file_hashes_sha256", {"prompts/noskill.txt": "p1"})
+            json.dump(m, open(mp, "w"))
+        return judge_mod.judge(self.baseline_dir, self.variant_dir)
+
+    def test_cross_experiment_matching_pair_accepted(self):
+        lines, code = self._cross_pair()
+        self.assertEqual(code, 0)
+        self.assertIn("CROSS-EXPERIMENT", lines[0])
+        self.assertIn("model_requested", lines[0])
+
+    def test_cross_experiment_model_difference_refused(self):
+        lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"))
+        self.assertEqual(code, 2)
+        self.assertIn("model_requested ('sonnet' vs 'opus')", lines[0])
+
 
 if __name__ == "__main__":
     unittest.main()

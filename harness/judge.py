@@ -11,7 +11,10 @@ Two directories, because an arm is pinned to a Jaeger image and bench.py run run
 the arms whose image the fixture is running, so baseline and variant come from two runs.
 judge.py:
 
-  - refuses (exit 2) if the two manifests carry different experiment sha256 values
+  - refuses (exit 2) if the two manifests carry different experiment sha256 values, unless
+    their manifests agree on CROSS_FIELDS (everything but the arm's image); then it judges
+    with the variant experiment's thresholds and says so on the first output line. Else it
+    names the differing fields.
   - refuses (exit 2) if the baseline batch's arm_pin is not the experiment's
     baseline_arm, or the variant batch's arm_pin is not one of its other arms
     (the two directories were probably swapped or mismatched)
@@ -80,6 +83,29 @@ def _load_manifest(batch_dir):
         return json.load(f), None
 
 
+CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",
+                "client", "provider", "model_requested", "effort", "max_turns", "max_budget_usd", "n_per_arm",
+                "fixture_overlay_sha256", "system_prompt_sha256"]
+
+
+def _cross_values(m):
+    """The comparison-defining fields of one manifest (everything but the arm's image)."""
+    exp = m["experiment"]["content"]
+    arm = (m.get("arm_pin") or {}).get("arm") or next(iter(exp["arms"]))
+    prompt = exp["arms"][arm]["prompt"]
+    v = {k: m.get(k) for k in CROSS_FIELDS if k not in ("prompt name", "prompt sha256")}
+    v["prompt name"] = prompt
+    v["prompt sha256"] = (m.get("file_hashes_sha256") or {}).get("prompts/%s.txt" % prompt)
+    return v
+
+
+def _cross_diffs(a, b):
+    """[(field, baseline value, variant value)] for every CROSS_FIELDS entry that differs."""
+    va, vb = _cross_values(a), _cross_values(b)
+    # a manifest that recorded no scenario hash proves nothing about agreement
+    return [(k, va[k], vb[k]) for k in CROSS_FIELDS if va[k] != vb[k] or (k == "scenario_sha256" and va[k] is None)]
+
+
 def judge(baseline_batch_dir, variant_batch_dir):
     """Returns (lines, exit_code). lines is the full list of printed lines,
     in order, including the final verdict (or the refusal line)."""
@@ -92,16 +118,29 @@ def judge(baseline_batch_dir, variant_batch_dir):
 
     baseline_sha = baseline_manifest["experiment"]["sha256"]
     variant_sha = variant_manifest["experiment"]["sha256"]
-    if baseline_sha != variant_sha:
-        return ([
-            "judge: baseline and variant batches ran different experiment files "
-            f"(sha256 {baseline_sha!r} != {variant_sha!r}); refusing to compare"
-        ], 2)
+    cross = baseline_sha != variant_sha
+    if cross:
+        diffs = _cross_diffs(baseline_manifest, variant_manifest)
+        if diffs:
+            return ([
+                "judge: baseline and variant batches ran different experiment files "
+                f"(sha256 {baseline_sha!r} != {variant_sha!r}) and their manifests differ on: "
+                + "; ".join(f"{k} ({a!r} vs {b!r})" for k, a, b in diffs) + "; refusing to compare"
+            ], 2)
 
-    exp = variant_manifest["experiment"]["content"]  # identical to the baseline's, sha256 confirmed above
-    thresholds = exp["thresholds"]
-    baseline_arm = exp["baseline_arm"]
-    test_arms = [a for a in exp["arms"] if a != baseline_arm]
+    exp = variant_manifest["experiment"]["content"]  # identical to the baseline's unless cross
+    thresholds = exp["thresholds"]  # cross: the variant's experiment pre-registered them
+    if cross:
+        baseline_arm = baseline_manifest["experiment"]["content"]["baseline_arm"]
+        vpin = (variant_manifest.get("arm_pin") or {}).get("arm")
+        test_arms = [vpin] if vpin else list(exp["arms"])
+        lines0 = [f"judge: CROSS-EXPERIMENT comparison: baseline from {baseline_manifest['experiment']['name']} "
+                  f"({baseline_sha}), variant from {variant_manifest['experiment']['name']} ({variant_sha}); "
+                  "thresholds from the variant's experiment; manifests agree on: " + ", ".join(CROSS_FIELDS)]
+    else:
+        baseline_arm = exp["baseline_arm"]
+        test_arms = [a for a in exp["arms"] if a != baseline_arm]
+        lines0 = []
     if not baseline_arm or not test_arms:
         return (["judge: the experiment needs a baseline_arm and at least one other arm"], 2)
 
@@ -131,7 +170,7 @@ def judge(baseline_batch_dir, variant_batch_dir):
     if baseline_metrics["n"] == 0:
         return ([f"judge: no rows for baseline arm '{baseline_arm}' found in {baseline_batch_dir}"], 2)
 
-    lines, results = [], []
+    lines, results = list(lines0), []
     for arm in test_arms:
         m = arm_metrics(variant_rows, arm, tool_names)
         if m["n"] == 0:
@@ -189,6 +228,8 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
             "# %s: judge result" % exp["name"], "",
             "Written by `harness/judge.py`; each judge run overwrites it, so this is the current answer.", "",
             "- experiment: %s" % exp["name"],
+            "- baseline experiment: %s" % (base["experiment"]["name"] + " (different file, see first line below)"
+                                          if base["experiment"]["sha256"] != exp["sha256"] else "same file"),
             "- experiment sha256: `%s`" % exp["sha256"],
             "- baseline batch: `%s`" % batch_id(base, baseline_batch_dir),
             "- variant batch: `%s`" % batch_id(var, variant_batch_dir),
