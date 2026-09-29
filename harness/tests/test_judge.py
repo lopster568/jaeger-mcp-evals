@@ -211,7 +211,7 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("wrong batch directory", lines[0])
 
-    def _cross_pair(self, variant_edit=None):
+    def _cross_pair(self, variant_edit=None, noimg=None, **kw):
         write_manifest(self.baseline_dir, arm_pin="baseline", sha256="aaa")
         write_scores(self.baseline_dir, baseline_rows())
         write_manifest(self.variant_dir, arm_pin="descchange", sha256="bbb")
@@ -227,17 +227,39 @@ class JudgeTests(unittest.TestCase):
             for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1"}.items():
                 m.setdefault(k, v)
             m.setdefault("file_hashes_sha256", {"prompts/noskill.txt": "p1"})
+            if noimg:
+                m["fixture_overlay_sha256_sans_image"] = noimg[d == self.variant_dir]
             json.dump(m, open(mp, "w"))
-        return judge_mod.judge(self.baseline_dir, self.variant_dir)
+        return judge_mod.judge(self.baseline_dir, self.variant_dir, **kw)
 
     def test_cross_experiment_matching_pair_accepted(self):
-        lines, code = self._cross_pair()
+        lines, code = self._cross_pair(noimg=("o1", "o1"))
         self.assertEqual(code, 0)
         self.assertIn("CROSS-EXPERIMENT", lines[0])
         self.assertIn("model_requested", lines[0])
 
+    def test_cross_overlay_sans_image_differs_refused(self):
+        lines, code = self._cross_pair(noimg=("o1", "o2"))
+        self.assertEqual(code, 2)
+        self.assertIn("fixture_overlay_sha256_sans_image ('o1' vs 'o2')", lines[0])
+
+    def test_cross_missing_overlay_field_refused_without_flag(self):
+        lines, code = self._cross_pair()
+        self.assertEqual(code, 2)
+        self.assertIn("--overlay-checked", lines[0])
+
+    def test_cross_missing_overlay_field_accepted_with_flag_and_lands_in_result(self):
+        lines, code = self._cross_pair(overlay_checked="reproduced by hand")
+        self.assertEqual(code, 0)
+        self.assertIn("fixture overlay compared by hand, not by manifest: reproduced by hand", lines)
+        self.assertNotIn("fixture_overlay_sha256", lines[0])
+        rec = os.path.join(self.tmp, "records")
+        with mock.patch.object(bench, "write_index"):
+            path = judge_mod.write_result(lines, self.baseline_dir, self.variant_dir, records=rec)
+        self.assertIn("compared by hand, not by manifest: reproduced by hand", open(path).read())
+
     def test_cross_experiment_model_difference_refused(self):
-        lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"))
+        lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"), noimg=("o1", "o1"))
         self.assertEqual(code, 2)
         self.assertIn("model_requested ('sonnet' vs 'opus')", lines[0])
 
