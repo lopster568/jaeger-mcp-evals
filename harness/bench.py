@@ -1093,13 +1093,13 @@ def run(a, cfg):
     log.check(True, "%d containers running (need >= %s)" % (pre["containers"], cfg["MIN_CONTAINERS"]))
 
     log.detail("== pre-flight: host thrash (vmstat 5 3, cat /proc/loadavg) ==")
-    r = fixture_sh(cfg, "vmstat 5 3; echo ---; cat /proc/loadavg", timeout=30)
-    vmstat_out, _, loadavg_out = r.stdout.partition("---")
+    r = fixture_sh(cfg, "vmstat 5 3; echo @@loadavg@@; cat /proc/loadavg", timeout=30)
+    vmstat_out, _, loadavg_out = r.stdout.partition("@@loadavg@@")  # not "---": vmstat's header contains it
     bi_mean = vmstat_bi_mean(vmstat_out)
     pre["thrash"] = {"bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
     log.detail("pre-flight: vmstat bi mean(non-first)=%s loadavg=%s" % (bi_mean, pre["thrash"]["loadavg"]))
-    if not log.check(bi_mean is None or bi_mean <= 50000, "host not thrashing (vmstat bi mean %s <= 50000)" % bi_mean):
-        return die("ABORT - host thrashing: vmstat bi mean %s over 50000 (non-first samples)" % bi_mean)
+    if not log.check(bi_mean is not None and bi_mean <= 50000, "host not thrashing (vmstat bi mean %s <= 50000)" % bi_mean):
+        return die("ABORT - host thrashing or vmstat unreadable: bi mean %s (limit 50000, non-first samples)" % bi_mean)
 
     pristine, flagfile = shlex.quote(cfg["FIXTURE_PRISTINE_FLAG_FILE"]), shlex.quote(cfg["FIXTURE_FLAG_FILE"])
     log.detail("== pre-flight: flag %r currently at default per OFREP ==" % flag)
