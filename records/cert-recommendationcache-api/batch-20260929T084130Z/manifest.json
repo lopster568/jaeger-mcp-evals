@@ -1,0 +1,211 @@
+{
+  "scenario": "recommendationCacheFailure",
+  "batch_id": "batch-20260929T084130Z",
+  "n_per_arm": 10,
+  "arms": [
+    "neutral"
+  ],
+  "seed": 746638090,
+  "order": [
+    {
+      "arm": "neutral",
+      "trial_index": 8,
+      "order_index": 0
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 1,
+      "order_index": 1
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 0,
+      "order_index": 2
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 7,
+      "order_index": 3
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 5,
+      "order_index": 4
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 2,
+      "order_index": 5
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 6,
+      "order_index": 6
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 9,
+      "order_index": 7
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 4,
+      "order_index": 8
+    },
+    {
+      "arm": "neutral",
+      "trial_index": 3,
+      "order_index": 9
+    }
+  ],
+  "file_hashes_sha256": {
+    "bench.py": "088985a6b2f4366ef26a7802537b67ae1f7d6b2539b99ed31e63f09cd15f3da5",
+    "tools.py": "c9872d5a9082c90172bc401eb797cb74c5e3b9d271148a600c86dbc971a9d786",
+    "fixture_leak.py": "ba71cc5e731c8954ea732e1114b859f0997cd8f2e8f0ffc1087d73ed3cb98a52",
+    "score.py": "706fe97e6bfc3fe4f9748099c27df9fe316c43a7d31f57ae4ff3e83ac7d7e509",
+    "system-prompt.txt": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+    "verdict-schema.json": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+    "agent_loop.py": "e8c4d723c529f0a96853dbee693f9bc520ec06955e780d9f8b158bc5b6f7cb12",
+    "mcp_client.py": "0347a14ca1a6efb82d32a3e78275d2eedd1053d7781ee6fb5dfcd98a3ff669c1",
+    "codex_client.py": "d1c1bd0b29cf94ec2c5e880baf4b4b5cc0e169332f06c681fa81bcf36547c1fb",
+    "leak-words.txt": "cba462380a249f7c90a21cedde0292cd919a4db0eec3f8aacf9aa6c87883cbf7",
+    "judge.py": "cd8fc14652e22a93a4f65a53e582a80a40948c7fd6fc0a8ed58545f03631dcf5",
+    "grade.py": "5aa629e5b06b51c7edc75887223613ce80a9444854738725ea2f7984759fdd4e",
+    "grader-prompt.txt": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "providers/__init__.py": "5cbd1f48afb89d7610f4f6550da9864444820ab4f7eb8a2dd583c605f6f2f212",
+    "providers/base.py": "894577a867a69100df7895e687e3f2082b83c7029ee6a740f80d1a69a19f8cc4",
+    "providers/anthropic_provider.py": "cfd316c53048063da7fa5e220a31243b5e306b2ad96c3af94d520aa6bc762d22",
+    "providers/openai_provider.py": "66d8cb56c89bebab82e1348b4f94b068ad6334bec3ffb1bf3ab4ae99c1fd67c4",
+    "scenario_file": "85790d489a73c9de6d6eede02cd61e0bb2179c82353139eba4ce8d23e0f1a570",
+    "prompts/neutral.txt": "bb231e6e43a2839c4297cb811e05c8395f9f6fcab14a9f2d7f4d9a978c87a6de"
+  },
+  "system_under_test": {
+    "jaeger_image": "quay.io/jaegertracing/jaeger:2.20.0",
+    "jaeger_image_digest": "sha256:9ae01775e2b2d4a7a957647fe6e733fe17ca8a2cec87ec8c893f730afe49bf00",
+    "jaeger_commit": "798e4b0f",
+    "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+    "agent_client": "agent_loop 0.1.0",
+    "harness_git_sha": "7c6ec1d01b3a64faf29a756ba202befb5f139c40",
+    "python_version": "3.14.7",
+    "pinned_at_utc": "2026-09-29T08:41:30Z"
+  },
+  "tools_list_sha256": "13854e7d1f1f5e7c7f39af12dd4d9ecfb4d53e26ebbeeabff87e03946fc0669e",
+  "tools_list_path": "tools.json",
+  "grader": {
+    "model": "claude-fable-5-1",
+    "prompt_sha256": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "cli_version": "2.1.284 (Claude Code)"
+  },
+  "arm_pin": {
+    "arm": "neutral",
+    "expected_image": "quay.io/jaegertracing/jaeger:2.20.0",
+    "sut_jaeger_image_at_run": "quay.io/jaegertracing/jaeger:2.20.0"
+  },
+  "tools_description_check": {
+    "mode": "recorded_only",
+    "descriptions_file": null,
+    "descriptions_sha256": null
+  },
+  "schema_version": 5,
+  "client": "api",
+  "provider": "openai",
+  "scenario_sha256": "85790d489a73c9de6d6eede02cd61e0bb2179c82353139eba4ce8d23e0f1a570",
+  "scenario_version": 3,
+  "system_prompt_sha256": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+  "verdict_schema_sha256": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+  "model_requested": "claude-sonnet-5",
+  "effort": "high",
+  "max_turns": 30,
+  "max_budget_usd": 2.0,
+  "history_policy": {
+    "harness_truncation": "none",
+    "cli_autocompact": "n/a"
+  },
+  "client_version_pre": "agent_loop 0.1.0",
+  "mcp_endpoint": ":16686/jaeger/ui/api/ai/mcp/",
+  "tools_count": 9,
+  "jaeger_image": "quay.io/jaegertracing/jaeger:2.20.0",
+  "jaeger_image_id": "sha256:9ae01775e2b2d4a7a957647fe6e733fe17ca8a2cec87ec8c893f730afe49bf00",
+  "jaeger_commit": "798e4b0f",
+  "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+  "fixture_overlay_sha256": "4619530b836355eb131d68fa22f9b6d8b62a6bb8e7b0900f5d4b065ed5d2b9fc",
+  "fault": {
+    "flag": "recommendationCacheFailure",
+    "activation_field": "defaultVariant",
+    "activation_value": "on"
+  },
+  "flag_names": [
+    "adFailure",
+    "adHighCpu",
+    "adManualGc",
+    "cartFailure",
+    "emailMemoryLeak",
+    "failedReadinessProbe",
+    "imageSlowLoad",
+    "intlShippingSlowdown",
+    "kafkaQueueProblems",
+    "loadGeneratorTraffic",
+    "loadGeneratorVUs",
+    "paymentFailure",
+    "paymentUnreachable",
+    "productCatalogFailure",
+    "recommendationCacheFailure"
+  ],
+  "preflight": {
+    "leak": "PASS",
+    "readiness": "PASS",
+    "containers": 23,
+    "baseline_traces": 7,
+    "fixture_leak_baseline": "PASS",
+    "fixture_leak_under_fault": "PASS",
+    "oracle": "PASS",
+    "client": "PASS",
+    "client_version": null,
+    "sandbox_probe": null,
+    "leak_rendered": "PASS",
+    "thrash": {
+      "bi_mean_non_first": 0,
+      "loadavg": "3.57 3.54 3.88 2/1434 415878"
+    },
+    "restarted_before_run": {
+      "containers": {
+        "recommendation": "2026-09-29T08:41:00Z"
+      },
+      "jaeger": "2026-09-29T08:41:13Z"
+    }
+  },
+  "experiment": {
+    "name": "cert-recommendationcache-api",
+    "file": "harness/experiments/cert-recommendationcache-api.json",
+    "sha256": "ed8e27dbd607e8672977eb968117871e00b7b0c7d585ecfc4106619849c4bbcf",
+    "content": {
+      "name": "cert-recommendationcache-api",
+      "version": 2,
+      "scenario": "recommendationCacheFailure",
+      "hypothesis": "Certification, n=10, API client: does the CLI baseline result on recommendationCacheFailure v3 (batch-20260929T062521Z, 0/10 PASS, 10/10 PARTIAL) hold for the same model through the harness's own agent loop?",
+      "run": {
+        "client": "api",
+        "provider": "openai",
+        "model": "claude-sonnet-5",
+        "effort": "high",
+        "max_turns": 30,
+        "max_budget_usd": 2,
+        "n_per_arm": 10,
+        "seed": null
+      },
+      "arms": {
+        "neutral": {
+          "prompt": "neutral",
+          "image": "quay.io/jaegertracing/jaeger:2.20.0",
+          "tools": true
+        }
+      },
+      "baseline_arm": "neutral",
+      "thresholds": {},
+      "status": "CONFIRMED: API-client certification of the v3 baseline"
+    }
+  },
+  "harness_git_sha": "7c6ec1d01b3a64faf29a756ba202befb5f139c40",
+  "harness_dirty": false,
+  "score_py_sha256": "706fe97e6bfc3fe4f9748099c27df9fe316c43a7d31f57ae4ff3e83ac7d7e509"
+}
