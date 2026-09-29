@@ -1,0 +1,26 @@
+{
+  "name": "cert-recommendationcache-api",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Certification, n=10, API client: does the CLI baseline result on recommendationCacheFailure v3 (batch-20260929T062521Z, 0/10 PASS, 10/10 PARTIAL) hold for the same model through the harness's own agent loop?",
+  "run": {
+    "client": "api",
+    "provider": "openai",
+    "model": "claude-sonnet-5",
+    "effort": "high",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null
+  },
+  "arms": {
+    "neutral": {
+      "prompt": "neutral",
+      "image": "quay.io/jaegertracing/jaeger:2.20.0",
+      "tools": true
+    }
+  },
+  "baseline_arm": "neutral",
+  "thresholds": {},
+  "status": "CONFIRMED: API-client certification of the v3 baseline"
+}
