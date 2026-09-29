@@ -598,7 +598,7 @@ def claude_missing_flags():
         v = subprocess.run(["claude", "--version"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return (v.strip() or "unknown version", [f for f in CLAUDE_FLAGS if f not in h])
+    return ((v.split() or ["unknown version"])[0], [f for f in CLAUDE_FLAGS if f not in h])
 
 
 def client_argv(a, arm, prompt_file, mcp_config, trial):
