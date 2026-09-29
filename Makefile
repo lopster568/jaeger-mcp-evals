@@ -12,6 +12,9 @@ DEMO := set -e; . fixture/lib.sh; \
 COMPOSE := docker compose --env-file .env --env-file .env.override \
 	-f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml
 
+# Any Python 3.11+ interpreter, e.g. make setup PYTHON=python3.12
+PYTHON ?= python3
+
 .PHONY: help setup preflight fixture up phoenix smoke down clean test verify
 
 help:
@@ -31,7 +34,7 @@ setup: preflight fixture up phoenix
 	@echo "setup done; next: make smoke (one paid agent trial) or bench.py run <experiment>.json"
 
 preflight:
-	@bash fixture/preflight.sh
+	@PYTHON=$(PYTHON) bash fixture/preflight.sh
 
 # FIXTURE.md, Install. Never overwrites fixture.env or the pristine flag file.
 fixture:
@@ -55,9 +58,9 @@ fixture:
 up:
 	$(DEMO); cd "$$D"; $(COMPOSE) up -d
 	for i in $$(seq 20); do \
-	  python3 harness/bench.py run $(SMOKE) --dry-run >/dev/null 2>&1 && { echo "fixture ready"; exit 0; }; \
+	  $(PYTHON) harness/bench.py run $(SMOKE) --dry-run >/dev/null 2>&1 && { echo "fixture ready"; exit 0; }; \
 	  echo "not ready yet ($$i/20), retrying in 30s"; sleep 30; \
-	done; python3 harness/bench.py run $(SMOKE) --dry-run || { . fixture/lib.sh; \
+	done; $(PYTHON) harness/bench.py run $(SMOKE) --dry-run || { . fixture/lib.sh; \
 	  echo "still not ready after 10 min. Inspect: cd $$(cd ~; cd $$D; pwd) && $(COMPOSE) ps   and   $(COMPOSE) logs <service>"; exit 1; }
 
 # FIXTURE.md, Trajectory store. Phoenix takes one to two minutes to answer.
@@ -70,10 +73,10 @@ phoenix:
 
 # Makes ONE paid agent call (Claude Code CLI, sonnet, effort xhigh, budget cap 2 USD).
 smoke: preflight
-	python3 harness/bench.py run $(SMOKE) --dry-run
-	@python3 -c 'import json,sys; e=json.load(open(sys.argv[1])); r=e["run"]; print("about to spend: arm %s, client %s, model %s, n %d, cap %s USD; Ctrl-C to cancel" % (",".join(e["arms"]), r["client"], r["model"], r["n_per_arm"], r["max_budget_usd"]))' $(SMOKE)
+	$(PYTHON) harness/bench.py run $(SMOKE) --dry-run
+	@$(PYTHON) -c 'import json,sys; e=json.load(open(sys.argv[1])); r=e["run"]; print("about to spend: arm %s, client %s, model %s, n %d, cap %s USD; Ctrl-C to cancel" % (",".join(e["arms"]), r["client"], r["model"], r["n_per_arm"], r["max_budget_usd"]))' $(SMOKE)
 	@sleep 5
-	python3 harness/bench.py run $(SMOKE)
+	$(PYTHON) harness/bench.py run $(SMOKE)
 
 # Stop without deleting: containers and volumes stay, `make up` starts them again.
 down:
@@ -85,7 +88,7 @@ clean:
 	$(DEMO); cd "$$D"; $(COMPOSE) --profile store down
 
 test:
-	python3 -B -m unittest discover -s harness/tests
+	$(PYTHON) -B -m unittest discover -s harness/tests
 
 verify:
-	python3 harness/bench.py verify
+	$(PYTHON) harness/bench.py verify
