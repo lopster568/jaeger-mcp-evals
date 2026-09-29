@@ -10,13 +10,18 @@ The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and t
 | File here | Goes to (in the demo checkout) | What it changes |
 |---|---|---|
 | `env.override` | `.env.override` | Pins `DEMO_VERSION=3.0.0` (the demo's `.env` leaves it at `latest`) and `JAEGERTRACING_IMAGE=quay.io/jaegertracing/jaeger:2.20.0` |
-| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd, 4000 flagd-ui); mounts the two configs below; higher memory limits for product-catalog, checkout, payment, grafana, prometheus, astronomy-db |
+| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd); mounts the two configs below; higher memory limits for product-catalog, checkout, payment, astronomy-db, load-generator, ad, quote, fraud-detection; switches off six unused services (below) |
 | `jaeger-config.yml` | `overlay/jaeger-config.yml` | The demo's `src/jaeger/config.yml` plus `jaeger_query.ai.enable_mcp: true` |
-| `otelcol-config-extras.yml` | `overlay/otelcol-config-extras.yml` | Fixed `memory_limiter` limit (the percentage form can crash the collector at start on some Docker hosts), plus the de-flagging processors |
+| `otelcol-config-extras.yml` | `overlay/otelcol-config-extras.yml` | Fixed `memory_limiter` limit (the percentage form can crash the collector at start on some Docker hosts), the de-flagging processors, and no exporters or extension for the six switched-off services |
 
 `fixture_overlay_sha256` in every run record hashes these files as mounted (`sha256sum overlay/* .env.override`), so leave their bytes alone; old comments in them do not affect behaviour.
 The memory limits in `compose.overlay.yaml` were tuned on a 24 GB host and may need raising or lowering on yours.
 The ports it publishes must match `JAEGER_UI_PORT` and `OFREP_PORT` in fixture.env.
+
+## What is switched off
+
+The overlay disables six of the demo's services with the Compose profile `unused`, which is never enabled: opensearch, prometheus, grafana, opamp-server, flagd-ui and telemetry-docs. The benchmark reads traces from Jaeger only, and flags are flipped by editing the flag file and checked through flagd's OFREP, so none of the six is read or written.
+That leaves 22 containers (23 with Phoenix); before this change a batch ran 28. The overlay replaces the `depends_on` lists of frontend-proxy and otel-collector that named them, which needs Docker Compose 2.24 or newer, and the collector config drops their exporters and the opamp extension so it does not retry dead endpoints. frontend-proxy still routes /grafana, /opamp, /telemetry and /feature; those clusters resolve by DNS and have no backend.
 
 ## Install
 
@@ -78,7 +83,7 @@ its trajectories there (docs/USAGE.md, Export to Phoenix).
 ## Health checks
 
 ```
-docker ps -q | wc -l                                    # at least MIN_CONTAINERS (default 25)
+docker ps -q | wc -l                                    # at least MIN_CONTAINERS (default 19)
 curl -s http://localhost:16686/jaeger/ui/api/services   # the demo's services, not an empty list
 curl -s -X POST -H 'Content-Type: application/json' -d '{"context":{}}' \
   http://localhost:8016/ofrep/v1/evaluate/flags/paymentFailure   # "variant":"off"

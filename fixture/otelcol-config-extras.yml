@@ -52,8 +52,17 @@ processors:
         statements:
           - delete_matching_keys(spanevent.attributes, "(?i)feature_flag")
 
+# 3. Trim. opensearch, prometheus and opamp-server are not started (fixture/compose.overlay.yaml).
+#    Lists are replaced, not merged, so the metrics and logs pipelines drop their exporters to
+#    the debug exporter only and the opamp extension is not started. The exporter and extension
+#    definitions in the observability layer stay, unused, which the collector allows.
 service:
+  extensions: []
   pipelines:
+    metrics:
+      exporters: [debug]
+    logs:
+      exporters: [debug]
     traces:
       # The demo's list at tag 3.0.0, plus the two de-flagging processors at the end.
       # Lists are replaced, not merged, so the demo's four entries are repeated here.

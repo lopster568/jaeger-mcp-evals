@@ -58,7 +58,7 @@ cd "$FAKE_HOME" && exec bash -c "$cmd"
 """
 DOCKER = """#!/bin/bash
 case "$1 $2" in
-  "ps -q") for i in $(seq 1 "${FAKE_CONTAINERS:-28}"); do echo "c$i"; done ;;
+  "ps -q") for i in $(seq 1 "${FAKE_CONTAINERS:-22}"); do echo "c$i"; done ;;
   "ps --format") echo "Up 2 hours (healthy)" ;;
   "inspect jaeger") echo "$FAKE_IMAGE sha256:feedface" ;;
   *) exit 1 ;;
@@ -235,7 +235,7 @@ class BenchCase(unittest.TestCase):
         self.env = {"PATH": binp + os.pathsep + os.environ["PATH"], "FAKE_HOME": self.home, "FAKE_IMAGE": STOCK_IMAGE,
                     "FIXTURE_HOST": "127.0.0.1", "FIXTURE_SSH_USER": "tester", "FIXTURE_DEMO_DIR": "otel-demo-3.0.0",
                     "JAEGER_UI_PORT": self.port, "OFREP_PORT": self.port, "JAEGER_BASE_PATH": "/jaeger/ui",
-                    "RUNS_DIR": self.runs, "MIN_CONTAINERS": "25", "KNOWN_COMMITS": "2.20.0=abc123",
+                    "RUNS_DIR": self.runs, "MIN_CONTAINERS": "19", "KNOWN_COMMITS": "2.20.0=abc123",
                     "CLAUDECODE": "1", "CODEX_BIN": "codex"}
 
     def tearDown(self):
