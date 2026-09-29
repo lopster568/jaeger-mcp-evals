@@ -18,11 +18,11 @@ variable of the same name wins over the file. Nothing in it changes what a run d
 ## Before you start
 
 `make preflight` (run first by `make setup` and `make smoke`) checks docker, Docker Compose v2, git, curl,
-Python 3.11 and that the fixture ports 16686, 8013, 8016, 4000 and 16006 are free. It skips the port check
+Python 3.11 and that the fixture ports 16686, 8013, 8016 and 16006 are free. It skips the port check
 once a container named `jaeger` exists, so re-running `make setup` works.
 
-The fixture starts 28 containers (29 with Phoenix). Measured on a 6-core 24 GB host: about 5.3 GB RAM in use
-at idle, 6 cores busy under load. The first `make setup` pulls a large set of images, so allow for the
+The fixture starts 22 containers (23 with Phoenix). About 3.5 GB RAM in use at idle (an estimate: the six
+removed services measured about 1.9 GB of the earlier 5.3 GB on a 6-core 24 GB host), 6 cores busy under load. The first `make setup` pulls a large set of images, so allow for the
 download and for disk. `make up` waits up to 10 minutes for the fixture to pass pre-flight and Phoenix
 takes one to two minutes more; Jaeger needs a few minutes of load-generator traffic before it shows traces.
 
