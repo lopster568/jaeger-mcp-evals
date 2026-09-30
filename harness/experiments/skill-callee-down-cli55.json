@@ -1,0 +1,24 @@
+{
+  "name": "skill-callee-down-cli55",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "On recommendationCacheFailure v3 with claude-sonnet-5-5 pinned by full id on the Claude Code CLI at effort high, the one-bullet error-root-cause change reaches the cause in at least 5 of 10 trials; the stock 2.20.0 skill is the baseline arm, same model, same client. Reproduces the unpinned CLI pair of 2026-09-29 (alias sonnet, observed claude-sonnet-5-5: 0/10 vs 9/10).",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null
+  },
+  "arms": {
+    "baseline": {"prompt": "neutral", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true},
+    "skillchange": {"prompt": "neutral", "image": "jaeger-mcp-evals/jaeger:skill-callee-down-da737d02", "tools": true}
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {"accuracy_pass_min": 5},
+  "status": "CONFIRMED v1 2026-09-30: model pinned by full id; threshold pre-registered before any run"
+}
