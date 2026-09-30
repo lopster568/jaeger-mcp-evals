@@ -1,6 +1,6 @@
 # One skill bullet on recommendationCacheFailure
 
-A one-bullet addition to Jaeger's error-root-cause skill took claude-sonnet-5-5 from 0/10 to 7/10 PASS on one scenario, and took claude-sonnet-5 without reasoning from 0/10 to 3/10.
+A one-bullet addition to the error-root-cause skill shipped in Jaeger 2.20.0 took claude-sonnet-5-5 from 0/10 to 7/10 PASS on one scenario, and took claude-sonnet-5 without reasoning from 0/10 to 3/10.
 
 ## Scenario and why the stock skill misleads
 
@@ -42,6 +42,7 @@ Within each experiment both arms used the same scenario version (3), prompt (`ne
 ## Caveats
 
 - One scenario. The bullet was written after failures on this scenario were observed, so a held-out scenario is needed before calling it general.
+- The baseline is the skill as shipped in 2.20.0. Jaeger's main branch has since rewritten this skill (#9263), so the change has not yet been measured against main.
 - The effect is much weaker on claude-sonnet-5 without reasoning: 3/10 misses the threshold.
 - The mechanism is graded by one pinned model grader, validated against 21 human-labeled items ([docs/TUNING.md](../TUNING.md)).
 
