@@ -68,5 +68,6 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 ## 2026-09-30
 
-- Records: skill-callee-down-cli55 (claude-sonnet-5-5 pinned by full id, Claude Code CLI 2.1.285, effort high, recommendationCacheFailure v3): stock skill 0/10 PASS, one bullet added 7/10, EXPERIMENT PASS against the pre-registered threshold of 5. Results page: docs/results/2026-09-recommendation-cache.md. No scenario or scoring change.
+- Records: skill-callee-down-cli55 (claude-sonnet-5-5 pinned by full id, Claude Code CLI 2.1.285, effort high, recommendationCacheFailure v3): stock skill 0/10 PASS, one Gotcha bullet and `search_traces` in allowed-tools 7/10, EXPERIMENT PASS against the pre-registered threshold of 5. Results page: docs/results/2026-09-recommendation-cache.md. No scenario or scoring change.
+- Records: the repo publishes one protocol only (claude-sonnet-5-5 by full id, Claude Code CLI, effort high, 10 trials per arm; docs/USAGE.md, Protocol). Batches recorded on an alias or the API client are removed. Harness: the container snapshot is scoped to the demo's compose project, and INVALID warnings name the failed check. No scenario or scoring change.
 - Harness: the description gate reads image records whose `descriptions` is null; `reasoning_effort` is passed through on the api client, and a run whose reported model differs from the pinned one is refused.
