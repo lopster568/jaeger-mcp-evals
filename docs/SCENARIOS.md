@@ -66,6 +66,12 @@ Keys, as in the example above:
   id seen in an earlier call's output, and `"$span_id"` to one call per span id that
   earlier calls for the same trace printed (get_span_details takes at most 20 ids).
 - `notes`: free text; `score.py` never reads it.
+- `expected_restarts` (optional): containers the fault is allowed to restart. A restart, OOM kill
+  or start-time change in any other container during a trial makes it INVALID.
+- `signal_after_restart` (optional): a container name. Trials start only after that container's
+  first restart under the fault; the batch aborts if the restart never comes.
+- `restart_before_run` (optional): containers that pre-flight restarts, followed by Jaeger, so the
+  trace store never holds that restart.
 
 ## The evidence traces
 
