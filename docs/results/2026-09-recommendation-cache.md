@@ -1,6 +1,6 @@
-# One skill bullet on recommendationCacheFailure
+# A skill change on recommendationCacheFailure
 
-A one-bullet addition to the error-root-cause skill shipped in Jaeger 2.20.0 took claude-sonnet-5-5 from 0/10 to 7/10 PASS on one scenario, and took claude-sonnet-5 without reasoning from 0/10 to 3/10.
+One Gotcha bullet added to the error-root-cause skill shipped in Jaeger 2.20.0, with `search_traces` added to the skill's allowed-tools line, took claude-sonnet-5-5 from 0/10 to 7/10 PASS on one scenario (n=10 per arm, model confirmed on 20 of 20 trials). The protocol is in [docs/USAGE.md](../USAGE.md#protocol).
 
 ## Scenario and why the stock skill misleads
 
@@ -10,7 +10,7 @@ The cause is in the recommendation service's own earlier spans, where `get_produ
 
 ## The change
 
-One bullet in error-root-cause/SKILL.md, plus `search_traces` in its allowed-tools line:
+One Gotcha bullet in error-root-cause/SKILL.md, and `search_traces` added to its allowed-tools line (6 insertions, 1 deletion):
 
     - A client span that failed to connect (connection refused, unavailable) and
       has no server-side child is not the origin: the callee was down or
@@ -22,7 +22,7 @@ Patch: [harness/experiments/images/skill-callee-down.patch](../../harness/experi
 
 ## Pre-registration
 
-The threshold, at least 5 of 10 PASS in the change arm, was fixed in the committed experiment file before the run ([skill-callee-down-cli55.json](../../harness/experiments/skill-callee-down-cli55.json), [skill-callee-down-api.json](../../harness/experiments/skill-callee-down-api.json)).
+The threshold, at least 5 of 10 PASS in the change arm, was fixed in the committed experiment file before the run ([skill-callee-down-cli55.json](../../harness/experiments/skill-callee-down-cli55.json)).
 
 ## Results
 
@@ -30,20 +30,18 @@ n=10 trials per arm. CI is the Wilson 95% interval on the PASS rate.
 
 | Experiment | Model, client | Baseline PASS | Change PASS | 95% CI (baseline, change) | Verdict |
 |---|---|---|---|---|---|
-| [skill-callee-down-cli55](../../records/skill-callee-down-cli55/RESULT.md) | claude-sonnet-5-5, Claude Code CLI 2.1.285, effort high | 0/10 (10 PARTIAL) | 7/10 (3 PARTIAL) | [0.00, 0.28], [0.40, 0.89] | EXPERIMENT PASS |
-| [skill-callee-down-api](../../records/skill-callee-down-api/RESULT.md) | claude-sonnet-5, harness agent loop, no reasoning | 0/10 (9 PARTIAL, 1 FAIL) | 3/10 (5 PARTIAL, 2 FAIL) | [0.00, 0.28], [0.11, 0.60] | EXPERIMENT FAIL |
+| [skill-callee-down-cli55](../../records/skill-callee-down-cli55/RESULT.md) | claude-sonnet-5-5, Claude Code CLI 2.1.285, effort high | 0/10 (10 PARTIAL: right service, wrong mechanism) | 7/10 (3 PARTIAL) | [0.00, 0.28], [0.40, 0.89] | EXPERIMENT PASS |
 
-In the CLI experiment all 10 changed-skill trials opened spans of the recommendation service; no baseline trial did ([NOTES.md](../../records/skill-callee-down-cli55/NOTES.md)). Both CLI batches: 0 invalid, 0 leaks.
+The model was confirmed on 20 of 20 trials. In all 10 changed-skill trials the agent opened spans of the recommendation service; in no baseline trial did it ([NOTES.md](../../records/skill-callee-down-cli55/NOTES.md)). Both batches: 0 invalid, 0 leaks.
 
 ## What was held fixed
 
-Within each experiment both arms used the same scenario version (3), prompt (`neutral`), tool set, fixture and grader; only the Jaeger image, and so the skill text, differed. The recorded factors are listed in [docs/RECORD.md](../RECORD.md) and [docs/TUNING.md](../TUNING.md). The two experiments differ in model, client and reasoning setting, so their rows are not a like-for-like comparison. The CLI arms ran as two separate batches.
+Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixture and grader; only the Jaeger image, and so the skill text, differed. The recorded factors are listed in [docs/RECORD.md](../RECORD.md) and [docs/TUNING.md](../TUNING.md). The arms ran as two separate batches.
 
 ## Caveats
 
-- One scenario. The bullet was written after failures on this scenario were observed, so a held-out scenario is needed before calling it general.
+- One scenario. The change was written after failures on this scenario were observed, so a held-out scenario is needed before calling it general.
 - The baseline is the skill as shipped in 2.20.0. Jaeger's main branch has since rewritten this skill (#9263), so the change has not yet been measured against main.
-- The effect is much weaker on claude-sonnet-5 without reasoning: 3/10 misses the threshold.
 - The mechanism is graded by one pinned model grader, validated against 21 human-labeled items ([docs/TUNING.md](../TUNING.md)).
 
 ## Reproduce

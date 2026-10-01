@@ -177,6 +177,23 @@ argument `"$trace_id"` repeats the call per trace id seen so far. It needs the f
 `run` calls it after the flip and aborts on FAIL. search_traces looks back one hour, so a
 standalone PASS can come from an earlier fault window.
 
+## Protocol
+
+Results published in this repo come from one protocol:
+
+- Model: `claude-sonnet-5-5`, requested by that full id in `run.model`. Every trial's `model_asserted` in
+  scores.jsonl is the model its stream reported, and the batch aborts after a cell that reports another one.
+- Client: the Claude Code CLI with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed.
+- Effort `high`; max turns as the experiment file states (30 in skill-callee-down-cli55).
+- 10 trials per arm (`n_per_arm`); with fewer, `bench.py band` and the results table say rank only.
+- The arms, images and thresholds are in the experiment file, committed before the first trial; the
+  manifest records `harness_git_sha` and `harness_dirty`. Arms on different images run as consecutive
+  batches against the same fixture.
+- A pair is discarded and re-run, not topped up, when any trial ran on another model, the fixture changed
+  outside the scenario's declared restarts (the trial scores INVALID), the batch stopped before 10 trials
+  (run exits 4 or 6), the leak check is red (pre-flight aborts, or the trial scores LEAK), or a trial has
+  no cached grade (`bench.py verify` fails).
+
 ## Thresholds
 
 `judge.py` exits 2 unless both manifests carry the same experiment sha256 and their `arm_pin`
