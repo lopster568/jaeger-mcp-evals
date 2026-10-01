@@ -211,9 +211,12 @@ def now_us():
 # ---- fixture stability (per-trial snapshots, host thrash, restart gate) --------
 
 def container_snapshot(cfg):
-    """{container_name: (restart_count, oom_killed, started_at)} for every container docker ps
-    -aq lists, from one ssh or local call; {} if the call fails."""
-    r = fixture_sh(cfg, "docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}' $(docker ps -aq)")
+    """{container_name: (restart_count, oom_killed, started_at)} for every container of the demo's
+    compose project (the one the jaeger container carries; the host is shared, so other projects'
+    containers must not count), from one ssh or local call; {} if the call fails."""
+    r = fixture_sh(cfg, "docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}' "
+                        "$(docker ps -aq --filter label=com.docker.compose.project=$(docker inspect -f "
+                        "'{{index .Config.Labels \"com.docker.compose.project\"}}' jaeger))")
     if r.returncode != 0:
         return {}
     out = {}
@@ -503,6 +506,7 @@ def arm_row(arm, scored, n):
     r = {k: sum(s.get("verdict") == k for s in ss) for k in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID", "LEAK")}
     r.update(arm=arm, n=n, ERROR=n - len(ss), stops=stops(ss), calls=med("tool_calls"), steps=med("steps_to_evidence"),
              chars=med("tool_output_chars"), call_errors=sum(s.get("call_errors") or 0 for s in ss),
+             invalid_cause=judge.invalid_cause(ss),
              rs_att=sum(bool(s.get("read_skill_attempted")) for s in ss),
              rs_ok=sum(bool(s.get("read_skill_succeeded")) for s in ss),
              tools=judge.arm_metrics([dict(s, arm=arm) for s in ss], arm, tool_names)["tool_used"],
@@ -528,8 +532,8 @@ def results(scenario, rows, out, detail=lambda m: None):
                    r["rs_ok"], n, ",".join("%s:%d" % kv for kv in r["tools"].items()) or "-"))
         warn += ["WARNING: %s: %s compaction event(s) in stream.jsonl" % c for c in r["compacted"]]
         if r["INVALID"]:
-            warn.append("WARNING: %s: %d/%d runs INVALID (sandbox check failed, see sandbox_violations); never a pass"
-                        % (r["arm"], r["INVALID"], n))
+            warn.append("WARNING: %s: %d/%d runs INVALID (%s check failed, see sandbox_violations and fixture_changes); never a pass"
+                        % (r["arm"], r["INVALID"], n, r["invalid_cause"]))
         if r["LEAK"]:
             warn.append("WARNING: %s: %d/%d runs LEAK (the answer names a flag, see leak_hits); never a pass"
                         % (r["arm"], r["LEAK"], n))
@@ -1736,7 +1740,7 @@ def verify(cfg):
     if mismatches:
         print("verify: FAIL - %d stored verdict(s) in scores.jsonl differ from a re-score of the raw files" % len(mismatches))
     if invalid:
-        print("verify: FAIL - %d run(s) INVALID or LEAK: the sandbox check failed or the answer names a flag, so no "
+        print("verify: FAIL - %d run(s) INVALID or LEAK: the sandbox or fixture check failed or the answer names a flag, so no "
               "result from their batch stands" % len(invalid))
     if ungraded:
         print("verify: FAIL - %d run(s) have no cached mechanism grade" % len(ungraded))
