@@ -3,7 +3,7 @@
   "version": 2,
   "scenario": "paymentFailure",
   "hypothesis": "A one-trial smoke test that the fixture, client and scoring work end to end, not a finding.",
-  "run": {"client": "cli", "provider": null, "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 1, "seed": null},
+  "run": {"client": "cli", "provider": null, "model": "claude-sonnet-5-5", "effort": "high", "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 1, "seed": null},
   "arms": {
     "noskill": {"prompt": "noskill", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true}
   },

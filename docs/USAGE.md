@@ -46,7 +46,7 @@ name, and `desc-change-sep28` is pre-registered.
 {
   "name": "desc-change-sep28", "version": 2, "scenario": "paymentFailure",
   "hypothesis": "A tool-description change moves an error investigation from get_critical_path to get_trace_topology ...",
-  "run": {"client": "cli", "provider": null, "model": "sonnet", "effort": "xhigh",
+  "run": {"client": "cli", "provider": null, "model": "claude-sonnet-5-5", "effort": "high",
           "max_turns": 30, "max_budget_usd": 2, "n_per_arm": 10, "seed": null},
   "arms": {
     "baseline":   {"prompt": "noskill", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": true},
