@@ -71,7 +71,7 @@ phoenix:
 	  sleep 5; \
 	done; echo "Phoenix did not answer 200 on port $$PHOENIX_PORT within 5 minutes"; exit 1
 
-# Makes ONE paid agent call (Claude Code CLI, sonnet, effort xhigh, budget cap 2 USD).
+# Makes ONE paid agent call (Claude Code CLI, claude-sonnet-5-5, effort high, budget cap 2 USD).
 smoke: preflight
 	$(PYTHON) harness/bench.py run $(SMOKE) --dry-run
 	@$(PYTHON) -c 'import json,sys; e=json.load(open(sys.argv[1])); r=e["run"]; print("about to spend: arm %s, client %s, model %s, n %d, cap %s USD; Ctrl-C to cancel" % (",".join(e["arms"]), r["client"], r["model"], r["n_per_arm"], r["max_budget_usd"]))' $(SMOKE)

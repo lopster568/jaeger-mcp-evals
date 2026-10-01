@@ -28,20 +28,19 @@ flowchart LR
 ## Quick Start
 
 ```bash
-make setup     # demo checkout, overlay, bring-up, Phoenix; waits until "fixture ready"
-make smoke     # one paid agent trial of harness/experiments/smoke-paymentfailure.json
-python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: pre-flight, planned order
-python3 harness/bench.py run harness/experiments/<name>.json            # flip, trials, scoring, records
-python3 harness/bench.py verify                                         # re-score from raw files
+make setup     # free: install the fixture, start it and Phoenix, wait for "fixture ready"
+make smoke     # paid: one agent trial end to end, capped at 2 USD
+
+# your own experiment
+python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan
+python3 harness/bench.py run harness/experiments/<name>.json            # paid: runs the trials and scores them
+python3 harness/bench.py verify                                         # free: re-scores every run from its raw files
 ```
 
 > [!WARNING]
-> `make smoke` and `bench.py run` start paid agent trials. The dry run is free.
+> `make smoke` and `bench.py run` start paid agent trials. `make smoke` does its own dry run first and waits 5 seconds before spending.
 
 Jaeger is at http://localhost:16686/jaeger/ui and Phoenix at http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Everything a batch does is set in one checked-in file, `harness/experiments/<name>.json`; no command-line flag changes a run. Below 10 trials per arm a result only ranks the arms.
-
-> [!NOTE]
-> `make setup` and `make smoke` have not yet been run from a fresh clone; every recorded batch ran against a fixture on a separate host.
 
 ## Layout and docs
 
