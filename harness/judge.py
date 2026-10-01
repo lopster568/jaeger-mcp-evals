@@ -60,6 +60,15 @@ def median(xs):
     return statistics.median(xs) if xs else None
 
 
+def invalid_cause(rows):
+    """Why the INVALID rows are INVALID: score.py scores INVALID on a sandbox breach (sandbox_ok
+    false) or a fixture change the scenario did not declare (fixture_ok false), either or both."""
+    inv = [r for r in rows if r.get("verdict") == "INVALID"]
+    why = [k for k, bad in (("sandbox", any(r.get("sandbox_ok") is False for r in inv)),
+                            ("fixture", any(r.get("fixture_ok") is False for r in inv))) if bad]
+    return " and ".join(why) or "sandbox or fixture"
+
+
 def arm_metrics(rows, arm, tool_names):
     arm_rows = [r for r in rows if r.get("arm") == arm]
     tool_used = {}
@@ -71,6 +80,7 @@ def arm_metrics(rows, arm, tool_names):
         "chars_median": median([r.get("tool_output_chars") for r in arm_rows]),
         "pass_count": sum(1 for r in arm_rows if r.get("verdict") == "PASS"),
         "invalid": sum(1 for r in arm_rows if r.get("verdict") == "INVALID"),
+        "invalid_cause": invalid_cause(arm_rows),
         "leak": sum(1 for r in arm_rows if r.get("verdict") == "LEAK"),
     }
 
@@ -195,7 +205,7 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
         prefix = f"{arm}: " if len(test_arms) > 1 else ""
         for label, mm in (("baseline", baseline_metrics), ("variant", m)):
             if mm["invalid"]:
-                lines.append(f"judge: WARNING - {prefix}{mm['invalid']} {label} row(s) INVALID (sandbox check failed), "
+                lines.append(f"judge: WARNING - {prefix}{mm['invalid']} {label} row(s) INVALID ({mm['invalid_cause']} check failed), "
                              "counted in n and never as a PASS")
             if mm["leak"]:
                 lines.append(f"judge: WARNING - {prefix}{mm['leak']} {label} row(s) LEAK (the answer names a flag), "

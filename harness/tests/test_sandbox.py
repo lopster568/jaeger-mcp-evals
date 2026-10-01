@@ -173,5 +173,14 @@ class TestInvalidCounted(unittest.TestCase):
         self.assertEqual((m["n"], m["pass_count"], m["invalid"]), (2, 1, 1))
 
 
+class TestInvalidCause(unittest.TestCase):
+    def test_a_fixture_only_invalid_row_is_not_blamed_on_the_sandbox(self):
+        # the shape of the 2026-09-30 mainskill rows: sandbox held, fixture changed under the trial
+        row = {"verdict": "INVALID", "sandbox_ok": True, "fixture_ok": False}
+        self.assertEqual(judge.invalid_cause([row]), "fixture")
+        self.assertEqual(judge.invalid_cause([row, dict(row, sandbox_ok=False)]), "sandbox and fixture")
+        self.assertEqual(judge.invalid_cause([dict(row, sandbox_ok=False, fixture_ok=True)]), "sandbox")
+
+
 if __name__ == "__main__":
     unittest.main()

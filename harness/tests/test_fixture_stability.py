@@ -65,6 +65,18 @@ VMSTAT_THRASHING = """procs -----------memory---------- ---swap-- -----io---- -s
 """
 
 
+class TestContainerSnapshotScope(unittest.TestCase):
+    def test_lists_only_the_jaeger_containers_compose_project(self):
+        # 2026-09-30: g-mamba-versionspec-algebra-solver-2 appeared and s-mamba-versionspec-algebra-2
+        # vanished (another project on the shared host) and marked four trials INVALID.
+        out = "/jaeger 0 false 2026-09-30T11:49:08Z\n"
+        with mock.patch.object(bench, "fixture_sh", return_value=mock.Mock(returncode=0, stdout=out)) as sh:
+            self.assertEqual(bench.container_snapshot({}), {"jaeger": ("0", "false", "2026-09-30T11:49:08Z")})
+        cmd = sh.call_args[0][1]
+        self.assertIn("docker ps -aq --filter label=com.docker.compose.project=$(docker inspect -f", cmd)
+        self.assertTrue(cmd.rstrip().endswith("jaeger))"))
+
+
 class TestVmstatBiMean(unittest.TestCase):
     def test_first_sample_is_excluded_so_a_huge_boot_average_does_not_abort(self):
         # First sample's bi is 999999 (since boot); the non-first samples (150, 180) mean 165.
