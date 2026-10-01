@@ -3,9 +3,47 @@
 How to add or edit a `harness/scenarios/*.json` file. Running batches and reading
 results are in docs/USAGE.md.
 
+## Example
+
+[harness/scenarios/paymentFailure.json](../harness/scenarios/paymentFailure.json), the simplest scenario: the payment service rejects every charge, and the error span carries the message.
+
+```json
+{
+ "flag": "paymentFailure",
+ "version": 2,
+ "activation": {
+  "field": "defaultVariant",
+  "value": "100%"
+ },
+ "deterministic": "yes",
+ "ground_truth": {
+  "service": "payment",
+  "operation": "charge",
+  "mechanism": "On every charge, payment/charge.js (lines 39-47 at tag 3.0.0) sets span attribute demo.user_context.loyalty_level=gold and throws Payment request failed. Invalid token. demo.user_context.loyalty_level=gold. checkout's PlaceOrder then returns gRPC Internal failed to charge card, and the frontend fails the checkout request; those are cascading symptoms, not the cause."
+ },
+ "mechanism_truth": "Every request is rejected by the called service's own application logic, which throws an error saying the credential or token presented is not valid; the errors seen in its callers are only a consequence.",
+ "signal_regex": "Invalid token",
+ "oracle": [{"tool": "search_traces", "arguments": {"service_name": "checkout", "with_errors": true}}, {"tool": "get_trace_errors", "arguments": {"trace_id": "$trace_id"}}],
+ "pass_rule": {
+  "service_exact": ["payment"],
+  "operation_exact": ["charge", "oteldemo.PaymentService/Charge", "grpc.oteldemo.PaymentService/Charge"]
+ },
+ "cascade_rule": {
+  "required_any": [
+   ["checkout"]
+  ]
+ },
+ "evidence": {
+  "ground_truth_trace": "evidence/paymentFailure.trace.json",
+  "baseline_absence": "evidence/paymentFailure.baseline.json"
+ },
+ "notes": "Easiest mechanism-tier scenario: the leaf error span carries the message, the attribute, and an exception event. Kept as the sanity floor. demo.user_context.loyalty_level is set on every charge span at baseline (platinum/gold/silver observed with the flag off), so neither the attribute nor the value gold discriminates; the signal is the ERROR status with message 'Payment request failed. Invalid token' and the exception event."
+}
+```
+
 ## The file
 
-Keys, from `harness/scenarios/paymentFailure.json`:
+Keys, as in the example above:
 
 - `flag`: the flagd flag this scenario activates.
 - `activation`: `{field, value}` written to `src/flagd/demo.flagd.json` for that flag.
