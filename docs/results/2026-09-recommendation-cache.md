@@ -2,11 +2,21 @@
 
 One Gotcha bullet added to the error-root-cause skill shipped in Jaeger 2.20.0, with `search_traces` added to the skill's allowed-tools line, took claude-sonnet-5-5 from 0/10 to 7/10 PASS on one scenario (n=10 per arm, model confirmed on 20 of 20 trials). The protocol is in [docs/USAGE.md](../USAGE.md#protocol).
 
-## Scenario and why the stock skill misleads
+## The failure
 
-recommendationCacheFailure v3: a list inside the recommendation service grows with every cache miss, requests slow down, and the process runs out of memory and restarts. What the agent sees are frontend calls to recommendation failing with `14 UNAVAILABLE` connection errors.
-The stock skill says "The deepest error span with no errored children is the most likely root cause." Here the crashed callee has no span for the failed call, so the deepest error is the caller's failed connection, and the agent stops there (PARTIAL: right service, wrong cause).
-The cause is in the recommendation service's own earlier spans, where `get_product_list` gets slower and `demo.product.count` grows.
+The recommendation service keeps a list in memory that grows on every cache miss. Requests get slower, the process runs out of memory and restarts, and the list starts growing again. While it restarts, the frontend's calls to it fail.
+
+- Scenario: recommendationCacheFailure, version 3
+- Failing service: `recommendation`, operation `get_product_list`
+- What the agent sees first: frontend spans failing with `14 UNAVAILABLE` or `ECONNREFUSED`, with no server span from recommendation
+- Where the cause is: recommendation's own earlier spans, where `get_product_list` gets slower and `demo.product.count` grows
+- PASS: names `recommendation` and the growing in-memory list as the mechanism
+- PARTIAL: names `recommendation` but stops at the connection error or the restart
+
+Why the stock skill misleads: it says "The deepest error span with no errored children is the most likely root cause." The crashed service has no span for the failed call, so the deepest error is the frontend's failed connection, and the agent stops there.
+
+- Stock skill: locus PASS, mechanism incorrect, verdict PARTIAL in 10 of 10
+- Changed skill: locus PASS in 10 of 10, mechanism correct in 7, verdict PASS in 7 and PARTIAL in 3
 
 ## The change
 
