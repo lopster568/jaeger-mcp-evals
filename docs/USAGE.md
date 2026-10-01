@@ -73,10 +73,12 @@ verbatim except that the long `hypothesis` is elided:
 
 ## Run a batch
 
-1. Dry run, from the repository root: read-only pre-flight; prints the plan and seed, never flips the flag or calls a model.
+1. Dry run, from the repository root.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json --dry-run
    ```
+   > [!TIP]
+   > The dry run is free: a read-only pre-flight that prints the plan and seed, never flips the flag or calls a model.
 2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled, restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json
@@ -98,7 +100,10 @@ verbatim except that the long `hypothesis` is elided:
 > Step 2 spends money: one agent trial per cell, plus one grader call per new mechanism answer.
 
 `run` exits 0 done; 1 bad file or pre-flight failure; 4 aborted after 3 consecutive cell failures;
-5 flag not confirmed back at its default (check the fixture; this code wins); 6 interrupted or incomplete.
+6 interrupted or incomplete.
+
+> [!CAUTION]
+> Exit 5 means the flag was not confirmed back at its default. Check the fixture before anything else; this code wins over 4 and 6.
 
 A batch aborts before the flag flips on:
 
@@ -135,7 +140,10 @@ Results published in this repo come from one protocol:
 
 ## Reading results
 
-- Every number comes from `bench.py verify`. Below 10 cells per arm a result is a ranking, not a rate; a rate of 0 or 1 means read the trajectories for a leaky prompt or unfair assertion.
+> [!IMPORTANT]
+> Below 10 cells per arm a result is a ranking, not a rate. A rate of 0 or 1 means read the trajectories for a leaky prompt or unfair assertion.
+
+- Every number comes from `bench.py verify`.
 - `bench.py band <batch_dir> [--arm A]` (a `$RUNS_DIR` directory; cached grades only) prints the Results table: verdict counts, `err`, `invalid`, `leak`, rate, Wilson 95% CI, medians. `err`, `invalid`, `leak` and abnormal stops count in n, never in PASS. Exit 0 certified, 2 when n is under 10, 3 when the rate is 0 or 1.
 - `band` and `verify` flag runs with a compaction event (context numbers not comparable). Scenarios with `deterministic` set to no stay out of the certified pool. `bench.py power <n_per_arm>` gives the smallest significant variant PASS count (Fisher).
 
