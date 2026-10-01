@@ -12,11 +12,19 @@ The cause is in the recommendation service's own earlier spans, where `get_produ
 
 One Gotcha bullet in error-root-cause/SKILL.md, and `search_traces` added to its allowed-tools line (6 insertions, 1 deletion):
 
-    - A client span that failed to connect (connection refused, unavailable) and
-      has no server-side child is not the origin: the callee was down or
-      restarting. Use `search_traces` on the callee for the period before the
-      failure and `get_span_details` on its own spans to find why it went down,
-      such as spans getting slower or attribute values that stand out.
+```diff
+-allowed-tools: get_trace_errors get_trace_topology get_span_details
++allowed-tools: get_trace_errors get_trace_topology get_span_details search_traces
+```
+
+```diff
+ - Multiple independent root causes can exist in a single trace.
++- A client span that failed to connect (connection refused, unavailable) and
++  has no server-side child is not the origin: the callee was down or
++  restarting. Use `search_traces` on the callee for the period before the
++  failure and `get_span_details` on its own spans to find why it went down,
++  such as spans getting slower or attribute values that stand out.
+```
 
 Patch: [harness/experiments/images/skill-callee-down.patch](../../harness/experiments/images/skill-callee-down.patch).
 
