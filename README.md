@@ -21,11 +21,9 @@ flowchart LR
 |---|---|
 | Tools | Python 3.11 or newer (standard library only), Docker with Compose v2, git, curl; `make preflight` checks them and the ports |
 | Agent client | `run.client` in the experiment file: `cli` (Claude Code CLI on your logged-in plan, the default), `api` (experimental) or `codex` |
-| Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull |
-| Free ports | 16686, 8013, 8016, 16006 |
+| Sandbox | with `cli` the agent starts with its built-in tools off and only `mcp__jaeger__*` allowed; a trial that shows any other tool scores INVALID |
+| Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006 |
 | Host | `make` targets run on the fixture host, this machine by default; `bench.py` can drive a remote fixture over ssh |
-
-With the `cli` client the agent starts with its built-in tools off and only `mcp__jaeger__*` allowed; a trial that shows any other tool scores INVALID.
 
 ## Quick Start
 
