@@ -17,7 +17,7 @@
 
 The experiment file (harness/experiments/<name>.json, docs/USAGE.md) is the complete
 configuration of a batch. fixture.env (harness/config.py) holds only where the fixture
-runs and the API keys. Records follow docs/RECORD.md (schema v4).
+runs and the API keys. Records follow docs/RECORD.md (schema v5).
 
 run exit codes: 0 done (or dry run / first-only), 1 bad experiment file, pre-flight or
 setup failure (nothing ran), 4 aborted after 3 consecutive cell failures, 5 the flag was not
