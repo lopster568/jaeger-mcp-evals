@@ -150,7 +150,7 @@ Run everything from the repository root.
    would publish the fixture host, ssh user, home directory, an API key or base URL, or a
    session identifier, and prints each file with the key it matched. Commit RESULT.md,
    INDEX.md and trajectories.sha256, then optionally attach the tarball to a GitHub release of
-   that commit; no release is published yet. docs/RECORD.md lists what the tarball holds.
+   that commit; no release is published yet.
 
 The variant image `jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981`
 (`harness/experiments/images/desc-change-sep28.json`) was built from a local Jaeger commit that
