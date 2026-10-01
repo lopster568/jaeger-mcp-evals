@@ -50,7 +50,7 @@ Everything a batch does is set in one checked-in file, `harness/experiments/<nam
 - [docs/USAGE.md](docs/USAGE.md): the experiment file, running a batch, thresholds, reading results, scoring
 - [docs/SCENARIOS.md](docs/SCENARIOS.md): adding or editing a scenario
 - [docs/RECORD.md](docs/RECORD.md): every key a run records; [docs/TUNING.md](docs/TUNING.md): each factor that can change a result
-- [docs/results/2026-09-recommendation-cache.md](docs/results/2026-09-recommendation-cache.md): the skill-callee-down results
+- [docs/results/2026-09-recommendation-cache.md](docs/results/2026-09-recommendation-cache.md): the skill-callee-down results; new pages start from [TEMPLATE.md](docs/results/TEMPLATE.md)
 - [fixture/FIXTURE.md](fixture/FIXTURE.md): installing and operating the fixture
 - [CHANGELOG.md](CHANGELOG.md): scenario versions and comparability; [CONTRIBUTING.md](CONTRIBUTING.md): tests and DCO sign-off
 
