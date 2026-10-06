@@ -64,10 +64,14 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 - Fixture: memory limits raised for load-generator (1G), ad (600M), quote (80M) and fraud-detection (600M), which thrashed the page cache at their old limits. Batches before this change ran with the old limits.
 - Fixture: opensearch, prometheus, grafana, opamp-server, flagd-ui and telemetry-docs are switched off (Compose profile `unused`) and the collector no longer exports to them. The fixture is 22 containers (23 with Phoenix); batches before this change ran 28. `MIN_CONTAINERS` is 19 (was 25). No span content or scenario changes; `fixture_overlay_sha256` changes.
-- recommendationCacheFailure: version 3 is the scenario the API-client records use (protocol v2 grading, per-trial fixture stability check, restart signal gate, restart before run without Jaeger recording it). Records: cert-recommendationcache-api (stock skill, 0/10 PASS) and skill-callee-down-api (one skill bullet added, 3/10 PASS, EXPERIMENT FAIL against the pre-registered threshold of 5). Both ran without reasoning; see records/skill-callee-down-api/NOTES.md.
+- recommendationCacheFailure: version 3 (protocol v2 grading, per-trial fixture stability check, restart signal gate, restart before run without Jaeger recording it). The API-client records first published with this version were removed on 2026-09-30 (see below).
 
 ## 2026-09-30
 
 - Records: skill-callee-down-cli55 (claude-sonnet-5-5 pinned by full id, Claude Code CLI 2.1.285, effort high, recommendationCacheFailure v3): stock skill 0/10 PASS, one Gotcha bullet and `search_traces` in allowed-tools 7/10, EXPERIMENT PASS against the pre-registered threshold of 5. Results page: docs/results/2026-09-recommendation-cache.md. No scenario or scoring change.
 - Records: the repo publishes one protocol only (claude-sonnet-5-5 by full id, Claude Code CLI, effort high, 10 trials per arm; docs/USAGE.md, Protocol). Batches recorded on an alias or the API client are removed. Harness: the container snapshot is scoped to the demo's compose project, and INVALID warnings name the failed check. No scenario or scoring change.
 - Harness: the description gate reads image records whose `descriptions` is null; `reasoning_effort` is passed through on the api client, and a run whose reported model differs from the pinned one is refused.
+
+## 2026-10-06
+
+- Corrections, no scenario, scoring or record change: the 2026-09-29 entry cited two API-client records that were removed on 2026-09-30, and that citation is gone. Results page (docs/results/2026-09-recommendation-cache.md): the pre-registration section says what this repository's history can and cannot show, the cost and turn difference between the arms is stated, and one caveat is added.
