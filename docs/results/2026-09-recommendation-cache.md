@@ -40,7 +40,7 @@ Patch: [harness/experiments/images/skill-callee-down.patch](../../harness/experi
 
 ## Pre-registration
 
-The threshold, at least 5 of 10 PASS in the change arm, was fixed in the committed experiment file before the run ([skill-callee-down-cli55.json](../../harness/experiments/skill-callee-down-cli55.json)).
+The threshold, at least 5 of 10 PASS in the change arm, is in the experiment file both batches ran from ([skill-callee-down-cli55.json](../../harness/experiments/skill-callee-down-cli55.json)). Each batch manifest records that file's sha256 (`d191f507...`), the harness commit it ran at (`a1431de`) and `harness_dirty: false`. That commit was made in a private working clone before the first batch started. In this repository the file first appears in a later commit, so the order cannot be checked from this repository's history alone.
 
 ## Results
 
@@ -52,6 +52,8 @@ n=10 trials per arm. CI is the Wilson 95% interval on the PASS rate.
 
 The model was confirmed on 20 of 20 trials. In all 10 changed-skill trials the agent opened spans of the recommendation service; in no baseline trial did it ([NOTES.md](../../records/skill-callee-down-cli55/NOTES.md)). Both batches: 0 invalid, 0 leaks.
 
+The changed skill makes each trial longer and costlier: a median of 22.5 turns (range 18 to 27) against 12 (range 11 to 14), a median of 20.5 tool calls against 10, and 2.77 USD against 0.77 USD for the ten trials (cost as reported by the CLI).
+
 ## What was held fixed
 
 Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixture and grader; only the Jaeger image, and so the skill text, differed. The recorded factors are listed in [docs/RECORD.md](../RECORD.md) and [docs/TUNING.md](../TUNING.md). The arms ran as two separate batches.
@@ -60,6 +62,7 @@ Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixt
 
 - One scenario. The change was written after failures on this scenario were observed, so a held-out scenario is needed before calling it general.
 - The baseline is the skill as shipped in 2.20.0. Jaeger's main branch has since rewritten this skill (#9263), so the change has not yet been measured against main.
+- The two edits were measured together. Baseline trials already called `search_traces` (10 of 10), so the allowed-tools line did not gate that tool in this client, and the experiment does not show which edit matters.
 - The mechanism is graded by one pinned model grader, validated against 21 human-labeled items ([docs/TUNING.md](../TUNING.md)).
 
 ## Reproduce
