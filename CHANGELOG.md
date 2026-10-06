@@ -79,3 +79,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-10-11
 
 - Records: skill-callee-down-mainskill (same model, client and effort, recommendationCacheFailure v3, 2.20.0 binary with the error-root-cause skill text from Jaeger main): that skill 0/10 PASS, with the change 6/10, EXPERIMENT PASS against the pre-registered threshold of 5. Results page: docs/results/2026-09-recommendation-cache.md. No scenario or scoring change.
+
+## 2026-10-15
+
+- Fixture: the flagd memory limit is raised from the demo's 75M to 200M. At 75M flagd's own executable pages are evicted and re-read from disk until it stops answering; on 2026-10-15 a fresh `make setup` hit this within minutes. GOMEMLIMIT is unchanged; no flag, image or span differs. `fixture_overlay_sha256` changes, and batches before this change ran with the old limit.

@@ -8,10 +8,18 @@ services:
     volumes:
       - ./overlay/jaeger-config.yml:/etc/jaeger/config.yml
       - ./src/jaeger/ui-config.json:/etc/jaeger/ui-config.json
+  # Fifth round of the memory-limit deviation described below. flagd's Go runtime may hold up
+  # to its GOMEMLIMIT (unchanged) of heap, which at the demo's 75M limit leaves little room for
+  # the pages of its own executable. The kernel evicts and re-reads them from disk until flagd
+  # stops answering. Limit only; no code, image, flag or span changes.
   flagd:
     ports:
       - "8013:8013"
       - "8016:8016"
+    deploy:
+      resources:
+        limits:
+          memory: 200M
   # Six services the benchmark never uses are switched off with the profile "unused" (never
   # enabled). It reads traces from Jaeger only; flags are flipped in the flag file and checked
   # through flagd's OFREP. Nothing may depend on them, so the depends_on lists that named
