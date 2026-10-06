@@ -10,7 +10,7 @@ The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and t
 | File here | Goes to (in the demo checkout) | What it changes |
 |---|---|---|
 | `env.override` | `.env.override` | Pins `DEMO_VERSION=3.0.0` (the demo's `.env` leaves it at `latest`) and `JAEGERTRACING_IMAGE=quay.io/jaegertracing/jaeger:2.20.0` |
-| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd); mounts the two configs below; higher memory limits for product-catalog, checkout, payment, astronomy-db, load-generator, ad, quote, fraud-detection; switches off six unused services (below) |
+| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd); mounts the two configs below; higher memory limits for product-catalog, checkout, payment, astronomy-db, load-generator, ad, quote, fraud-detection, flagd; switches off six unused services (below) |
 | `jaeger-config.yml` | `overlay/jaeger-config.yml` | The demo's `src/jaeger/config.yml` plus `jaeger_query.ai.enable_mcp: true` |
 | `otelcol-config-extras.yml` | `overlay/otelcol-config-extras.yml` | Fixed `memory_limiter` limit (the percentage form can crash the collector at start on some Docker hosts), the de-flagging processors, and no exporters or extension for the six switched-off services |
 
@@ -160,7 +160,7 @@ It never restarts a running container. Exit codes: 0 built and recorded, 1 refus
 ## Gotchas
 
 - After a Docker restart the stack may stay down despite `restart: unless-stopped`; check the container count and rerun `up -d` (wait a minute if the engine is still starting).
-- flagd can hang at its memory cap: OFREP accepts connections but never answers, and `docker stats` shows flagd at high CPU near its limit. Recreate only flagd: `... up -d --no-deps --force-recreate flagd`.
+- flagd can hang at its memory cap (the demo's 75M; the overlay raises it to 200M): OFREP accepts connections but never answers, and `docker stats` shows flagd at high CPU near its limit. Recreate only flagd: `... up -d --no-deps --force-recreate flagd`.
 - Jaeger's Dockerfile needs `--build-arg debug_image=...` even for `--target release`; build-variant.sh passes it.
 - Jaeger's storage is in memory: any restart of Jaeger, Docker or the host empties it until the load generator refills it.
 - Jaeger's HTTP API ignores `lookback=` unless `start` and `end` are also given; always pass explicit microsecond `start` and `end`.
