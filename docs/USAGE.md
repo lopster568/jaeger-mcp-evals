@@ -118,7 +118,7 @@ A batch aborts before the flag flips on:
 - Agent model: `run.model`, by full id. With the `cli` client the batch stops after a trial whose stream reports another model (`model_asserted` in scores.jsonl), and the pair is discarded.
 - Client version: `run.client_version`. Pre-flight runs `claude --version` and aborts before anything is touched when it reports another version.
 - Grader: `claude-fable-5-1`, fixed in `harness/grade.py` and called through the same `claude` CLI.
-- Jaeger: tested with 2.20.0. `bench.py` reads traces from Jaeger's `/api/traces` endpoint, which Jaeger 2.21.0 and later no longer serve, so those releases are not supported yet.
+- Jaeger: tested with 2.20.0. `bench.py` reads traces from Jaeger's `/api/v3/traces` endpoint, which 2.20.0 and later serve. No run has been made on 2.21.0 or later, so those releases are not supported yet.
 - Cost of the published pair (skill-callee-down-cli55, 10 trials per arm, sum of `cost_usd` in scores.jsonl): baseline 0.77 USD, variant 2.77 USD. Wall time from the first cell start to the last cell end in cells.jsonl: about 4.5 minutes and 8 minutes. The grader adds one call per trial.
 - For a pull request, attach `RESULT.md` (from `judge.py`) and the batch directory `bench.py run` copied to `records/<name>/`.
 
