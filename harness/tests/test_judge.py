@@ -104,12 +104,14 @@ class JudgeTests(unittest.TestCase):
 
     def test_output_text_is_exact(self):
         for chars, lines_want, code_want in (
-            (2000, ["tool_used_min[get_trace_topology]: PASS (measured=8, required>=8)",
+            (2000, ["baseline arm baseline: 10/10 PASS", "arm descchange: 10/10 PASS",
+                    "tool_used_min[get_trace_topology]: PASS (measured=8, required>=8)",
                     "tool_used_max[get_critical_path]: PASS (measured=2, required<=2)",
                     "tool_output_chars_median_drop_pct_min: PASS (measured=15.0, required>=10)",
                     "accuracy_pass_min: PASS (measured=10, required>=10)",
                     "EXPERIMENT PASS"], 0),
-            (0, ["tool_used_min[get_trace_topology]: PASS (measured=8, required>=8)",
+            (0, ["baseline arm baseline: 10/10 PASS", "arm descchange: 10/10 PASS",
+                 "tool_used_min[get_trace_topology]: PASS (measured=8, required>=8)",
                  "tool_used_max[get_critical_path]: PASS (measured=2, required<=2)",
                  "tool_output_chars_median_drop_pct_min: FAIL (measured=N/A (no baseline data), required>=10)",
                  "accuracy_pass_min: PASS (measured=10, required>=10)",
@@ -162,6 +164,7 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("- baseline batch: `baseline-batch`", result)
         self.assertIn("- variant batch: `variant-batch`", result)
         self.assertIn("```\n" + out + "```\n", result)  # the screen lines, verbatim
+        self.assertIn("\nbaseline arm baseline: 10/10 PASS\narm descchange: 10/10 PASS\n", result)
         with open(os.path.join(self.tmp, "records", "INDEX.md")) as f:
             self.assertIn("| desc-change-sep28 | EXPERIMENT PASS | [RESULT.md](desc-change-sep28/RESULT.md) |", f.read())
         # a re-run overwrites: RESULT.md is the current answer
