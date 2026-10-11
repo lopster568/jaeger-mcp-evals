@@ -1,0 +1,34 @@
+{
+  "name": "skill-callee-down-mainskill",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "With the error-root-cause skill text from Jaeger main b3e66888 (#9263) inside the 2.20.0 binary, claude-sonnet-5-5 pinned on the Claude Code CLI at effort high: the one-bullet change reaches the cause in at least 5 of 10 trials. Decision rule for an upstream PR: only if the change passes the threshold and the main-skill baseline stays at or below 2 of 10. Supersedes skill-callee-down-main.json, which could not run because main removed the v1 HTTP API.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:v2200-mainskill-2044f311",
+      "tools": true
+    },
+    "skillchange": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:v2200-mainskill-callee-down-64a8875f",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {
+    "accuracy_pass_min": 5
+  },
+  "status": "CONFIRMED v1 2026-09-30: threshold and decision rule pre-registered before any run"
+}

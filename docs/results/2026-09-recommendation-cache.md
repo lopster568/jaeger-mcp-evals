@@ -54,6 +54,55 @@ The model was confirmed on 20 of 20 trials. In all 10 changed-skill trials the a
 
 The changed skill makes each trial longer and costlier: a median of 22.5 turns (range 18 to 27) against 12 (range 11 to 14), a median of 20.5 tool calls against 10, and 2.77 USD against 0.77 USD for the ten trials (cost as reported by the CLI).
 
+## The same pair on the skill text from Jaeger main
+
+The pair was run again with the error-root-cause skill text from Jaeger main as of commit `b3e66888` (the text last changed in #9263) inside the 2.20.0 binary. This is not main's binary: main has since removed the v1 HTTP API, so a build of main could not serve the harness. Experiment file: [skill-callee-down-mainskill.json](../../harness/experiments/skill-callee-down-mainskill.json); image records: [baseline](../../harness/experiments/images/v2200-mainskill.json), [change](../../harness/experiments/images/v2200-mainskill-callee-down.json). The change is the one described above, applied to main's text; its patch is not in this repository.
+
+Rule from the experiment file: at least 5 of 10 PASS in the change arm, and (decision rule in the hypothesis) the baseline at most 2 of 10. Run on 2026-10-06, same model, client, effort, scenario version and prompt as the table above.
+
+| Experiment | Baseline PASS | Change PASS | 95% CI (baseline, change) | Verdict |
+|---|---|---|---|---|
+| [skill-callee-down-mainskill](../../records/skill-callee-down-mainskill/RESULT.md) | 0/10 (10 PARTIAL) | 6/10 (4 PARTIAL) | [0.00, 0.28], [0.31, 0.83] | EXPERIMENT PASS (change 6 >= 5, baseline 0 <= 2) |
+
+Three fresh passes of the mechanism grader over the same ten answers per arm ([grader-reruns](../../records/skill-callee-down-mainskill/grader-reruns/)), counted as "correct" mechanism:
+
+| | Stored grade | Re-run 1 | Re-run 2 | Re-run 3 |
+|---|---|---|---|---|
+| Baseline | 0/10 | 0/10 | 0/10 | 0/10 |
+| Change | 6/10 | 6/10 | 5/10 | 6/10 |
+
+A re-run grade differs from the stored one in one change-arm answer. The threshold of 5 holds in every pass.
+
+Effort per arm, from `scores.jsonl` of each batch (ten trials; cost as reported by the CLI):
+
+| | Median tool calls | Median turns | Median cost per trial | Cost, ten trials |
+|---|---|---|---|---|
+| Baseline | 11 (range 10 to 13) | 13 | 0.10 USD | 1.00 USD |
+| Change | 18.5 (range 15 to 22) | 20.5 | 0.19 USD | 1.99 USD |
+
+Caveats specific to this pair:
+
+- The binary is 2.20.0, not main. Only the skill text matches main.
+- One scenario, the same one the change was written against; the other caveats above apply unchanged.
+- The mechanism grader and its re-runs used claude-fable-5-1, as recorded in each score row.
+
+Reproduce the counts and effort figures offline:
+
+```
+python3 - <<'PY'
+import json, statistics as s
+R = "records/skill-callee-down-mainskill/"
+for b in ["batch-20261006T115900Z", "batch-20261006T121535Z"]:
+    sc = [json.loads(l) for l in open(R + b + "/scores.jsonl")]
+    print(b, [x["verdict"] for x in sc].count("PASS"), "PASS;",
+          "median tool_calls", s.median(x["tool_calls"] for x in sc),
+          "turns", s.median(x["num_turns"] for x in sc),
+          "cost", round(s.median(x["cost_usd"] for x in sc), 4), round(sum(x["cost_usd"] for x in sc), 2))
+    rr = [json.loads(l) for l in open(R + "grader-reruns/" + b + ".jsonl")]
+    print("  re-runs correct per pass:", [sum(r["label"] == "correct" for r in rr if r["pass"] == p) for p in (1, 2, 3)])
+PY
+```
+
 ## What was held fixed
 
 Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixture and grader; only the Jaeger image, and so the skill text, differed. The recorded factors are listed in [docs/RECORD.md](../RECORD.md) and [docs/TUNING.md](../TUNING.md). The arms ran as two separate batches.
