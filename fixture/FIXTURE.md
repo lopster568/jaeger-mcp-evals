@@ -86,7 +86,7 @@ its trajectories there (docs/USAGE.md, Export to Phoenix).
 
 ```
 docker ps -q | wc -l                                    # at least MIN_CONTAINERS (default 19)
-curl -s http://localhost:16686/jaeger/ui/api/services   # the demo's services, not an empty list
+curl -s http://localhost:16686/jaeger/ui/api/v3/services   # the demo's services, not an empty list
 curl -s -X POST -H 'Content-Type: application/json' -d '{"context":{}}' \
   http://localhost:8016/ofrep/v1/evaluate/flags/paymentFailure   # "variant":"off"
 python3 harness/tools.py capture --out /tmp/tools.json          # prints the tool list sha256

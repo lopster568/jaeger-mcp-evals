@@ -179,6 +179,15 @@ def trace(fault):
             "spans": [{"operationName": "charge", "processID": "p1", "tags": tags, "logs": []}]}
 
 
+def v3_body(traces):
+    """Jaeger's /api/v3/traces body for v1-shaped traces: spans flattened across resourceSpans, OTLP attributes."""
+    rs = [{"resource": {"attributes": [{"key": "service.name", "value": {"stringValue": t["processes"][sp["processID"]]["serviceName"]}}]},
+           "scopeSpans": [{"spans": [{"traceId": "%s%d" % (t["traceID"], i), "name": sp["operationName"], "status": {},
+                                      "attributes": [{"key": a["key"], "value": {"stringValue": a["value"]}} for a in sp["tags"]]}]}]}
+          for i, t in enumerate(traces) for sp in t["spans"]]
+    return {"result": {"resourceSpans": rs}}
+
+
 class Fake(http.server.BaseHTTPRequestHandler):
     home = None
     served_descriptions = {}
@@ -204,11 +213,11 @@ class Fake(http.server.BaseHTTPRequestHandler):
         return load(os.path.join(Fake.home, "otel-demo-3.0.0", "src", "flagd", "demo.flagd.json"))["flags"]
 
     def do_GET(self):
-        if self.path.startswith("/jaeger/ui/api/services"):
-            return self.reply({"data": ["payment", "checkout"]})
-        if self.path.startswith("/jaeger/ui/api/traces"):
+        if self.path.startswith("/jaeger/ui/api/v3/services"):
+            return self.reply({"services": ["payment", "checkout"]})
+        if self.path.startswith("/jaeger/ui/api/v3/traces"):
             fault = self.flags()["paymentFailure"]["defaultVariant"] != "off"
-            return self.reply({"data": [trace(fault) for _ in range(5)]})
+            return self.reply(v3_body([trace(fault) for _ in range(5)]))
         self.send_response(404)
         self.end_headers()
 

@@ -51,6 +51,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -200,8 +201,25 @@ def ofrep_variant(cfg, flag):
 
 
 def traces(cfg, service, start_us, end_us, limit, timeout):
-    q = urllib.parse.urlencode({"service": service, "start": start_us, "end": end_us, "limit": limit})
-    return http_json(config.jaeger_base(cfg) + "/api/traces?" + q, timeout=timeout).get("data") or []
+    """Recent traces of service from Jaeger's v3 API (2.20.0 and later): one {"traceID", "spans"}
+    dict per trace, each span the OTLP JSON span plus "serviceName" of its resource. v3 returns
+    every trace's spans flattened across resourceSpans in one body, and 404 when nothing matches."""
+    iso = lambda us: datetime.fromtimestamp(us / 1e6, timezone.utc).isoformat(timespec="microseconds")
+    q = urllib.parse.urlencode({"query.serviceName": service, "query.startTimeMin": iso(start_us),
+                                "query.startTimeMax": iso(end_us), "query.searchDepth": limit})
+    try:
+        resource_spans = http_json(config.jaeger_base(cfg) + "/api/v3/traces?" + q, timeout=timeout)["result"]["resourceSpans"]
+    except urllib.error.HTTPError as e:
+        if e.code == 404 and b"No traces found" in e.read():
+            return []
+        raise
+    out = {}
+    for rs in resource_spans:
+        svc = next((a["value"].get("stringValue", "") for a in rs["resource"]["attributes"] if a["key"] == "service.name"), "")
+        for ss in rs["scopeSpans"]:
+            for sp in ss["spans"]:
+                out.setdefault(sp["traceId"], {"traceID": sp["traceId"], "spans": []})["spans"].append(dict(sp, serviceName=svc))
+    return list(out.values())
 
 
 def now_us():
@@ -1313,7 +1331,7 @@ def run(a, cfg):
                 ("1", "activate fault: %s: %s  %s" % (fixture_where(cfg), flip_cmd,
                                                     paint(DIM, "(FLIP_SCRIPT on stdin sets flags.%s.defaultVariant)" % flag))),
                 ("2", "confirm via OFREP: POST %s" % ofrep_url(cfg, flag)),
-                ("3", "poll up to %d x %ds for >= %d %s traces matching /%s/ since the flip: GET %s/api/traces?service=%s"
+                ("3", "poll up to %d x %ds for >= %d %s traces matching /%s/ since the flip: GET %s/api/v3/traces?query.serviceName=%s"
                  % (poll_max, TRACE_POLL_SLEEP, TRACE_MIN_COUNT, gt_service, signal_re, config.jaeger_base(cfg), gt_service)),
                 ("3b", "leak scan under the fault, then %s" % ("bench.py oracle %s" % a.scenario if any_tools else "no oracle (no arm has tools)")),
                 ("4", "each cell, e.g.: %s" % shlex.join(argv)),
