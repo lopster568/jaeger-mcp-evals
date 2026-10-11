@@ -20,9 +20,10 @@ flowchart LR
 | Need | Detail |
 |---|---|
 | Tools | Python 3.11 or newer (standard library only), Docker with Compose v2, git, curl; `make preflight` checks them and the ports |
-| Agent client | `run.client` in the experiment file: `cli` (Claude Code CLI on your logged-in plan, the default), `api` (experimental) or `codex` |
+| Agent client | `run.client`: the published protocol supports only `cli` (Claude Code CLI on your logged-in plan); `api` and `codex` are experimental and unsupported. Pinned per experiment file by `run.model` (published: `claude-sonnet-5-5`) and `run.client_version`; the grader is `claude-fable-5-1` through the same CLI, so the login needs access to it |
 | Sandbox | with `cli` the agent starts with its built-in tools off and only `mcp__jaeger__*` allowed; a trial that shows any other tool scores INVALID |
-| Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006 |
+| Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; tested with Jaeger 2.20.0, 2.21.0 and later are not supported yet |
+| Cost | published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant, plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |
 | Host | `make` targets run on the fixture host, this machine by default; `bench.py` can drive a remote fixture over ssh |
 
 ## Quick Start

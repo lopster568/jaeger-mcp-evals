@@ -113,6 +113,15 @@ A batch aborts before the flag flips on:
 | Description mismatch | a tools arm on another image must serve every `tools/list` description exactly as `harness/experiments/descriptions/desc-change.json` |
 | Failed gate | leak scan, readiness, oracle (docs/SCENARIOS.md) or sandbox probe; `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
 
+## Pins, cost and what to attach
+
+- Agent model: `run.model`, by full id. With the `cli` client the batch stops after a trial whose stream reports another model (`model_asserted` in scores.jsonl), and the pair is discarded.
+- Client version: `run.client_version`. Pre-flight runs `claude --version` and aborts before anything is touched when it reports another version.
+- Grader: `claude-fable-5-1`, fixed in `harness/grade.py` and called through the same `claude` CLI.
+- Jaeger: tested with 2.20.0. `bench.py` reads traces from Jaeger's `/api/traces` endpoint, which Jaeger 2.21.0 and later no longer serve, so those releases are not supported yet.
+- Cost of the published pair (skill-callee-down-cli55, 10 trials per arm, sum of `cost_usd` in scores.jsonl): baseline 0.77 USD, variant 2.77 USD. Wall time from the first cell start to the last cell end in cells.jsonl: about 4.5 minutes and 8 minutes. The grader adds one call per trial.
+- For a pull request, attach `RESULT.md` (from `judge.py`) and the batch directory `bench.py run` copied to `records/<name>/`.
+
 ## Protocol
 
 Results published in this repo come from one protocol:
