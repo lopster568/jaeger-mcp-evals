@@ -57,9 +57,9 @@ fixture:
 # flag at default, fresh payment traces, no flag in telemetry) through the smoke dry run.
 up:
 	$(DEMO); cd "$$D"; $(COMPOSE) up -d
-	log=$$(mktemp); for i in $$(seq 20); do \
-	  $(PYTHON) harness/bench.py run $(SMOKE) --dry-run >$$log 2>&1 && { echo "fixture ready"; exit 0; }; \
-	  echo "not ready yet ($$i/20), retrying in 30s: $$(grep -m1 -E 'FAIL|ABORT' $$log)"; sleep 30; \
+	for i in $$(seq 20); do \
+	  out=$$($(PYTHON) harness/bench.py run $(SMOKE) --dry-run 2>&1) && { echo "fixture ready"; exit 0; }; \
+	  echo "not ready yet ($$i/20), retrying in 30s: $$(echo "$$out" | grep -m1 -E 'FAIL|ABORT')"; sleep 30; \
 	done; $(PYTHON) harness/bench.py run $(SMOKE) --dry-run || { . fixture/lib.sh; \
 	  echo "still not ready after 10 min. Inspect: cd $$(cd ~; cd $$D; pwd) && $(COMPOSE) ps   and   $(COMPOSE) logs <service>"; exit 1; }
 
