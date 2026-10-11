@@ -14,7 +14,7 @@ flagd file whose "flags" keys are the flag names to look for; without it the
 built-in FLAGS list is used.
 exit 0 = clean, 1 = leaks found, 2 = could not read anything
 """
-import argparse, json, re, sys, time, urllib.parse, urllib.request
+import argparse, json, re, sys, time, urllib.request
 
 import config
 
@@ -35,17 +35,23 @@ ALLOW = re.compile(r"^response_flags$", re.I)
 
 
 def scan_trace(t, hits, pats):
+    """t is a v1 trace ({spans, processes}, saved files) or bench.traces()'s v3 form (OTLP spans)."""
     procs = {pid: p.get("serviceName", "") for pid, p in t.get("processes", {}).items()}
+    val = lambda v: str(next(iter(v.values()), "")) if isinstance(v, dict) else str(v)  # OTLP {"stringValue": ..}
     for s in t.get("spans", []):
-        svc = procs.get(s.get("processID"), "")
-        fields = [("service", svc), ("span name", s.get("operationName", ""))]
-        for x in s.get("tags", []):
+        svc = s.get("serviceName") or procs.get(s.get("processID"), "")
+        fields = [("service", svc), ("span name", s.get("operationName") or s.get("name", ""))]
+        for x in s.get("tags", []) + s.get("attributes", []):
             if ALLOW.match(str(x.get("key", ""))):
                 continue
-            fields += [("tag key", x.get("key", "")), ("tag value", str(x.get("value", "")))]
+            fields += [("tag key", x.get("key", "")), ("tag value", val(x.get("value", "")))]
         for l in s.get("logs", []):
             for y in l.get("fields", []):
                 fields += [("event field", y.get("key", "")), ("event value", str(y.get("value", "")))]
+        for e in s.get("events", []):
+            fields.append(("event name", e.get("name", "")))
+            for y in e.get("attributes", []):
+                fields += [("event field", y.get("key", "")), ("event value", val(y.get("value", "")))]
         for kind, text in fields:
             for p in pats:
                 if p.search(text):
@@ -72,11 +78,12 @@ def report(hits, traces, out=print):
 
 def scan_live(flags, lookback_s=300, services=SERVICES, out=print):
     """Sample recent traces from the fixture's Jaeger and report; exit-code semantics as main."""
+    import bench  # here, not at the top: bench imports this module
     pats, hits, traces = patterns(flags), {}, 0
     now = int(time.time() * 1e6); start = now - lookback_s * 1000000
-    base = config.jaeger_base(config.load()) + "/api"
+    cfg = config.load()
     try:
-        svcs = json.load(urllib.request.urlopen(base + "/services", timeout=20)).get("data") or []
+        svcs = json.load(urllib.request.urlopen(config.jaeger_base(cfg) + "/api/v3/services", timeout=20)).get("services") or []
     except Exception as e:
         out(f"fixture-leak: cannot reach Jaeger: {e}"); return 2
     for sname in svcs:
@@ -84,9 +91,8 @@ def scan_live(flags, lookback_s=300, services=SERVICES, out=print):
             if p.search(sname):
                 hits[("listed service", sname, sname)] = hits.get(("listed service", sname, sname), 0) + 1
     for svc in services:
-        q = urllib.parse.urlencode({"service": svc, "start": start, "end": now, "limit": 30})
         try:
-            data = json.load(urllib.request.urlopen(f"{base}/traces?{q}", timeout=40)).get("data") or []
+            data = bench.traces(cfg, svc, start, now, 30, 40)
         except Exception:
             continue
         for t in data:

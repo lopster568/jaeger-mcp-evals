@@ -5,9 +5,13 @@ Run with: python3 -m unittest discover harness/tests
 """
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
+import urllib.error
+from io import BytesIO
+from unittest import mock
 
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
@@ -160,6 +164,42 @@ class TestOracleSpanId(unittest.TestCase):
         self.assertEqual([a for n, a in seen if n == "get_span_details"], [
             {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa01"]}, {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa02"]},
             {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb01"]}, {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb02"]}])
+
+
+def span(trace_id, name, attrs=()):
+    return {"traceId": trace_id, "name": name, "status": {},
+            "attributes": [{"key": k, "value": v} for k, v in attrs]}
+
+
+def resource(service, *spans):
+    return {"resource": {"attributes": [{"key": "service.name", "value": {"stringValue": service}}]},
+            "scopeSpans": [{"spans": list(spans)}]}
+
+
+class TestTracesV3(unittest.TestCase):
+    CFG = {"FIXTURE_HOST": "h", "JAEGER_UI_PORT": "1", "JAEGER_BASE_PATH": "/j"}
+
+    def test_groups_spans_by_trace_id(self):
+        body = {"result": {"resourceSpans": [resource("checkout", span("a", "x"), span("b", "y")),
+                                              resource("payment", span("a", "z"))]}}
+        with mock.patch.object(bench, "http_json", return_value=body) as hj:
+            got = bench.traces(self.CFG, "checkout", 1_000_000, 2_000_000, 5, 10)
+        self.assertEqual([(t["traceID"], [(s["name"], s["serviceName"]) for s in t["spans"]]) for t in got],
+                         [("a", [("x", "checkout"), ("z", "payment")]), ("b", [("y", "checkout")])])
+        url = hj.call_args[0][0]
+        self.assertIn("/j/api/v3/traces?query.serviceName=checkout", url)
+        self.assertIn("query.searchDepth=5", url)
+
+    def test_no_traces_is_404_and_empty(self):
+        err = urllib.error.HTTPError("u", 404, "Not Found", {}, BytesIO(b'{"error":{"message":"No traces found"}}'))
+        with mock.patch.object(bench, "http_json", side_effect=err):
+            self.assertEqual(bench.traces(self.CFG, "checkout", 1_000_000, 2_000_000, 5, 10), [])
+
+    def test_cache_count_signal_matches_v3_attribute(self):
+        sig = re.compile(json.load(open(os.path.join(HARNESS_DIR, "scenarios", "recommendationCacheFailure.json")))["signal_regex"], re.I)
+        dump = lambda n: json.dumps(span("a", "x", [("demo.product.count", {"intValue": n})]))
+        self.assertTrue(sig.search(dump("1234567")))
+        self.assertFalse(sig.search(dump("123456")))
 
 
 if __name__ == "__main__":
