@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fixture/preflight.sh: busy fixture ports fail unless the stack is already ours. docker is a PATH shim."""
+"""fixture/preflight.sh: busy fixture ports fail unless the stack is already ours. docker and claude are PATH shims."""
 import os
 import pathlib
 import socket
@@ -19,9 +19,10 @@ exit 0
 class Preflight(unittest.TestCase):
     def run_script(self, port, jaeger):
         with tempfile.TemporaryDirectory() as d:
-            docker = os.path.join(d, "docker")
-            pathlib.Path(docker).write_text(DOCKER)
-            os.chmod(docker, os.stat(docker).st_mode | stat.S_IEXEC)
+            for name in ("docker", "claude"):  # claude only has to exist on PATH
+                shim = os.path.join(d, name)
+                pathlib.Path(shim).write_text(DOCKER)
+                os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%d:16686"\n' % port)
             env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "")
