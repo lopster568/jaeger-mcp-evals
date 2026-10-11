@@ -1,0 +1,13 @@
+{
+  "name": "v2200-mainskill-callee-down",
+  "tag": "jaeger-mcp-evals/jaeger:v2200-mainskill-callee-down-64a8875f",
+  "digest": "sha256:4b5a805a5546a862076ad52a1b6d008fb283e5a3443710682f6ee524e6d67324",
+  "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
+  "branch": "evals/v2200-mainskill-callee-down",
+  "branch_commit": "64a8875f98e32ce6fbd32498ac34023dd2f76607",
+  "base_image": "evals-baseimg-alpine:latest",
+  "base_image_recipe": "scripts/build/docker/base/Dockerfile (FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
+  "built_at_utc": "2026-09-30T12:10:55Z",
+  "built_on": "fixture host",
+  "descriptions": null
+}

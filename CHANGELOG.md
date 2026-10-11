@@ -75,3 +75,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-10-06
 
 - Corrections, no scenario, scoring or record change: the 2026-09-29 entry cited two API-client records that were removed on 2026-09-30, and that citation is gone. Results page (docs/results/2026-09-recommendation-cache.md): the pre-registration section says what this repository's history can and cannot show, the cost and turn difference between the arms is stated, and one caveat is added.
+
+## 2026-10-11
+
+- Records: skill-callee-down-mainskill (same model, client and effort, recommendationCacheFailure v3, 2.20.0 binary with the error-root-cause skill text from Jaeger main): that skill 0/10 PASS, with the change 6/10, EXPERIMENT PASS against the pre-registered threshold of 5. Results page: docs/results/2026-09-recommendation-cache.md. No scenario or scoring change.
