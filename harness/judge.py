@@ -197,12 +197,17 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
     if baseline_metrics["n"] == 0:
         return ([f"judge: no rows for baseline arm '{baseline_arm}' found in {baseline_batch_dir}"], 2)
 
+    def count(label, arm, mm):
+        return f"{label} {arm}: {mm['pass_count']}/{mm['n']} PASS" + (f", {mm['invalid']} INVALID" if mm["invalid"] else "")
+
     lines, results = list(lines0), []
+    lines.append(count("baseline arm", baseline_arm, baseline_metrics))
     for arm in test_arms:
         m = arm_metrics(variant_rows, arm, tool_names)
         if m["n"] == 0:
             lines.append(f"judge: WARNING - no rows for arm '{arm}' found in {variant_batch_dir}")
         prefix = f"{arm}: " if len(test_arms) > 1 else ""
+        lines.append(count("arm", arm, m))
         for label, mm in (("baseline", baseline_metrics), ("variant", m)):
             if mm["invalid"]:
                 lines.append(f"judge: WARNING - {prefix}{mm['invalid']} {label} row(s) INVALID ({mm['invalid_cause']} check failed), "
