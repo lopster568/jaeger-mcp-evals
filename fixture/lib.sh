@@ -23,16 +23,3 @@ cp_line() {
   if [ -z "$FIXTURE_SSH_USER" ]; then printf 'cd ~ && cp %s %s' "${*:1:$#-1}" "$dest"
   else printf 'scp -q %s %s %s:%s' "$SSH_OPTS" "${*:1:$#-1}" "$TARGET" "$dest"; fi
 }
-
-# Make-layer output, plain text (no colour, same on a TTY and in a pipe).
-# step NAME MSG prints one line with NAME padded to 12 columns; MSG is "ok   ..." or plain.
-step() { printf '%-12s%s\n' "$1" "$2"; }
-# mins SECONDS prints 1m30s.
-mins() { printf '%dm%ds' $(($1 / 60)) $(($1 % 60)); }
-# logged CMD... appends the command's stdout and stderr to .make.log; on failure shows its last 20 lines.
-MAKE_LOG="${MAKE_LOG:-$ROOT/.make.log}"
-logged() {
-  "$@" >>"$MAKE_LOG" 2>&1 && return 0
-  local rc=$?
-  tail -n 20 "$MAKE_LOG"; echo "log: .make.log"; return $rc
-}

@@ -3,7 +3,9 @@
 
 Run with: python3 -m unittest discover -s harness/tests
 """
+import contextlib
 import copy
+import io
 import importlib.util
 import json
 import os
@@ -410,7 +412,7 @@ class TestReviewFixes(LoopTestBase):
 
     # finding 2: an exception escaping run_trial still leaves a result event
     def test_unhandled_exception_still_writes_result_event(self):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError), contextlib.redirect_stderr(io.StringIO()):  # the traceback it prints on purpose
             self.run_script(two_turn_script(), mcp_client_factory=_RaisingOnList)
         final = self.final()
         self.assertEqual(final["type"], "result")
@@ -456,7 +458,8 @@ class TestReviewFixes(LoopTestBase):
 
     # coverage: provider.create raising
     def test_provider_error_is_error_during_execution(self):
-        rc = self.run_script(two_turn_script(), provider_factory=lambda a, s: _RaisingProvider())
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc = self.run_script(two_turn_script(), provider_factory=lambda a, s: _RaisingProvider())
         self.assertEqual(rc, 1)
         final = self.final()
         self.assertEqual(final["subtype"], "error_during_execution")
@@ -473,7 +476,8 @@ class TestReviewFixes(LoopTestBase):
         s.close()
         with open(self.mcp_config, "w") as f:
             json.dump({"mcpServers": {"jaeger": {"type": "http", "url": "http://127.0.0.1:%d/mcp/" % port}}}, f)
-        rc = self.run_script(two_turn_script())
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc = self.run_script(two_turn_script())
         self.assertEqual(rc, 1)
         final = self.final()
         self.assertEqual(final["subtype"], "error_during_execution")
@@ -754,7 +758,7 @@ class TestOpenAIProvider(unittest.TestCase):
         for served, want in (("gpt-local", 0), ("other", 3)):
             self.srv.replies = [(200, dict(_chat({"content": "ok"}, "stop"), model=served))]
             env = {"OPENAI_API_KEY": "local-test-not-a-key", "OPENAI_BASE_URL": self.base}
-            with mock.patch.dict(os.environ, env):
+            with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()):
                 rc = agent_loop.main(["--probe-model", "--provider", "openai", "--model", "gpt-local", "--effort", "high"])
             self.assertEqual(rc, want)
             body = self.srv.seen[-1][1]
