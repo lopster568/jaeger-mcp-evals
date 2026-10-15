@@ -29,6 +29,7 @@ flowchart LR
 ## Quick Start
 
 ```bash
+claude         # once: /login, then /exit; setup checks the CLI with this login
 make setup     # free: install the fixture, start it and Phoenix, wait for "fixture ready"
 make smoke     # paid: one agent trial end to end, capped at 2 USD
 
