@@ -5,6 +5,7 @@ import pathlib
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -29,7 +30,7 @@ class Preflight(unittest.TestCase):
                 os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%d:16686"\n' % port)
-            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "")
+            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, PYTHON=sys.executable, FAKE_JAEGER="1" if jaeger else "")
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
 
     def test_busy_port_fails_unless_stack_is_ours(self):
