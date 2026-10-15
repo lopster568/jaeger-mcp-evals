@@ -59,7 +59,7 @@ up:
 	$(DEMO); cd "$$D"; $(COMPOSE) up -d
 	for i in $$(seq 20); do \
 	  out=$$($(PYTHON) harness/bench.py run $(SMOKE) --dry-run 2>&1) && { echo "fixture ready"; exit 0; }; \
-	  echo "not ready yet ($$i/20), retrying in 30s: $$(echo "$$out" | grep -m1 -E 'FAIL|ABORT')"; sleep 30; \
+	  echo "not ready yet ($$i/20), retrying in 30s: $$(echo "$$out" | grep -m1 ': FAIL - ' || echo "$$out" | grep -m1 -E 'FAIL|ABORT')"; sleep 30; \
 	done; $(PYTHON) harness/bench.py run $(SMOKE) --dry-run || { . fixture/lib.sh; \
 	  echo "still not ready after 10 min. Inspect: cd $$(cd ~; cd $$D; pwd) && $(COMPOSE) ps   and   $(COMPOSE) logs <service>"; exit 1; }
 

@@ -729,12 +729,15 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Probe)
     threading.Thread(target=srv.serve_forever, args=(0.05,), daemon=True).start()
+    said = ""
     try:
         with tempfile.TemporaryDirectory() as work:
             try:
-                subprocess.run(argv + ["--no-session-persistence"], cwd=work, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout,
-                               env=dict(env, ANTHROPIC_BASE_URL="http://127.0.0.1:%d" % srv.server_address[1]))
+                r = subprocess.run(argv + ["--no-session-persistence"], cwd=work, stdin=subprocess.DEVNULL,
+                                   capture_output=True, text=True, errors="replace", timeout=timeout,
+                                   env=dict(env, ANTHROPIC_BASE_URL="http://127.0.0.1:%d" % srv.server_address[1]))
+                lines = [l.strip() for l in (r.stderr + r.stdout).splitlines() if l.strip()]
+                said = lines[-1][:200] if lines else ""  # only the CLI's last line is quoted, never the rest
             except subprocess.TimeoutExpired:
                 pass  # subprocess.run has killed it; judge whatever request arrived
             except OSError as e:
@@ -747,7 +750,7 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
         sent = req.get("tools") or []
         names = [str(t.get("name")) for t in sent]
     except (IndexError, ValueError, AttributeError):
-        return ["no model request with a JSON body reached the probe within %ds" % timeout], []
+        return ["no model request with a JSON body reached the probe within %ds%s" % (timeout, "; claude said: " + said if said else "")], []
     problems = [] if sorted(names) == sorted(expected) else ["tools sent %s, expected %s" % (sorted(names), sorted(expected))]
     problems += ["server-side tool %s (type %s)" % (t.get("name"), t["type"]) for t in sent if "type" in t]
     text = json.dumps([req.get("system"), req.get("messages")], ensure_ascii=False)
