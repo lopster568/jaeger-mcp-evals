@@ -1291,6 +1291,12 @@ class TestSandboxProbe(BenchCase):
         self.assertEqual((names, len(problems)), ([], 1))
         self.assertIn("no model request", problems[0])
 
+    def test_a_logged_out_cli_says_so_in_the_problem(self):
+        code = "import sys; sys.stderr.write('Not logged in \\u00b7 Please run /login\\n'); sys.exit(1)"
+        problems, names = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10)
+        self.assertEqual(names, [])
+        self.assertIn("claude said: Not logged in \u00b7 Please run /login", problems[0])
+
 
 if __name__ == "__main__":
     unittest.main()
