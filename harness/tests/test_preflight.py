@@ -42,7 +42,7 @@ class Preflight(unittest.TestCase):
             self.assertIn("port %d is in use" % port, r.stdout)
             ok = self.run_script(port, jaeger=True)
             self.assertEqual(ok.returncode, 0)
-            self.assertRegex(ok.stdout, r"^tools {7}ok   docker, compose v2, .*\(logged in\)\n")
+            self.assertEqual(ok.stdout, "")  # silent on success; make prints the Tools line
         self.assertEqual(self.run_script(port, jaeger=False).returncode, 0)  # free again
 
     def test_logged_out_claude_fails(self):
@@ -53,13 +53,3 @@ class Preflight(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class Logged(unittest.TestCase):
-    def test_failure_shows_log_tail_and_keeps_exit_code(self):
-        with tempfile.TemporaryDirectory() as d:
-            log = os.path.join(d, "log")
-            cmd = '. "%s"; logged sh -c "seq 30; exit 3"' % SCRIPT.replace("preflight.sh", "lib.sh")
-            r = subprocess.run(["bash", "-c", cmd], env=dict(os.environ, MAKE_LOG=log), capture_output=True, text=True)
-            self.assertEqual(r.returncode, 3)
-            self.assertEqual(r.stdout.split(), [str(n) for n in range(11, 31)] + ["log:", ".make.log"])

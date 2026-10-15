@@ -36,6 +36,7 @@ import hashlib
 import http.server
 import io
 import json
+import locale
 import math
 import os
 import platform
@@ -607,7 +608,7 @@ class Log:
 
     def __init__(self):
         self.stream = sys.stderr
-        self.tty, self.color = self.stream.isatty(), use_color(self.stream)
+        self.tty, self.color, self.glyphs = self.stream.isatty(), use_color(self.stream), glyphs(self.stream)
         self.lines, self.path, self.step, self.live_on = [], None, [], False
 
     def file(self, msg):
@@ -641,8 +642,14 @@ class Log:
         self("\n" + paint(BOLD_CYAN, title) + tail)
 
     def check(self, ok, text):
-        """An ok line, or a FAIL line followed by the step's detail."""
-        self("  " + (paint(GREEN, "ok  ") if ok else paint(BOLD_RED, "FAIL")) + "  " + text)
+        """An ok line, or a FAIL line followed by the step's detail. On a UTF-8 TTY the screen shows
+        ✓ / ✗ in the word's place; batch.log always keeps the words."""
+        line = "  " + (paint(GREEN, "ok  ") if ok else paint(BOLD_RED, "FAIL")) + "  " + text
+        if self.glyphs:
+            self.screen("  " + (paint(GREEN, "\u2713   ") if ok else paint(BOLD_RED, "\u2717   ")) + "  " + text)
+            self.file(line)
+        else:
+            self(line)
         if ok:
             self.step = []
         else:
@@ -672,7 +679,12 @@ VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BO
 def use_color(stream):
     if os.environ.get("FORCE_COLOR", "") not in ("", "0"):
         return True
-    return not os.environ.get("NO_COLOR") and stream.isatty()
+    return not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb" and stream.isatty()
+
+
+def glyphs(stream):
+    """✓ ✗ and the braille spinner in place of words: a TTY whose locale encoding is UTF-8."""
+    return stream.isatty() and locale.getpreferredencoding(False).lower().replace("-", "") == "utf8"
 
 
 def paint(code, text):
