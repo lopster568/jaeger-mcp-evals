@@ -1456,7 +1456,8 @@ def run(a, cfg):
                 verdict, note = (verdict, "%s, scored %s" % (note, s.get("verdict"))) if rec["failed"] else (s.get("verdict") or "ERROR", "")
             except Exception:
                 note = note if rec["failed"] else "unscorable"
-            log(label + paint(VERDICT_COLOR.get(verdict, "0"), verdict.ljust(7)) + "  " + calls.rjust(5) + "  "
+            # the grader runs after the trials, so a mechanism still waiting for it reads "pending" on this line
+            log(label + paint(VERDICT_COLOR.get(verdict, "0"), ("pending" if verdict == "UNGRADED" else verdict).ljust(7)) + "  " + calls.rjust(5) + "  "
                 + paint(DIM, dur(rec["wall_time_s"]).rjust(6)) + ("  " + paint(DIM, note) if note else ""))
             if rec["failed"]:
                 log.detail("bench: cell FAILED (exit=%s), consecutive_fails=%d" % (rec["trial_exit_code"], fails))
