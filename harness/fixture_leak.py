@@ -14,7 +14,7 @@ flagd file whose "flags" keys are the flag names to look for; without it the
 built-in FLAGS list is used.
 exit 0 = clean, 1 = leaks found, 2 = could not read anything
 """
-import argparse, json, re, sys, time, urllib.parse, urllib.request
+import argparse, json, pathlib, re, sys, time, urllib.parse, urllib.request
 
 import config
 
@@ -102,11 +102,11 @@ def main():
     ap.add_argument("--services", default=",".join(SERVICES))
     ap.add_argument("--file", nargs="*")
     a = ap.parse_args()
-    flags = list(json.load(open(a.flagd))["flags"]) if a.flagd else FLAGS
+    flags = list(json.loads(pathlib.Path(a.flagd).read_text())["flags"]) if a.flagd else FLAGS
     if a.file:
         pats, hits, traces = patterns(flags), {}, 0
         for f in a.file:
-            for t in json.load(open(f)).get("data", []):
+            for t in json.loads(pathlib.Path(f).read_text()).get("data", []):
                 scan_trace(t, hits, pats); traces += 1
         return report(hits, traces)
     if a.live:
