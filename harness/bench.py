@@ -1513,9 +1513,19 @@ def run(a, cfg):
     # ---- score, summary, band ----
     log.detail("== scoring cells (one %s grader call per new mechanism answer, cached in grades.jsonl) ==" % grade.GRADER_MODEL)
     rows, scored = [], []
-    for i, rec in enumerate(read_jsonl(cells_file)):
+    todo, stop, t0 = read_jsonl(cells_file), threading.Event(), time.monotonic()
+
+    def spin():  # a grader call blocks for seconds, so a thread keeps the live line moving
+        frames, i = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f" if log.glyphs else "-\\|/", 0
+        while not stop.wait(0.1):
+            log.live("  %s grading %d of %d with %s %s" % (paint(CYAN, frames[i % len(frames)]), min(len(rows) + 1, len(todo)),
+                                                         len(todo), grade.GRADER_MODEL, paint(DIM, dur(time.monotonic() - t0))))
+            i += 1
+    spinner = threading.Thread(target=spin, daemon=True)
+    if log.tty:
+        spinner.start()
+    for rec in todo:
         t = os.path.join(bdir, rec["out_dir"])
-        log.live("  %s grading %s ..." % (paint(CYAN, "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"[i % 10] if log.glyphs else "*"), grade.GRADER_MODEL))
         try:
             s = score.score(t, call_grader=True)[0]
             scored.append((t, s))
@@ -1525,6 +1535,9 @@ def run(a, cfg):
             s = {"dir": rec["out_dir"], "error": str(e).replace(t, rec["out_dir"])}
         s["arm"] = rec["arm"]
         rows.append(s)
+    stop.set()
+    if log.tty:
+        spinner.join()
     with open(os.path.join(bdir, "scores.jsonl"), "w", encoding="utf-8") as f:
         f.writelines(json.dumps(s) + "\n" for s in rows)
     new = [s for s in rows if s.get("grader_cached") is False]
