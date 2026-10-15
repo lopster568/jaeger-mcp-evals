@@ -1,5 +1,6 @@
 """Fixture settings: fixture.env.example, then fixture.env, then os.environ win."""
 import os
+import pathlib
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,7 +11,7 @@ def load(root=ROOT):
     for name in ("fixture.env.example", "fixture.env"):
         path = os.path.join(root, name)
         if os.path.isfile(path):
-            for line in open(path, encoding="utf-8"):
+            for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
