@@ -628,6 +628,11 @@ class Log:
         self.screen(msg)
         self.file(msg)
 
+    def sub(self, msg):
+        """A line under a check: column 4 on a glyph TTY (under the text), column 8 everywhere else and in the file."""
+        self.screen(("    " if self.glyphs else "        ") + msg)
+        self.file("        " + msg)
+
     def detail(self, msg):
         self.step.append(msg)
         self.file(msg)
@@ -641,13 +646,18 @@ class Log:
         self.step = []
         self("\n" + paint(BOLD_CYAN, title) + tail)
 
-    def check(self, ok, text):
+    def check(self, ok, text, tty_only=False):
         """An ok line, or a FAIL line followed by the step's detail. On a UTF-8 TTY the screen shows
-        ✓ / ✗ in the word's place; batch.log always keeps the words."""
+        ✓ / ✗ in the word's place; batch.log always keeps the words. tty_only: screen only, nothing off a TTY."""
+        if tty_only and not self.tty:
+            return ok
         line = "  " + (paint(GREEN, "ok  ") if ok else paint(BOLD_RED, "FAIL")) + "  " + text
         if self.glyphs:
-            self.screen("  " + (paint(GREEN, "\u2713   ") if ok else paint(BOLD_RED, "\u2717   ")) + "  " + text)
-            self.file(line)
+            self.screen("  " + (paint(GREEN, "\u2713") if ok else paint(BOLD_RED, "\u2717")) + " " + text)
+            if not tty_only:
+                self.file(line)
+        elif tty_only:
+            self.screen(line)
         else:
             self(line)
         if ok:
@@ -659,7 +669,7 @@ class Log:
     def abort(self, msg):
         """The current step's detail on screen, then msg in red."""
         for m in self.step:
-            self.screen("        " + m)
+            self.screen(("    " if self.glyphs else "        ") + m)
         self.step = []
         if msg:
             self(paint(BOLD_RED, msg))
@@ -1008,9 +1018,9 @@ def run(a, cfg):
                        % (found[0], " ".join(found[1])))
         log.check(True, "claude accepts the flags the harness passes")
         if not is_full_model_id(a.model):
-            log("        WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
+            log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
         if cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
-            log("        ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
+            log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
         log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
         if not shutil.which(a.codex_bin):
@@ -1087,7 +1097,7 @@ def run(a, cfg):
     log.detail("pre-flight: experiment arms for this image: %s" % " ".join(arms))
     log.check(True, "jaeger image %s %s" % (image, paint(DIM, image_id[:19])))
     others = ["%s needs %s" % (n, image_for[n]) for n in prompt_for if n not in arms]
-    log("        arms here: %s%s" % (" ".join(arms), paint(DIM, "  (%s)" % "; ".join(others)) if others else ""))
+    log.sub("arms here: %s%s" % (" ".join(arms), paint(DIM, "  (%s)" % "; ".join(others)) if others else ""))
     any_tools = any(tools_for[arm] for arm in arms)
     r = fixture_sh(cfg, "git rev-parse HEAD")
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
@@ -1485,8 +1495,9 @@ def run(a, cfg):
     # ---- score, summary, band ----
     log.detail("== scoring cells (one %s grader call per new mechanism answer, cached in grades.jsonl) ==" % grade.GRADER_MODEL)
     rows, scored = [], []
-    for rec in read_jsonl(cells_file):
+    for i, rec in enumerate(read_jsonl(cells_file)):
         t = os.path.join(bdir, rec["out_dir"])
+        log.live("  %s grading %s ..." % (paint(CYAN, "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"[i % 10] if log.glyphs else "*"), grade.GRADER_MODEL))
         try:
             s = score.score(t, call_grader=True)[0]
             scored.append((t, s))
@@ -1498,6 +1509,11 @@ def run(a, cfg):
         rows.append(s)
     with open(os.path.join(bdir, "scores.jsonl"), "w", encoding="utf-8") as f:
         f.writelines(json.dumps(s) + "\n" for s in rows)
+    new = [s for s in rows if s.get("grader_cached") is False]
+    if new or any(s.get("grader_cached") for s in rows):
+        got = ", ".join("%d %s" % (c, v) for v in VERDICT_COLOR for c in [sum(s.get("verdict") == v for s in new)] if c)
+        log.check(True, "graded %d new answer%s \u00b7 %s%s" % (len(new), "" if len(new) == 1 else "s", grade.GRADER_MODEL, " \u00b7 " + got if got else "")
+                  if new else "graded 0 new answers, %d cached" % sum(bool(s.get("grader_cached")) for s in rows), tty_only=True)
     cells = read_jsonl(cells_file)
     results(a.scenario, [arm_row(arm, [(t, s) for t, s in scored if s["arm"] == arm], len(counted(cells, arm)))
                          for arm in arms], log, log.detail)

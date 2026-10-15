@@ -810,6 +810,31 @@ class TestBatch(BenchCase):
         self.assertNotIn("running...", read(os.path.join(self.batch_dir(), "batch.log")))
 
 
+class TestLogGlyphs(unittest.TestCase):
+    def render(self, tty, glyphs):
+        class S(io.StringIO):
+            def isatty(self):
+                return tty
+        err = S()
+        with mock.patch.dict(os.environ, {"FORCE_COLOR": "", "NO_COLOR": "1"}), mock.patch.object(bench, "glyphs", lambda s: glyphs), \
+                contextlib.redirect_stderr(err):
+            log = bench.Log()
+            log.check(True, "claude accepts the flags")
+            log.sub("arms here: baseline")
+            log.check(True, "graded 1 answer", tty_only=True)
+        return err.getvalue(), log.lines
+
+    def test_glyph_tty_reads_glyph_then_text(self):
+        screen, lines = self.render(True, True)
+        self.assertEqual(screen, "  \u2713 claude accepts the flags\n    arms here: baseline\n  \u2713 graded 1 answer\n")
+        self.assertEqual(lines, ["  ok    claude accepts the flags", "        arms here: baseline"])
+
+    def test_pipe_unchanged_and_tty_only_line_absent(self):
+        screen, lines = self.render(False, False)
+        self.assertEqual(screen, "  ok    claude accepts the flags\n        arms here: baseline\n")
+        self.assertEqual(lines, ["  ok    claude accepts the flags", "        arms here: baseline"])
+
+
 class TestExperiment(BenchCase):
     """The shipped desc-change-sep28.json, cut to one trial per arm."""
 
