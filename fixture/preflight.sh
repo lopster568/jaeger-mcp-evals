@@ -10,7 +10,7 @@ docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compos
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
 command -v claude >/dev/null || fail "claude (the Claude Code CLI) is not installed; the agent and the grader need it"
-claude auth status >/dev/null 2>&1 || fail "claude is not logged in; run claude, then /login (the agent and the grader use this login)"
+env -u ANTHROPIC_API_KEY claude auth status >/dev/null 2>&1 || fail "claude is not logged in; run claude, then /login (the agent and the grader use this login)"
 PY="${PYTHON:-python3}"
 command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 or newer, or point make at one: make setup PYTHON=python3.12"
 "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "$PY is $("$PY" -V 2>&1), need 3.11 or newer; install it, or point make at one: make setup PYTHON=python3.12"
@@ -22,4 +22,4 @@ if [ -z "$(docker ps -aq --filter name=^jaeger$ 2>/dev/null)" ]; then
     (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && fail "port $p is in use by another program; stop it (see: ss -ltnp | grep :$p) and re-run"
   done
 fi
-echo "preflight ok"
+exit 0

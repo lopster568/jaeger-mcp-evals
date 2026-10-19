@@ -30,8 +30,8 @@ flowchart LR
 
 ```bash
 claude         # once: /login, then /exit; setup checks the CLI with this login
-make setup     # free: install the fixture, start it and Phoenix, wait for "fixture ready"
-make smoke     # paid: one agent trial end to end, capped at 2 USD
+make setup     # free: install the fixture, start it and Phoenix, wait until it passes pre-flight
+make smoke     # paid: one agent trial end to end, about 50k tokens
 
 # your own experiment
 python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan

@@ -40,7 +40,9 @@ class Preflight(unittest.TestCase):
             r = self.run_script(port, jaeger=False)
             self.assertEqual(r.returncode, 1)
             self.assertIn("port %d is in use" % port, r.stdout)
-            self.assertEqual(self.run_script(port, jaeger=True).returncode, 0)
+            ok = self.run_script(port, jaeger=True)
+            self.assertEqual(ok.returncode, 0)
+            self.assertEqual(ok.stdout, "")  # silent on success; make prints the Tools line
         self.assertEqual(self.run_script(port, jaeger=False).returncode, 0)  # free again
 
     def test_logged_out_claude_fails(self):

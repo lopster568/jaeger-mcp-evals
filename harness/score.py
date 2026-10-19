@@ -258,7 +258,8 @@ def score(out_dir, call_grader=False, scenario=None):
     scenario_name = meta["scenario"]
     scenario = scenario or load_scenario(scenario_name)
     signal = re.compile(scenario["signal_regex"], re.I)
-    raw_lines = [l for l in open(os.path.join(out_dir, "stream.jsonl")) if l.strip()]
+    with open(os.path.join(out_dir, "stream.jsonl")) as f:
+        raw_lines = [l for l in f if l.strip()]
     events = [json.loads(l) for l in raw_lines]
     compaction_events = sum(1 for e, l in zip(events, raw_lines) if is_compaction_event(e, l))
     all_calls, results_by_id, final, model, tools, init, texts = [], {}, None, None, [], None, []

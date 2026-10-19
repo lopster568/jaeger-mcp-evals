@@ -36,6 +36,7 @@ import hashlib
 import http.server
 import io
 import json
+import locale
 import math
 import os
 import platform
@@ -210,8 +211,9 @@ def traces(cfg, service, start_us, end_us, limit, timeout):
     try:
         resource_spans = http_json(config.jaeger_base(cfg) + "/api/v3/traces?" + q, timeout=timeout)["result"]["resourceSpans"]
     except urllib.error.HTTPError as e:
-        if e.code == 404 and b"No traces found" in e.read():
-            return []
+        with e:
+            if e.code == 404 and b"No traces found" in e.read():
+                return []
         raise
     out = {}
     for rs in resource_spans:
@@ -625,7 +627,7 @@ class Log:
 
     def __init__(self):
         self.stream = sys.stderr
-        self.tty, self.color = self.stream.isatty(), use_color(self.stream)
+        self.tty, self.color, self.glyphs = self.stream.isatty(), use_color(self.stream), glyphs(self.stream)
         self.lines, self.path, self.step, self.live_on = [], None, [], False
 
     def file(self, msg):
@@ -645,6 +647,11 @@ class Log:
         self.screen(msg)
         self.file(msg)
 
+    def sub(self, msg):
+        """A line under a check: column 4 on a glyph TTY (under the text), column 8 everywhere else and in the file."""
+        self.screen(("    " if self.glyphs else "        ") + msg)
+        self.file("        " + msg)
+
     def detail(self, msg):
         self.step.append(msg)
         self.file(msg)
@@ -658,9 +665,20 @@ class Log:
         self.step = []
         self("\n" + paint(BOLD_CYAN, title) + tail)
 
-    def check(self, ok, text):
-        """An ok line, or a FAIL line followed by the step's detail."""
-        self("  " + (paint(GREEN, "ok  ") if ok else paint(BOLD_RED, "FAIL")) + "  " + text)
+    def check(self, ok, text, tty_only=False):
+        """An ok line, or a FAIL line followed by the step's detail. On a UTF-8 TTY the screen shows
+        ✓ / ✗ in the word's place; batch.log always keeps the words. tty_only: screen only, nothing off a TTY."""
+        if tty_only and not self.tty:
+            return ok
+        line = "  " + (paint(GREEN, "ok  ") if ok else paint(BOLD_RED, "FAIL")) + "  " + text
+        if self.glyphs:
+            self.screen("  " + (paint(GREEN, "\u2713") if ok else paint(BOLD_RED, "\u2717")) + " " + text)
+            if not tty_only:
+                self.file(line)
+        elif tty_only:
+            self.screen(line)
+        else:
+            self(line)
         if ok:
             self.step = []
         else:
@@ -670,7 +688,7 @@ class Log:
     def abort(self, msg):
         """The current step's detail on screen, then msg in red."""
         for m in self.step:
-            self.screen("        " + m)
+            self.screen(("    " if self.glyphs else "        ") + m)
         self.step = []
         if msg:
             self(paint(BOLD_RED, msg))
@@ -690,7 +708,12 @@ VERDICT_COLOR = {"PASS": GREEN, "PARTIAL": YELLOW, "FAIL": BOLD_RED, "ERROR": BO
 def use_color(stream):
     if os.environ.get("FORCE_COLOR", "") not in ("", "0"):
         return True
-    return not os.environ.get("NO_COLOR") and stream.isatty()
+    return not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb" and stream.isatty()
+
+
+def glyphs(stream):
+    """✓ ✗ and the braille spinner in place of words: a TTY whose locale encoding is UTF-8."""
+    return stream.isatty() and locale.getpreferredencoding(False).lower().replace("-", "") == "utf8"
 
 
 def paint(code, text):
@@ -1014,9 +1037,9 @@ def run(a, cfg):
                        % (found[0], " ".join(found[1])))
         log.check(True, "claude accepts the flags the harness passes")
         if not is_full_model_id(a.model):
-            log("        WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
+            log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
         if cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
-            log("        ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
+            log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
         log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
         if not shutil.which(a.codex_bin):
@@ -1093,7 +1116,7 @@ def run(a, cfg):
     log.detail("pre-flight: experiment arms for this image: %s" % " ".join(arms))
     log.check(True, "jaeger image %s %s" % (image, paint(DIM, image_id[:19])))
     others = ["%s needs %s" % (n, image_for[n]) for n in prompt_for if n not in arms]
-    log("        arms here: %s%s" % (" ".join(arms), paint(DIM, "  (%s)" % "; ".join(others)) if others else ""))
+    log.sub("arms here: %s%s" % (" ".join(arms), paint(DIM, "  (%s)" % "; ".join(others)) if others else ""))
     any_tools = any(tools_for[arm] for arm in arms)
     r = fixture_sh(cfg, "git rev-parse HEAD")
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
@@ -1490,7 +1513,18 @@ def run(a, cfg):
     # ---- score, summary, band ----
     log.detail("== scoring cells (one %s grader call per new mechanism answer, cached in grades.jsonl) ==" % grade.GRADER_MODEL)
     rows, scored = [], []
-    for rec in read_jsonl(cells_file):
+    todo, stop, t0 = read_jsonl(cells_file), threading.Event(), time.monotonic()
+
+    def spin():  # a grader call blocks for seconds, so a thread keeps the live line moving
+        frames, i = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f" if log.glyphs else "-\\|/", 0
+        while not stop.wait(0.1):
+            log.live("  %s grading %d of %d with %s %s" % (paint(CYAN, frames[i % len(frames)]), min(len(rows) + 1, len(todo)),
+                                                         len(todo), grade.GRADER_MODEL, paint(DIM, dur(time.monotonic() - t0))))
+            i += 1
+    spinner = threading.Thread(target=spin, daemon=True)
+    if log.tty:
+        spinner.start()
+    for rec in todo:
         t = os.path.join(bdir, rec["out_dir"])
         try:
             s = score.score(t, call_grader=True)[0]
@@ -1501,8 +1535,16 @@ def run(a, cfg):
             s = {"dir": rec["out_dir"], "error": str(e).replace(t, rec["out_dir"])}
         s["arm"] = rec["arm"]
         rows.append(s)
+    stop.set()
+    if log.tty:
+        spinner.join()
     with open(os.path.join(bdir, "scores.jsonl"), "w", encoding="utf-8") as f:
         f.writelines(json.dumps(s) + "\n" for s in rows)
+    new = [s for s in rows if s.get("grader_cached") is False]
+    if new or any(s.get("grader_cached") for s in rows):
+        got = ", ".join("%d %s" % (c, v) for v in VERDICT_COLOR for c in [sum(s.get("verdict") == v for s in new)] if c)
+        log.check(True, "graded %d new answer%s \u00b7 %s%s" % (len(new), "" if len(new) == 1 else "s", grade.GRADER_MODEL, " \u00b7 " + got if got else "")
+                  if new else "graded 0 new answers, %d cached" % sum(bool(s.get("grader_cached")) for s in rows), tty_only=True)
     cells = read_jsonl(cells_file)
     results(a.scenario, [arm_row(arm, [(t, s) for t, s in scored if s["arm"] == arm], len(counted(cells, arm)))
                          for arm in arms], log, log.detail)
@@ -1625,8 +1667,14 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
 RECORD_FILES = ("manifest.json", "preflight.json", "cells.jsonl", "scores.jsonl", "restore.json")
 
 
+SMOKE_EXPERIMENT = "smoke-paymentfailure"  # harness/experiments/, run by make smoke
+
+
 def keep_records(bdir, experiment, log):
-    """Copy the batch-level records into the repository; trajectories stay under RUNS_DIR."""
+    """Copy the batch-level records into the repository; trajectories stay under RUNS_DIR.
+    The smoke batch (make smoke) is a check that the fixture works, not a record."""
+    if experiment == SMOKE_EXPERIMENT:
+        return
     dest = os.path.join(RECORDS, experiment, os.path.basename(bdir))
     os.makedirs(dest, exist_ok=True)
     kept = [f for f in RECORD_FILES if os.path.isfile(os.path.join(bdir, f))]
