@@ -6,7 +6,6 @@ Python 3 stdlib only, no network, no LLM, no ssh, no docker.
 """
 import json
 import os
-import pathlib
 import shutil
 import sys
 import tempfile
@@ -221,19 +220,19 @@ class JudgeTests(unittest.TestCase):
         write_manifest(self.variant_dir, arm_pin="descchange", sha256="bbb")
         if variant_edit:
             mp = os.path.join(self.variant_dir, "manifest.json")
-            m = json.loads(pathlib.Path(mp).read_text())
+            m = json.load(open(mp))
             variant_edit(m)
-            pathlib.Path(mp).write_text(json.dumps(m))
+            json.dump(m, open(mp, "w"))
         write_scores(self.variant_dir, descchange_rows_all_thresholds_met())
         for d in (self.baseline_dir, self.variant_dir):  # shared fields the cross check reads
             mp = os.path.join(d, "manifest.json")
-            m = json.loads(pathlib.Path(mp).read_text())
+            m = json.load(open(mp))
             for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1"}.items():
                 m.setdefault(k, v)
             m.setdefault("file_hashes_sha256", {"prompts/noskill.txt": "p1"})
             if noimg:
                 m["fixture_overlay_sha256_sans_image"] = noimg[d == self.variant_dir]
-            pathlib.Path(mp).write_text(json.dumps(m))
+            json.dump(m, open(mp, "w"))
         return judge_mod.judge(self.baseline_dir, self.variant_dir, **kw)
 
     def test_cross_experiment_matching_pair_accepted(self):
@@ -260,7 +259,7 @@ class JudgeTests(unittest.TestCase):
         rec = os.path.join(self.tmp, "records")
         with mock.patch.object(bench, "write_index"):
             path = judge_mod.write_result(lines, self.baseline_dir, self.variant_dir, records=rec)
-        self.assertIn("compared by hand, not by manifest: reproduced by hand", pathlib.Path(path).read_text())
+        self.assertIn("compared by hand, not by manifest: reproduced by hand", open(path).read())
 
     def test_cross_experiment_model_difference_refused(self):
         lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"), noimg=("o1", "o1"))

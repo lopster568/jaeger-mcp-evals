@@ -6,7 +6,6 @@ Python 3 stdlib only, no network, no LLM.
 """
 import json
 import os
-import pathlib
 import stat
 import sys
 import tempfile
@@ -19,7 +18,7 @@ import grade  # noqa: E402
 
 SHIM = """#!/usr/bin/env python3
 import json, os, sys
-with open(os.environ["SHIM_LOG"], "a") as f: f.write("call\\n")
+open(os.environ["SHIM_LOG"], "a").write("call\\n")
 print(json.dumps(%s))
 """
 
@@ -38,7 +37,7 @@ class TestGrade(unittest.TestCase):
         return mock.patch.object(grade, "CLAUDE", p), mock.patch.dict(os.environ, {"SHIM_LOG": self.log})
 
     def calls(self):
-        return pathlib.Path(self.log).read_text().count("call") if os.path.isfile(self.log) else 0
+        return open(self.log).read().count("call") if os.path.isfile(self.log) else 0
 
     def test_canned_label_is_cached_and_reused(self):
         a, b = self.shim({"type": "result", "structured_output": {"label": "incorrect", "reason": "different cause"}})

@@ -31,7 +31,6 @@ from the same raw files.
 """
 import json
 import os
-import pathlib
 import re
 import sys
 
@@ -63,7 +62,7 @@ def leak_words(harness_dir=None):
     words = []
     if not os.path.isfile(path):
         return words
-    for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+    for line in open(path, encoding="utf-8"):
         line = line.split("#", 1)[0].strip()
         if line:
             words.append(line)
@@ -259,7 +258,8 @@ def score(out_dir, call_grader=False, scenario=None):
     scenario_name = meta["scenario"]
     scenario = scenario or load_scenario(scenario_name)
     signal = re.compile(scenario["signal_regex"], re.I)
-    raw_lines = [l for l in pathlib.Path(out_dir, "stream.jsonl").read_text().splitlines(True) if l.strip()]
+    with open(os.path.join(out_dir, "stream.jsonl")) as f:
+        raw_lines = [l for l in f if l.strip()]
     events = [json.loads(l) for l in raw_lines]
     compaction_events = sum(1 for e, l in zip(events, raw_lines) if is_compaction_event(e, l))
     all_calls, results_by_id, final, model, tools, init, texts = [], {}, None, None, [], None, []
@@ -340,7 +340,7 @@ def score(out_dir, call_grader=False, scenario=None):
     prompt_path = os.path.join(out_dir, "prompt.txt")
     signal_leaked_in_prompt = False
     if os.path.isfile(prompt_path):
-        prompt_text = pathlib.Path(prompt_path).read_text(encoding="utf-8", errors="replace")
+        prompt_text = open(prompt_path, encoding="utf-8", errors="replace").read()
         signal_leaked_in_prompt = leak_present(prompt_text, leak_words())
 
     summary = {

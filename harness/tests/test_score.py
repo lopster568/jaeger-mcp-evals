@@ -307,6 +307,17 @@ class TestScore(unittest.TestCase):
         self.assertEqual(summary["non_jaeger_tool_calls"], ["StructuredOutput"])
         self.assertEqual(summary["call_sequence"], ["search_traces", "get_trace_errors"])
 
+    def test_line_separator_inside_a_json_string_scores(self):
+        # Node writes U+2028 raw inside strings; str.splitlines would cut the line there.
+        d = build_run_dir_structured(self.tmp.name, {"root_cause_service": "payment"})
+        path = os.path.join(d, "stream.jsonl")
+        with open(path, encoding="utf-8") as f:
+            events = [json.loads(l) for l in f]
+        events[0]["note"] = "a\u2028b"
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in events)
+        self.assertIn("verdict", score_mod.score(d)[0])
+
     def test_structured_missing_keys_scores_missing_and_fail(self):
         # Only one of the required structured keys is present, so
         # extract_structured declines it: no verdict is a FAIL, not a crash.

@@ -12,7 +12,6 @@ import hashlib
 import http.server
 import json
 import os
-import pathlib
 import subprocess
 import sys
 import tempfile
@@ -126,13 +125,13 @@ class TestCaptureTools(unittest.TestCase):
 
     def assert_captured(self, r):
         self.assertEqual(r.returncode, 0, r.stderr)
-        tools = json.loads(pathlib.Path(self.out).read_text())
+        tools = json.load(open(self.out))
         self.assertEqual(tools, TOOLS_PAGE1 + TOOLS_PAGE2)
-        digest = hashlib.sha256(pathlib.Path(self.out).read_bytes()).hexdigest()
+        digest = hashlib.sha256(open(self.out, "rb").read()).hexdigest()
         self.assertEqual(r.stdout.strip(), digest)
         # The recorded shape: tools.json is the array at indent 2, non-ASCII kept, one trailing
         # newline, and tools_list_sha256 is the sha256 of exactly those bytes.
-        raw = pathlib.Path(self.out).read_bytes()
+        raw = open(self.out, "rb").read()
         self.assertEqual(raw, (json.dumps(TOOLS_PAGE1 + TOOLS_PAGE2, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
         self.assertEqual(raw, tools_mod.tools_text(TOOLS_PAGE1 + TOOLS_PAGE2).encode("utf-8"))
         methods = [m for m, _ in FakeMCP.seen]

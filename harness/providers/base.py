@@ -40,7 +40,6 @@ def post_json(url, body, headers, timeout, backoff_s, id_header):
                 return json.loads(resp.read()), resp.headers
         except urllib.error.HTTPError as e:
             text = e.read().decode("utf-8", errors="replace")
-            e.close()
             if (e.code == 429 or e.code >= 500) and attempt < TRIES:
                 retry_after = e.headers.get("retry-after") if e.headers else None
                 time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else backoff_s * attempt)

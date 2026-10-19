@@ -97,7 +97,7 @@ if "claude-fable-5-1" in sys.argv:  # the mechanism grader
                       "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}))
     sys.exit(0)
 if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one canned request, as the CLI would
-    with open(sys.argv[sys.argv.index("--mcp-config") + 1]) as f: mcp = json.load(f)
+    mcp = json.load(open(sys.argv[sys.argv.index("--mcp-config") + 1]))
     names = ["StructuredOutput"] + (["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors",
                                      "get_trace_topology", "get_services")] if mcp["mcpServers"] else [])
     tools, system, mode = [{"name": n, "input_schema": {}} for n in names], [{"type": "text", "text": "sys"}], os.environ.get("FAKE_PROBE")
@@ -115,8 +115,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
         try:
             urllib.request.urlopen(urllib.request.Request(os.environ["ANTHROPIC_BASE_URL"] + "/v1/messages?beta=true",
                                                           json.dumps(body).encode(), {"Content-Type": "application/json"}))
-        except urllib.error.HTTPError as e:
-            e.close()
+        except urllib.error.HTTPError:
             sys.exit(1)
     sys.exit(0)
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
