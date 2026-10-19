@@ -61,7 +61,6 @@ TOOLS = """Pre-flight
         arms here: baseline
         == pre-flight: capture MCP tools/list (http://localhost:16686/jaeger/ui/api/ai/mcp/) ==
 bench: ABORT - could not capture tools/list: transport error talking to MCP server: URLError(ConnectionRefusedError(111, 'Connection refused'))"""
-TRAFFIC = """bench: ABORT - only 0 baseline traces for service=payment; the fixture is up but not completing requests through it."""
 CONTAINERS = """bench: ABORT - only 7 running containers (need >= 19)"""
 PROBE = """  FAIL  sandbox probe: the CLI sends only its verdict tool and the Jaeger tools
         sandbox probe baseline: FAIL - no model request with a JSON body reached the probe within 90s; claude said: Not logged in
@@ -85,7 +84,7 @@ class Mode(unittest.TestCase):
         self.assertEqual(self.mode(io.StringIO(), {"TERM": "xterm"}), (False, False, False))
         self.assertEqual(self.mode(Tty(), {"TERM": "xterm", "NO_COLOR": "1"}), (True, False, True))
         self.assertEqual(self.mode(Tty(), {"TERM": "xterm", "NO_COLOR": ""}), (True, True, True))  # empty does not count
-        self.assertEqual(self.mode(Tty(), {"TERM": "dumb"}), (True, False, True))
+        self.assertEqual(self.mode(Tty(), {"TERM": "dumb"}), (False, False, False))
         self.assertEqual(self.mode(io.StringIO(), {"FORCE_COLOR": "1"}), (False, True, False))
         self.assertEqual(self.mode(Tty(), {"TERM": "xterm"}, enc="ANSI_X3.4-1968"), (True, True, False))
 
@@ -106,10 +105,16 @@ class Blockers(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             fc.set_mode(io.StringIO())
 
-    def test_warming_up_retries(self):
-        self.assertEqual(fc.blocker(TOOLS)[:2], ("waiting for Jaeger's MCP tools", True))
-        self.assertEqual(fc.blocker(TRAFFIC)[:2], ("waiting for payment traces", True))
-        self.assertEqual(fc.blocker(CONTAINERS)[:2], ("containers starting, 7 of 19 running", True))
+    def test_anything_else_retries(self):
+        self.assertEqual(fc.blocker(TOOLS)[:2], ("could not capture tools/list: transport error talking to MCP server: U...", True))
+        self.assertEqual(fc.blocker(CONTAINERS)[:2], ("only 7 running containers (need >= 19)", True))
+        text, retry, _ = fc.blocker("bench: ABORT - something new and unexpected")
+        self.assertEqual((text, retry), ("something new and unexpected", True))
+
+    def test_coloured_dry_run_output(self):  # FORCE_COLOR reaches the child; dry_run() strips it before counting
+        with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m host not thrashing (vmstat bi mean 9.0 <= 1)"])):
+            rc, output = fc.dry_run()
+        self.assertEqual((fc.checks_passed(output), fc.blocker(output)[1]), (1, "thrash"))
 
     def test_thrash_is_its_own_kind(self):
         text, retry, report = fc.blocker(THRASH)
@@ -120,8 +125,6 @@ class Blockers(unittest.TestCase):
     def test_unfixable_by_waiting_stops(self):
         self.assertEqual(fc.blocker(PROBE)[:2], ("claude is not logged in, or its request never arrived", False))
         self.assertEqual(fc.blocker(FLAGS)[:2], ("the Claude Code CLI lacks flags the harness passes", False))
-        text, retry, _ = fc.blocker("bench: ABORT - something new and unexpected")
-        self.assertEqual((text, retry), ("something new and unexpected", False))
 
     def test_ready_stops_after_three_thrashing_attempts(self):
         with mock.patch.object(fc, "dry_run", return_value=(1, THRASH)) as dr, mock.patch.object(fc, "READY_SLEEP_S", 0), \

@@ -61,7 +61,8 @@ class Failed(Exception):
 
 def set_mode(stream):
     global TTY, COLOR, GLYPHS
-    TTY, COLOR, GLYPHS = stream.isatty(), bench.use_color(stream), bench.glyphs(stream)
+    TTY = stream.isatty() and os.environ.get("TERM") != "dumb"
+    COLOR, GLYPHS = bench.use_color(stream), TTY and bench.glyphs(stream)
 
 
 def out(msg=""):
@@ -292,28 +293,19 @@ def si(x):
     return "%.1fM" % (x / 1e6) if x >= 1e6 else "%dk" % (x // 1000) if x >= 1000 else "%d" % x
 
 
-# A pre-flight blocker: (pattern, retry?, short text). Retry only for the fixture warming up; the first
-# match wins and anything else stops at once, since waiting cannot fix it. "thrash" retries THRASH_STOP times.
-BLOCKERS = [
-    (r"only (\d+) running containers \(need >= (\d+)\)", True, "containers starting, {0} of {1} running"),
-    (r"could not read container count|could not read the running jaeger image", True, "waiting for the containers"),
-    (r"only \d+ baseline traces for service=([\w-]+)", True, "waiting for {0} traces"),
-    (r"could not capture tools/list", True, "waiting for Jaeger's MCP tools"),
-    (r"OFREP reports", True, "waiting for flagd"),
-    (r"FAIL\s+fixture reachable", True, "fixture not reachable"),
-    (r"telemetry names no flag", True, "waiting for clean telemetry"),
-    (r"host not thrashing \(vmstat bi mean ([\d.]+)", "thrash", "host thrashing, {0} blocks/s read (limit 50k)"),
-    (r"not logged in|no model request with a JSON body", False, "claude is not logged in, or its request never arrived"),
-    (r"does not accept", False, "the Claude Code CLI lacks flags the harness passes"),
-    (r"FAIL\s+sandbox probe", False, "the sandbox probe failed"),
-    (r"leak", False, "a leak check failed"),
-    (r"no arm of experiment", False, "the fixture runs a jaeger image the smoke experiment does not expect"),
+# A pre-flight blocker is retried until the ready budget runs out, since the fixture is usually still
+# warming up. Only these never are: waiting cannot fix them. "thrash" retries THRASH_STOP times.
+NEVER = [
+    (r"not logged in|no model request with a JSON body", "claude is not logged in, or its request never arrived"),
+    (r"does not accept", "the Claude Code CLI lacks flags the harness passes"),
+    (r"leak", "a leak check failed"),
 ]
+THRASH = r"host not thrashing \(vmstat bi mean ([\d.]+)"
 TRIES = {
-    "claude is": ("claude, then /login", "log the Claude Code CLI in"),
-    "the Claude Code CLI": ("claude update", "a CLI that accepts the harness flags"),
-    "host thrashing": ("docker stats --no-stream", "find the container reading the disk"),
-    "containers starting": ("cd %s && docker compose ps -a", "which container is not up"),
+    r"^claude is": ("claude, then /login", "log the Claude Code CLI in"),
+    r"^the Claude Code CLI": ("claude update", "a CLI that accepts the harness flags"),
+    r"^host thrashing": ("docker stats --no-stream", "find the container reading the disk"),
+    r"running containers": ("cd %s && docker compose ps -a", "which container is not up"),
 }
 
 
@@ -326,12 +318,15 @@ def blocker(output):
     report = [first.strip()]
     if check:
         report = [mark("fail") + " " + check.group(1)] + ["  " + l.strip() for l in lines[i + 1:i + 7] if l.startswith("        ")]
-    for pat, retry, short in BLOCKERS:
-        m = re.search(pat, "\n".join([first] + report))
-        if m:
-            return short.format(*[si(float(x)) if retry == "thrash" else x for x in m.groups()]), retry, report
+    detail = "\n".join([first] + report)
+    for pat, short in NEVER:
+        if re.search(pat, detail):
+            return short, False, report
+    m = re.search(THRASH, detail)
+    if m:
+        return "host thrashing, %s blocks/s read (limit 50k)" % si(float(m.group(1))), "thrash", report
     text = re.sub(r"^\s*(FAIL\s+|bench: (ABORT - )?)", "", first)
-    return text[:70] + ("..." if len(text) > 70 else ""), False, report
+    return text[:70] + ("..." if len(text) > 70 else ""), True, report
 
 
 def checks_passed(output):
@@ -340,11 +335,11 @@ def checks_passed(output):
 
 def dry_run():
     rc, lines = sh(BENCH + ["run", SMOKE, "--dry-run"], cwd=ROOT)
-    return rc, "\n".join(lines)
+    return rc, bench.ANSI.sub("", "\n".join(lines))  # FORCE_COLOR reaches the child; the counts and regexes need plain text
 
 
 def preflight_failed(cfg, text, report, prefix=""):
-    t = next((t for k, t in TRIES.items() if text.startswith(k)), None)
+    t = next((t for k, t in TRIES.items() if re.search(k, text)), None)
     tries = [(t[0].replace("%s", cfg["FIXTURE_DEMO_DIR"]), t[1])] if t else [
         ("python3 harness/bench.py run %s --dry-run" % SMOKE, "the full pre-flight report")]
     return Failed(prefix + text, ["bench.py pre-flight, last attempt:"] + ["  " + l for l in report], tries)
