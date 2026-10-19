@@ -5,10 +5,8 @@
 
 .DEFAULT_GOAL := help
 
-# The newest python3.11+ on PATH, else python3; PYTHON=... overrides.
-PYTHON ?= $(firstword $(foreach v,14 13 12 11,$(shell command -v python3.$(v) 2>/dev/null)) python3)
-# Every target that runs Python checks its version first, in one line.
-PYOK := $(PYTHON) -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null || { echo "$(PYTHON) is $$($(PYTHON) -V 2>&1), need 3.11 or newer; install one (e.g. uv python install 3.12) or run make PYTHON=python3.12"; exit 1; }
+# Any Python 3.11+ interpreter, e.g. make setup PYTHON=python3.12 (fixture/preflight.sh checks the version)
+PYTHON ?= python3
 CLI := $(PYTHON) harness/fixture_cli.py
 PREFLIGHT := PYTHON=$(PYTHON) bash fixture/preflight.sh
 
@@ -38,11 +36,11 @@ preflight:
 	@$(PREFLIGHT) && $(CLI) tools
 
 fixture up phoenix down clean test:
-	@$(PYOK); $(CLI) $@
+	@$(CLI) $@
 
 # Makes ONE paid agent call (Claude Code CLI, claude-sonnet-5-5, effort high, budget cap in the experiment file).
 smoke:
 	@$(PREFLIGHT) && $(CLI) smoke
 
 verify:
-	@$(PYOK); $(PYTHON) harness/bench.py verify
+	@$(PYTHON) harness/bench.py verify

@@ -3,19 +3,7 @@
 # Ports come from the overlay's published ports (OVERLAY overrides the path, for tests).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OVERLAY="${OVERLAY:-$ROOT/fixture/compose.overlay.yaml}"
-# Silent on success (make then prints the Tools line). A failure is one line; on a TTY it starts with
-# a red ✗ (FAIL outside a UTF-8 locale; no colour with NO_COLOR or TERM=dumb), as the Python steps do.
-fail() {
-  if [ -t 1 ]; then
-    local m=FAIL
-    [ "$(locale charmap 2>/dev/null)" = UTF-8 ] && m=✗
-    [ -n "$NO_COLOR" ] || [ "$TERM" = dumb ] || m=$'\e[1;31m'$m$'\e[0m'
-    echo "  $m preflight: $1"
-  else
-    echo "preflight: $1"
-  fi
-  exit 1
-}
+fail() { echo "preflight: $1"; exit 1; }
 
 command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop"
 docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compose v2 is missing or docker does not run; install the Docker Compose plugin or start Docker"
