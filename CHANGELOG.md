@@ -88,3 +88,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-10-15
 
 - Fixture: the flagd memory limit is raised from the demo's 75M to 200M. At 75M flagd's own executable pages are evicted and re-read from disk until it stops answering; on 2026-10-15 a fresh `make setup` hit this within minutes. GOMEMLIMIT is unchanged; no flag, image or span differs. `fixture_overlay_sha256` changes, and batches before this change ran with the old limit.
+
+## 2026-10-19
+
+- Tooling: `make` targets print one line per step with live progress, in the same visual language as bench.py (colour off on a pipe, with NO_COLOR or TERM=dumb); the setup login check ignores ANTHROPIC_API_KEY, as the trials do. No scenario, experiment or scoring change, so every earlier batch stays comparable.
