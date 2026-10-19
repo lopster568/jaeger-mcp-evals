@@ -1667,8 +1667,14 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
 RECORD_FILES = ("manifest.json", "preflight.json", "cells.jsonl", "scores.jsonl", "restore.json")
 
 
+SMOKE_EXPERIMENT = "smoke-paymentfailure"  # harness/experiments/, run by make smoke
+
+
 def keep_records(bdir, experiment, log):
-    """Copy the batch-level records into the repository; trajectories stay under RUNS_DIR."""
+    """Copy the batch-level records into the repository; trajectories stay under RUNS_DIR.
+    The smoke batch (make smoke) is a check that the fixture works, not a record."""
+    if experiment == SMOKE_EXPERIMENT:
+        return
     dest = os.path.join(RECORDS, experiment, os.path.basename(bdir))
     os.makedirs(dest, exist_ok=True)
     kept = [f for f in RECORD_FILES if os.path.isfile(os.path.join(bdir, f))]

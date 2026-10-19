@@ -973,6 +973,12 @@ class TestRecords(BenchCase):
         self.assertEqual(len(dirs), 1, dirs)
         return dirs[0]
 
+    def test_smoke_batch_is_not_a_record(self):
+        log = mock.MagicMock()
+        bench.keep_records(self.runs, bench.SMOKE_EXPERIMENT, log)
+        self.assertFalse(os.path.exists(self.records))
+        log.assert_not_called()
+
     def test_batch_records_copied_without_trajectories(self):
         self.assertEqual(self.run_batch(1), 0, self.err)
         b, kept = self.batch_dir(), self.kept()

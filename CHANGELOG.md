@@ -92,3 +92,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-10-19
 
 - Tooling: `make` targets print one line per step with live progress, in the same visual language as bench.py (colour off on a pipe, with NO_COLOR or TERM=dumb); the setup login check ignores ANTHROPIC_API_KEY, as the trials do. No scenario, experiment or scoring change, so every earlier batch stays comparable.
+- Records: a `smoke-paymentfailure` batch (make smoke) is no longer copied into records/ and no longer rewrites records/INDEX.md; it checks that the fixture works and is not a result. No scenario or scoring change.
