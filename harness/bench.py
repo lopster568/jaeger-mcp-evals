@@ -211,8 +211,9 @@ def traces(cfg, service, start_us, end_us, limit, timeout):
     try:
         resource_spans = http_json(config.jaeger_base(cfg) + "/api/v3/traces?" + q, timeout=timeout)["result"]["resourceSpans"]
     except urllib.error.HTTPError as e:
-        if e.code == 404 and b"No traces found" in e.read():
-            return []
+        with e:
+            if e.code == 404 and b"No traces found" in e.read():
+                return []
         raise
     out = {}
     for rs in resource_spans:

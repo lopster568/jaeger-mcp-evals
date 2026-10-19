@@ -5,6 +5,7 @@ Run with: python3 -m unittest discover harness/tests
 """
 import json
 import os
+import pathlib
 import re
 import sys
 import tempfile
@@ -196,7 +197,7 @@ class TestTracesV3(unittest.TestCase):
             self.assertEqual(bench.traces(self.CFG, "checkout", 1_000_000, 2_000_000, 5, 10), [])
 
     def test_cache_count_signal_matches_v3_attribute(self):
-        sig = re.compile(json.load(open(os.path.join(HARNESS_DIR, "scenarios", "recommendationCacheFailure.json")))["signal_regex"], re.I)
+        sig = re.compile(json.loads(pathlib.Path(HARNESS_DIR, "scenarios", "recommendationCacheFailure.json").read_text())["signal_regex"], re.I)
         dump = lambda n: json.dumps(span("a", "x", [("demo.product.count", {"intValue": n})]))
         self.assertTrue(sig.search(dump("1234567")))
         self.assertFalse(sig.search(dump("123456")))
