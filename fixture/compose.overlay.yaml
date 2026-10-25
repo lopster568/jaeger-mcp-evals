@@ -6,7 +6,9 @@ services:
     ports:
       - "16686:16686"
     volumes:
-      - ./overlay/jaeger-config.yml:/etc/jaeger/config.yml
+      # Set JAEGER_CONFIG_FILE=jaeger-config-main.yml in .env.override for an image built from
+      # Jaeger main, which rejects ai.enable_mcp and takes an ai.mcp block (#9194).
+      - ./overlay/${JAEGER_CONFIG_FILE:-jaeger-config.yml}:/etc/jaeger/config.yml
       - ./src/jaeger/ui-config.json:/etc/jaeger/ui-config.json
   # Fifth round of the memory-limit deviation described below. flagd's Go runtime may hold up
   # to its GOMEMLIMIT (unchanged) of heap, which at the demo's 75M limit leaves little room for

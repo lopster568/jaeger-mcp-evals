@@ -21,6 +21,10 @@ LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
 DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+# Set by bench.py for an experiment with run.bill_api_key: the grader bills this key instead of the
+# logged-in plan, and a call whose init event reports another apiKeySource fails. Environment only.
+API_KEY = None
+BILLING_FAILED = False  # set by the first billing error: no later grader call may reach the CLI
 TIMEOUT_S = 300
 
 
@@ -45,12 +49,22 @@ def argv(truth, text, mcp_config):
     return [CLAUDE, "-p", user_prompt(truth, text), "--output-format", "json",
             "--mcp-config", mcp_config, "--strict-mcp-config", "--setting-sources", "", "--restricted", "--tools", "",
             "--no-session-persistence", "--system-prompt", prompt_text().rstrip("\n"),
-            "--json-schema", json.dumps(SCHEMA), "--model", GRADER_MODEL, "--max-turns", "3"]
+            "--json-schema", json.dumps(SCHEMA), "--model", GRADER_MODEL, "--max-turns", "3"] + (["--verbose"] if API_KEY else [])
+
+
+def _billing_error(msg):
+    global BILLING_FAILED
+    BILLING_FAILED = True
+    return RuntimeError("grader: billing: " + msg)
 
 
 def call_cli(truth, text):
     """One grader call; {"label", "reason"}. Raises RuntimeError on anything but a valid label."""
+    if BILLING_FAILED:
+        raise RuntimeError("grader: billing: an earlier call failed the apiKeySource check; no further grader calls")
     env = {k: v for k, v in os.environ.items() if k not in DROP_ENV}
+    if API_KEY:
+        env["ANTHROPIC_API_KEY"] = API_KEY
     with tempfile.TemporaryDirectory() as work:
         mcp = os.path.join(work, "mcp.json")
         with open(mcp, "w", encoding="utf-8") as f:
@@ -60,12 +74,17 @@ def call_cli(truth, text):
     try:
         out = json.loads(p.stdout)
         if isinstance(out, list):  # --verbose prints every event; the result is last
-            out = out[-1]
+            init = next((e for e in out if isinstance(e, dict) and e.get("subtype") == "init"), {}) if API_KEY else {}
+            if API_KEY and init.get("apiKeySource") != "ANTHROPIC_API_KEY":
+                raise _billing_error("apiKeySource %r, not ANTHROPIC_API_KEY" % init.get("apiKeySource"))
+            out = next(e for e in reversed(out) if isinstance(e, dict) and e.get("type") == "result")
+        elif API_KEY:
+            raise _billing_error("no init event to confirm apiKeySource")
         ans = out["structured_output"]
         if ans["label"] not in LABELS:
             raise ValueError(ans["label"])
         return {"label": ans["label"], "reason": str(ans["reason"])}
-    except (ValueError, KeyError, TypeError, IndexError) as e:
+    except (ValueError, KeyError, TypeError, IndexError, StopIteration) as e:
         raise RuntimeError("grader: no valid label (exit %s): %r" % (p.returncode, e))
 
 

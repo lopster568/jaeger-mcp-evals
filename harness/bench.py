@@ -747,11 +747,12 @@ MEMORY_MARKERS = ("CLAUDE.md", "# CLAUDE", "auto-memory", "MEMORY.md")
 PROBE_TIMEOUT_S = 90
 
 
-def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
+def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S, need_key=False):
     """Run a trial's CLI argv against a server on 127.0.0.1 that keeps the first POST body in memory
     and answers 400, so no model is called. Returns (problems, tool names sent). The body is never
-    written anywhere: with a claude.ai login it carries the account's email."""
-    first = []
+    written anywhere: with a claude.ai login it carries the account's email. Of the headers only two
+    booleans are kept (x-api-key and authorization present); need_key fails the probe without x-api-key."""
+    first, hdrs = [], {}
 
     class Probe(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -761,6 +762,7 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             if not first:
                 first.append(body)
+                hdrs.update(key=self.headers.get("x-api-key") is not None, auth=self.headers.get("authorization") is not None)
             reply = b'{"type":"error","error":{"type":"invalid_request_error","message":"sandbox probe"}}'
             self.send_response(400)
             self.send_header("Content-Type", "application/json")
@@ -795,6 +797,8 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S):
     problems = [] if sorted(names) == sorted(expected) else ["tools sent %s, expected %s" % (sorted(names), sorted(expected))]
     problems += ["server-side tool %s (type %s)" % (t.get("name"), t["type"]) for t in sent if "type" in t]
     text = json.dumps([req.get("system"), req.get("messages")], ensure_ascii=False)
+    if need_key and not hdrs.get("key"):
+        problems.append("billing: no x-api-key header reached the probe (authorization header present: %s)" % hdrs.get("auth"))
     problems += ["memory marker %r in the request" % m for m in MEMORY_MARKERS if m in text]
     return problems, names
 
@@ -878,6 +882,18 @@ def observe(stream_path):
             "compaction_events": compactions}
 
 
+def api_key_source(stream_path):
+    """The stream init event's apiKeySource ("ANTHROPIC_API_KEY" when the key billed the trial), else None."""
+    for line in read_text(stream_path).splitlines() if os.path.isfile(stream_path) else []:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and e.get("type") == "system" and e.get("subtype") == "init":
+            return e.get("apiKeySource")
+    return None
+
+
 def jaeger_commit(cfg, image):
     for p in sorted(glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json"))):
         rec = load_json(p)
@@ -937,7 +953,7 @@ def load_experiment(path):
     for k in ("name", "scenario", "hypothesis", "status"):
         check(isinstance(exp[k], str) and exp[k], "%s must be a non-empty string" % k)
     r = exp["run"]
-    keys(r, "run", RUN_KEYS, optional=("client_version",))
+    keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
     if r["client"] == "api":
         check(r["provider"] in ("anthropic", "openai"), "run.provider must be anthropic or openai for client api")
@@ -951,6 +967,9 @@ def load_experiment(path):
     check(r["seed"] is None or is_int(r["seed"]), "run.seed must be an integer or null")
     if "client_version" in r:
         check(isinstance(r["client_version"], str) and r["client_version"], "run.client_version must be a non-empty string")
+    if "bill_api_key" in r:
+        check(type(r["bill_api_key"]) is bool and (r["client"] == "cli" or not r["bill_api_key"]),
+              "run.bill_api_key must be true or false, and true only for client cli")
     check(isinstance(exp["arms"], dict) and exp["arms"], "arms must be a non-empty object")
     for name, arm in exp["arms"].items():
         keys(arm, "arms.%s" % name, ARM_KEYS)
@@ -978,6 +997,7 @@ def run(a, cfg):
         return die("experiment status is still DRAFT; set it to CONFIRMED before running it")
     # The file's run block is the only source of these settings.
     vars(a).update(exp["run"], scenario=exp["scenario"], experiment=exp["name"])
+    a.bill_api_key = exp["run"].get("bill_api_key", False)  # cli and grader bill ANTHROPIC_API_KEY, not the plan
     a.max_budget_usd = str(a.max_budget_usd)
     budget = float(a.max_budget_usd)
     a.codex_bin = cfg.get("CODEX_BIN") or "codex"
@@ -1038,7 +1058,13 @@ def run(a, cfg):
         log.check(True, "claude accepts the flags the harness passes")
         if not is_full_model_id(a.model):
             log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
-        if cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
+        if a.bill_api_key:
+            if not cfg.get("ANTHROPIC_API_KEY"):
+                return die("run.bill_api_key is true but ANTHROPIC_API_KEY is empty in fixture.env; nothing was touched")
+            grade.API_KEY = cfg["ANTHROPIC_API_KEY"]  # environment only: never argv, never a record
+            grade.BILLING_FAILED = False
+            log.check(True, "cli and grader bill ANTHROPIC_API_KEY (every trial's stream init must report it)")
+        elif cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
             log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
         log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
@@ -1188,13 +1214,15 @@ def run(a, cfg):
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+        if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
+            env.update(api_secrets(a, cfg))
         probe = {"result": "PASS", "tools": {}}
         for arm in arms:
             expected = [score.VERDICT_TOOL] + ([score.JAEGER_PREFIX + t["name"] for t in tool_list] if tools_for[arm] else [])
             with tempfile.TemporaryDirectory() as tmp:
                 write_mcp_config(os.path.join(tmp, "mcp.json"), mcp_url if tools_for[arm] else None)
                 problems, probe["tools"][arm] = sandbox_probe(claude_argv(a, prompt_file[arm], os.path.join(tmp, "mcp.json")),
-                                                              env, expected)
+                                                              env, expected, need_key=bool(a.bill_api_key))
             for m in problems:
                 log.detail("sandbox probe %s: FAIL - %s" % (arm, m))
             probe["result"] = "FAIL" if problems else probe["result"]
@@ -1326,6 +1354,8 @@ def run(a, cfg):
         manifest["tools_description_check"] = {"mode": desc[arms[0]]["check"], "descriptions_file": desc[arms[0]]["file"],
                                                "descriptions_sha256": desc[arms[0]]["sha256"]}
     manifest.update(common)
+    if a.bill_api_key:
+        manifest["billing"] = "ANTHROPIC_API_KEY"
     manifest["experiment"] = dict(common["experiment"], content=exp)
     if not a.dry_run:
         write_json(os.path.join(bdir, "manifest.json"), manifest)
@@ -1471,6 +1501,11 @@ def run(a, cfg):
                           % (a.model, seen)))
                 st["aborted"] = True
                 return None
+            if a.bill_api_key and (src := api_key_source(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))) != "ANTHROPIC_API_KEY":
+                log(paint(BOLD_RED, "bench: ABORTING remaining cells - billing: run.bill_api_key is true but the stream "
+                          "init reports apiKeySource %r" % src))
+                st["aborted"] = True
+                return None
             fails = fails + 1 if rec["failed"] else 0
             verdict, calls, note = "ERROR", "-", "exit %s" % rec["trial_exit_code"]
             try:
@@ -1603,9 +1638,9 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                   observed=None, agent_loop=None, system_under_test=sut, fixture_changes=None, fixture_ok=None)
     meta = {k: merged[k] for k in META_KEYS}
     write_json(os.path.join(trial, "meta.json"), meta)
-    # cli: no API key in the environment, so claude bills the logged-in plan.
+    # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
-    if a.client == "api":
+    if a.client == "api" or a.bill_api_key:
         env.update(secrets or {})  # environment only: never argv, never a record
     stream = os.path.join(trial, "stream.jsonl")
     before = container_snapshot(cfg)

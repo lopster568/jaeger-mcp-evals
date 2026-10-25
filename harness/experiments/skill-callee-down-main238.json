@@ -1,0 +1,35 @@
+{
+  "name": "skill-callee-down-main238",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Re-run of skill-callee-down-mainskill on real builds of Jaeger main 238c5fa2 (baseline) and main plus PR commit 05a09841 (the same one-bullet error-root-cause SKILL.md change, byte-identical to 64a8875f), claude-sonnet-5-5 pinned on the Claude Code CLI 2.1.285 at effort high: the change reaches the cause in at least 5 of 10 trials. Decision rule, unchanged from skill-callee-down-mainskill: the change supports the upstream PR only if it passes the threshold and the main baseline stays at or below 2 of 10. Differences from the published pair, all identical across both arms here: main's binary (search_traces schema, read_skill custom/ routing, skills index, detect-n-plus-one text), ai.mcp fixture config, alpine 3.24.2 base, the harness reading traces from the v3 API, and agent and grader billed to ANTHROPIC_API_KEY instead of the claude.ai plan.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+      "tools": true
+    },
+    "skillchange": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-callee-down-05a09841",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {
+    "accuracy_pass_min": 5
+  },
+  "status": "CONFIRMED v1 2026-10-26: threshold and decision rule pre-registered before any run; same as skill-callee-down-mainskill plus bill_api_key"
+}

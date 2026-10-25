@@ -93,8 +93,10 @@ if "claude-fable-5-1" in sys.argv:  # the mechanism grader
     with open(os.path.join(os.environ["FAKE_HOME"], "grader-calls.jsonl"), "a") as f:
         f.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "claudecode": "CLAUDECODE" in os.environ,
                             "api_key": "ANTHROPIC_API_KEY" in os.environ}) + "\\n")
-    print(json.dumps({"type": "result", "subtype": "success", "result": "",
-                      "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}))
+    res = {"type": "result", "subtype": "success", "result": "",
+           "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}
+    src = os.environ.get("FAKE_KEY_SOURCE", "ANTHROPIC_API_KEY" if "ANTHROPIC_API_KEY" in os.environ else "none")
+    print(json.dumps([{"type": "system", "subtype": "init", "apiKeySource": src}, res] if "--verbose" in sys.argv else res))
     sys.exit(0)
 if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one canned request, as the CLI would
     mcp = json.load(open(sys.argv[sys.argv.index("--mcp-config") + 1]))
@@ -114,7 +116,8 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     if mode != "silent":
         try:
             urllib.request.urlopen(urllib.request.Request(os.environ["ANTHROPIC_BASE_URL"] + "/v1/messages?beta=true",
-                                                          json.dumps(body).encode(), {"Content-Type": "application/json"}))
+                                                          json.dumps(body).encode(),
+                                                          dict({"Content-Type": "application/json"}, **({"x-api-key": os.environ["ANTHROPIC_API_KEY"]} if "ANTHROPIC_API_KEY" in os.environ else {}))))
         except urllib.error.HTTPError:
             sys.exit(1)
     sys.exit(0)
@@ -127,6 +130,7 @@ if os.environ.get("FAKE_JUNK"):
     print(json.dumps("not an event"))
 for e in [
     {"type": "system", "subtype": "init", "model": "claude-sonnet-5", "claude_code_version": "2.1.282",
+     "apiKeySource": os.environ.get("FAKE_KEY_SOURCE", "ANTHROPIC_API_KEY" if "ANTHROPIC_API_KEY" in os.environ else "none"),
      "tools": ["StructuredOutput"] + ["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")],
      "mcp_servers": [{"name": "jaeger", "status": "connected"}], "skills": ["s1"], "agents": ["a1"]},
     {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "mcp__jaeger__get_trace_errors", "input": {}}]}},
@@ -472,6 +476,38 @@ class TestBatch(BenchCase):
     def test_cli_says_the_api_key_is_ignored(self):
         self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="sk-x"), 0, self.err)
         self.assertIn("runs on the logged-in plan and ignores it", self.err + self.out)
+
+    def test_bill_api_key_runs_cli_and_grader_on_the_key(self):
+        self.addCleanup(setattr, bench.grade, "API_KEY", None)
+        self.assertEqual(self.run_batch(1, run={"bill_api_key": True}, ANTHROPIC_API_KEY="sk-test-secret"), 0, self.err)
+        self.assertIn("cli and grader bill ANTHROPIC_API_KEY", self.err + self.out)
+        self.assertTrue(all(c["api_key"] for c in self.calls()))
+        graders = bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))
+        self.assertTrue(graders and all(g["api_key"] and "--verbose" in g["argv"] for g in graders))
+        b = self.batch_dir()
+        self.assertEqual(load(os.path.join(b, "manifest.json"))["billing"], "ANTHROPIC_API_KEY")
+        for path in glob.glob(os.path.join(b, "**"), recursive=True) + glob.glob(os.path.join(self.records, "**"), recursive=True):
+            if os.path.isfile(path):
+                self.assertNotIn("sk-test-secret", read(path), path)
+        self.assertNotIn("sk-test-secret", json.dumps([c["argv"] for c in self.calls()]))
+
+    def test_bill_api_key_aborts_when_the_stream_reports_another_source(self):
+        self.addCleanup(setattr, bench.grade, "API_KEY", None)
+        self.assertEqual(self.run_batch(2, run={"bill_api_key": True}, ANTHROPIC_API_KEY="sk-x", FAKE_KEY_SOURCE="none"), 4)
+        self.assertIn("billing: run.bill_api_key is true but the stream init reports apiKeySource 'none'", self.err + self.out)
+        self.assertEqual(len(self.calls()), 1)
+        self.assertEqual(self.flag_file(), self.pristine())
+
+    def test_bill_api_key_needs_the_key(self):
+        self.assertEqual(self.run_batch(1, run={"bill_api_key": True}, ANTHROPIC_API_KEY=""), 1)
+        self.assertIn("run.bill_api_key is true but ANTHROPIC_API_KEY is empty", self.err)
+        self.assertEqual(self.calls(), [])
+
+    def test_default_cli_still_strips_the_key(self):
+        self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-x"), 0, self.err)
+        self.assertFalse(any(c["api_key"] for c in self.calls()))
+        self.assertFalse(any(g["api_key"] for g in bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))))
+        self.assertNotIn("billing", load(os.path.join(self.batch_dir(), "manifest.json")))
 
     def test_api_client_runs_the_owned_loop(self):
         verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
@@ -937,6 +973,10 @@ class TestKnobFile(BenchCase):
     def test_provider_only_for_api(self):
         self.refused(lambda d: d["run"].update(provider="openai"), "run.provider applies only to client api")
 
+    def test_bill_api_key_only_for_cli(self):
+        self.refused(lambda d: d["run"].update(client="api", provider="anthropic", bill_api_key=True),
+                     "run.bill_api_key must be true or false, and true only for client cli")
+
     def test_draft_refused(self):
         self.refused(lambda d: d.update(status="DRAFT"), "DRAFT")
 
@@ -1336,6 +1376,22 @@ class TestSandboxProbe(BenchCase):
         problems, names = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10)
         self.assertEqual(names, [])
         self.assertIn("claude said: Not logged in \u00b7 Please run /login", problems[0])
+
+    def test_need_key_requires_an_x_api_key_header_and_reports_only_booleans(self):
+        code = ("import os, urllib.request as u, urllib.error as e\n"
+                "r = u.Request(os.environ['ANTHROPIC_BASE_URL'] + '/v1/messages', b'{}', {'authorization': 'Bearer SECRETTOKEN'}"
+                " if os.environ.get('NOKEY') else {'x-api-key': 'SECRETKEY'})\n"
+                "try: u.urlopen(r)\n"
+                "except e.HTTPError: pass\n")
+        ok, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10, need_key=True)
+        self.assertFalse([p for p in ok if "billing" in p])
+        bad, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10, need_key=True)
+        msg = [p for p in bad if "billing" in p]
+        self.assertEqual(len(msg), 1)
+        self.assertIn("authorization header present: True", msg[0])
+        self.assertNotIn("SECRET", " ".join(bad))
+        off, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10)
+        self.assertFalse([p for p in off if "billing" in p])
 
 
 if __name__ == "__main__":

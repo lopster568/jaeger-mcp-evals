@@ -1,0 +1,16 @@
+{
+  "name": "main-callee-down-05a09841",
+  "tag": "jaeger-mcp-evals/jaeger:main-callee-down-05a09841",
+  "digest": "sha256:80a6f123af5bc152014dad7c194c174106442d9fd75210f4a452adfd9e529031",
+  "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
+  "branch": "detached 05a09841 (main 238c5fa2 plus the error-root-cause/SKILL.md callee-down bullet)",
+  "branch_commit": "05a09841cb0f3d67ebb634a6a0bfa1bd3c6862ac",
+  "base_image": "evals-baseimg-alpine:main-238c5fa2",
+  "base_image_recipe": "scripts/build/docker/base/Dockerfile at 238c5fa2 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally under a fixed tag (image ID sha256:7aac3dd25585691c616bbcb65c2890882f703043ceac69facc839d8f72218a0f) instead of pushed to the CI-only localhost:5000 registry",
+  "built_at_utc": "2026-10-25T18:41:57Z",
+  "built_on": "fixture host",
+  "binary_sha256": "07701fb881e902b1377306e4e6a3c5306478b74079fa618bee18e558bbb76a8a",
+  "binary_build": "GOTOOLCHAIN=go1.27.0 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath ./cmd/jaeger/ from one clean clone, placeholder UI; go version -m differs only in vcs.revision, vcs.time and the module pseudo-version",
+  "descriptions": null,
+  "jaeger_config": "jaeger-config-main.yml"
+}

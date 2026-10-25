@@ -40,7 +40,8 @@ BENCH = [sys.executable, os.path.join("harness", "bench.py")]
 SMOKE_SIZE = "about 50k tokens"
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",
-           "jaeger-config.yml": "overlay/jaeger-config.yml", "otelcol-config-extras.yml": "overlay/otelcol-config-extras.yml"}
+           "jaeger-config.yml": "overlay/jaeger-config.yml",
+           "jaeger-config-main.yml": "overlay/jaeger-config-main.yml", "otelcol-config-extras.yml": "overlay/otelcol-config-extras.yml"}
 COMPOSE = ["docker", "compose", "--env-file", ".env", "--env-file", ".env.override", "-f", "compose.yaml",
            "-f", "compose.full.yaml", "-f", "compose.observability.yaml", "-f", "overlay/compose.overlay.yaml"]
 READY_BUDGET_S, READY_SLEEP_S, THRASH_STOP = 600, 30, 3  # the ready wait: 10 min, a dry run every 30 s

@@ -1,0 +1,16 @@
+{
+  "name": "main-238c5fa2",
+  "tag": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+  "digest": "sha256:f26897ba5339664e50ac3c9bbca63825d345d17675542ca59cbdef7db930a9c2",
+  "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
+  "branch": "detached 238c5fa2 (jaegertracing/jaeger main, parent of PR commit 05a09841)",
+  "branch_commit": "238c5fa2a8e9fa69eadc35535835972b11ee9bd6",
+  "base_image": "evals-baseimg-alpine:main-238c5fa2",
+  "base_image_recipe": "scripts/build/docker/base/Dockerfile at 238c5fa2 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally under a fixed tag (image ID sha256:7aac3dd25585691c616bbcb65c2890882f703043ceac69facc839d8f72218a0f) instead of pushed to the CI-only localhost:5000 registry",
+  "built_at_utc": "2026-10-25T18:41:57Z",
+  "built_on": "fixture host",
+  "binary_sha256": "963d44eeae44b4417ac0e7ab3f75a40a2a088e871ff1a29c601f5065715371c5",
+  "binary_build": "GOTOOLCHAIN=go1.27.0 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath ./cmd/jaeger/ from one clean clone, placeholder UI; go version -m differs only in vcs.revision, vcs.time and the module pseudo-version",
+  "descriptions": null,
+  "jaeger_config": "jaeger-config-main.yml"
+}
