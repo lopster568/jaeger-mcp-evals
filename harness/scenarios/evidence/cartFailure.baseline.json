@@ -1,0 +1,11 @@
+{
+ "scenario": "cartFailure",
+ "service_queried": "cart",
+ "lookback": "window 2026-10-28T07:33:37Z to 07:40:37Z (GET /api/v3/traces, query.service_name=cart, search_depth 200)",
+ "traces_checked": 200,
+ "signal_regex": "able to connect to redis",
+ "signal_present": false,
+ "checked_utc": "2026-10-28",
+ "flag_state": "flag off (default, demo.flagd.json identical to the pristine copy); Jaeger main-238c5fa2, restarted about 07:33Z, so the window holds every cart trace since the restart, up to the 200 limit",
+ "note": "Captured by hand on the fixture host. The query hit the 200-trace limit, so this is a sample of the window, not every trace."
+}

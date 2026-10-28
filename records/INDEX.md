@@ -13,7 +13,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | scenario | deterministic | readiness | batches recorded | cells scored |
 |---|---|---|---|---|
 | adFailure | no | PASS | 0 | 0 |
-| cartFailure | yes | FAIL | 0 | 0 |
+| cartFailure | yes | PASS | 0 | 0 |
 | emailMemoryLeak | bucketed | PASS | 0 | 0 |
 | paymentFailure | yes | PASS | 0 | 0 |
 | paymentUnreachable | yes | PASS | 0 | 0 |
