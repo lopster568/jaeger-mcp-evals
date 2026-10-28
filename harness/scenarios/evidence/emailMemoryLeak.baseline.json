@@ -1,0 +1,11 @@
+{
+ "scenario": "emailMemoryLeak",
+ "service_queried": "checkout",
+ "lookback": "window 2026-10-03T09:12:00Z to 09:18:02Z",
+ "traces_checked": 16,
+ "signal_regex": "connection reset by peer|\"EOF\"",
+ "signal_present": false,
+ "checked_utc": "2026-10-04",
+ "flag_state": "flag off (default) until 09:18:02Z per probes/emailMemoryLeak-2026-10-03-run2/flag-on-100x.log; traces taken from traces-window.json (services email and checkout)",
+ "note": "The same regex matches 5 of 97 traces in the whole capture, all after 09:30:44Z (1000x window)."
+}

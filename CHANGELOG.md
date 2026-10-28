@@ -93,3 +93,8 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 - Tooling: `make` targets print one line per step with live progress, in the same visual language as bench.py (colour off on a pipe, with NO_COLOR or TERM=dumb); the setup login check ignores ANTHROPIC_API_KEY, as the trials do. No scenario, experiment or scoring change, so every earlier batch stays comparable.
 - Records: a `smoke-paymentfailure` batch (make smoke) is no longer copied into records/ and no longer rewrites records/INDEX.md; it checks that the fixture works and is not a result. No scenario or scoring change.
+
+## 2026-10-28
+
+- emailMemoryLeak: version none to 1, comparable: no prior version in this repo. Ported from the private screening clone where v1 was drafted on 2026-10-04, with its two evidence files; what PASS means is unchanged from that draft, and only the notes changed (this repo's bench.py line numbers, and the 2026-10-06 screen that aborted at the signal wait before any trial). Not yet run to a trial on the fixture.
+- cartFailure: version none to 1, comparable: no prior version. New scenario: every request to empty a cart fails to connect to its store and the caller discards the error. Written from the 3.0.0 source; evidence traces not yet captured, so readiness fails until they are.

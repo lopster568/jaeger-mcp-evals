@@ -1,0 +1,60 @@
+{
+ "flag": "emailMemoryLeak",
+ "version": 1,
+ "activation": {
+  "field": "defaultVariant",
+  "value": "1000x"
+ },
+ "deterministic": "bucketed",
+ "ground_truth": {
+  "service": "checkout",
+  "operation": "POST",
+  "mechanism": "Root-cause service is email (pass_rule.service_exact); ground_truth.service is checkout only because bench.py polls the signal with the Jaeger service filter on this value and the failing traces contain no email span (see notes). email/email_server.rb send_email (lines 61-97 at tag 3.0.0, notes/emailMemoryLeak-source-check-2026-10-01.md) pads the confirmation body with whitespace of length confirmation_content.length * (emailMemoryLeak - 1) on every request, so with the 1000x variant each request allocates far more memory. Under the 100 MiB container limit the process is cgroup OOM-killed and restarted (RestartCount 2 by 09:35:55Z, probes/emailMemoryLeak-2026-10-03-run2/final-inspect.log and oom-evidence.log). Requests in flight at the kill end on checkout's client span named POST (url.full http://email:6060/send_order_confirmation) with status ERROR and message EOF or read: connection reset by peer; the killed instance never exported an email server span for them, so those client spans have no matching email server span. The checkout PlaceOrder span stays status ok and frontend-proxy shows 504 UT after about 15 s (notes/emailMemoryLeak-live-capture-2026-10-03-run2.md, sections e and g). No span carries a memory, body-size or flag string (section h), so the memory cause is not reachable from trace data and is not required by mechanism_truth."
+ },
+ "expected_restarts": [
+  "email"
+ ],
+ "restart_before_run": [
+  "email"
+ ],
+ "mechanism_truth": "The service that receives the request crashed and restarted while it was handling requests, so calls already in flight to it ended with a dropped connection (end of stream or connection reset) instead of a reply. Saying why it crashed, such as running out of memory, is not required, and adding that guess is also correct. An answer that only says the receiving service returned errors, that the network between the caller and that service is faulty, or that the calling service is at fault, does not describe this mechanism.",
+ "signal_regex": "connection reset by peer|\"EOF\"",
+ "oracle": [
+  {
+   "tool": "search_traces",
+   "arguments": {
+    "service_name": "checkout",
+    "with_errors": true,
+    "start_time_min": "-15m"
+   }
+  },
+  {
+   "tool": "get_trace_errors",
+   "arguments": {
+    "trace_id": "$trace_id"
+   }
+  }
+ ],
+ "pass_rule": {
+  "service_exact": [
+   "email"
+  ],
+  "operation_exact": [
+   "POST /send_order_confirmation",
+   "POST"
+  ]
+ },
+ "cascade_rule": {
+  "required_any": [
+   [
+    "checkout|frontend-proxy|frontend"
+   ]
+  ]
+ },
+ "evidence": {
+  "ground_truth_trace": "evidence/emailMemoryLeak.trace.json",
+  "baseline_absence": "evidence/emailMemoryLeak.baseline.json"
+ },
+ "signal_wait_s": 900,
+ "notes": "Ported 2026-10-28 from the private screening clone where v1 was drafted, unchanged in what PASS means; the bench.py line numbers below are this repo's. Evidence (P = probes/emailMemoryLeak-2026-10-03-run2/, N1 = notes/emailMemoryLeak-source-check-2026-10-01.md, N2 = notes/emailMemoryLeak-live-capture-2026-10-03-run2.md; all three are in the mentorship workspace, not in this repo). Run 1 capture is invalid and not used. Live window on quay.io/jaegertracing/jaeger:2.20.0 per N1 section 1: flag served 1000x at 2026-10-03T09:29:30Z (P/flag-on-1000x.log), restored 09:37:03Z (N2). Decided 2026-10-04 by the project owner: root cause email, caller checkout, mechanism = the email process crashed and restarted mid-request; memory is not in trace data (N2 section h; P/analysis-output.txt 'flag strings present: False'). evidence/emailMemoryLeak.trace.json is trace 4843419ecceff7498c8cc276805d1d09 (61 spans) cut unchanged from P/traces-window.json and wrapped as {data:[trace]}; it holds a checkout POST client span with status description 'read tcp ...: read: connection reset by peer'. evidence/emailMemoryLeak.baseline.json: signal_regex found in 0 of the 16 traces that start before 09:18:02Z in P/traces-window.json, and in 5 of 97 over the whole capture, all after 09:30:00Z (computed 2026-10-04 from that file). Fault shape (P/analysis-output.txt, P/detail-1000x-window.txt): five checkout client spans named POST to email errored, status messages EOF x2 and connection reset by peer x3, no connection refused, no exception events, each ending within 1 s before a new email instance started. email server span p95 1.69 s at 1000x against 0.03 s off. No email server span exists for the five failed requests. Kill 1 StartedAt 09:31:23Z, kill 2 StartedAt 09:35:55Z (P/stats.log, P/final-inspect.log), 4 min 32 s apart. email container limit 100 MiB (P/stats.log), 74.01 MiB right after restart 1 and 56.02 to 73.84 MiB after restart 2, 94 to 97 MiB before each kill. restart_before_run [email]: bench.py restarts email, waits for it, then restarts Jaeger so the store never holds our restart (bench.py restart_before_run). Not needed to clear state (the flag has no persistent email state) but it makes time to first kill repeatable. Caution from the raw files: kill 1 at 09:31:23Z came 1 min 56 s after the 09:29:27Z write (N2 says 1 min 53 s, which counts from the 09:29:30Z served confirmation) but email had already grown to 91.4 MiB under the 100x phase (N2 section b). From a fresh process the better analogue is kill 2: 4 min 32 s from restart at 74 MiB (P/stats.log). signal_after_restart: omitted on purpose. signal_regex only appears in traces when requests die in a kill (P/detail-1000x-window.txt: errors end at the restart), so the signal wait already guarantees at least one kill before trials start. bench.py reads RestartCount only after the signal is confirmed, so setting signal_after_restart would make the batch wait for a second kill (reading of bench.py lines 1427-1454, not run). expected_restarts [email] lets later kills inside trials count as expected rather than INVALID. signal_wait_s 900 (bench.py turns it into 90 polls of 10 s for the signal wait). Basis: fresh-process time to kill 4 min 32 s = 272 s (P/stats.log), about 3.3 times covered; kill 1 yielded 3 matching traces and kill 2 yielded 2 (P/analysis-output.txt), and bench.py needs 3 matching traces (TRACE_MIN_COUNT 3), so a run may need both kills (about 545 s from a fresh process if the rate matches). The margin of 900 s is a judgment, not measured. ground_truth.service is checkout, not email, because bench.py polls the signal with the Jaeger service filter on ground_truth.service (bench.py lines 1009 and 1430) and the five failing traces contain no email service (checked 2026-10-04 in P/traces-window.json: processes are cart, checkout, currency, frontend, frontend-proxy, load-generator, payment, product-catalog, quote, shipping; re-checked 2026-10-06 by replaying the poll over that file: 0 of the 5 signal traces contain email, 5 of 5 contain checkout). The root cause stays email in pass_rule and in the prose. Run live once: screen batch-20261006T113222Z in the screening clone aborted at the signal wait before any trial (email restarted 11:31:37Z, flag restored 11:51:17Z, 0 cells; the abort reason is not in the saved record), so the signal wait is unproven on the fixture. The oracle (search_traces checkout with_errors, then get_trace_errors per trace) has not been run on the fixture. Read in source 2026-10-06 (Jaeger v2.20.0 mcptools handlers search_traces.go, get_trace_errors.go, get_span_details.go; harness bench.py oracle and mcp_client.py call_tool): start_time_min takes a minus sign plus a Go duration, so -15m is valid (default -1h, no maximum); search_traces returns 10 traces by default; with_errors selects traces in which a span of the named service has error status, which the failing checkout client spans satisfy; get_trace_errors returns each error span's status.message; the oracle matches the raw text of the tool result, so a status message of EOF is rendered inside unescaped double quotes and both branches of signal_regex can match. Still live-only: that the failing traces are among the first 10 results and that status.message is populated on the served spans. The oracle matches text by regex only: it cannot check that there is no matching email server span. signal_regex was tested against the Jaeger API JSON form (P/traces-window.json; the two EOF spans carry otel.status_description exactly EOF). The MCP rendering is known from source only (above) and was not seen live. pass_rule.operation_exact lists email's server span name and the checkout client span name POST; which one an agent will report is a guess. cascade_rule is a loose guess (checkout, frontend-proxy or frontend). deterministic bucketed is a judgment: kill timing depends on request rate (about 4 per minute in the capture, N2 section a) and the number of in-flight requests at a kill (3 then 2) varied. UNVERIFIED: only two kills at 1000x in one run on one host (N2). Time to kill under the benchmark's load generator rate is not measured. 100x never killed in 11 min 25 s and 10000x, 10x, 1x were not observed, so only the 1000x variant is claimed."
+}
