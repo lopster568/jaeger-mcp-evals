@@ -1,0 +1,33 @@
+{
+  "name": "skill-skip-main238",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Two one-arm diagnostics on Jaeger main 238c5fa2, same setup as batch-20261028T035651Z and batch-20261028T071602Z (claude-sonnet-5-5 pinned, CLI 2.1.285, effort high, agent and grader on ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR=/home/oni/.claude), main config. Known: main 238c5fa2 read_skill 0/30, 2.20.0-based build 10/10. Arm svcreq: main plus one line, search_traces service_name required again in the tool schema as in 2.20.0 (branch evals/main238-svcreq 36ad205e). Arm pr9337: main plus jaeger#9337 (3637af78, error-root-cause warning in get_trace_errors and get_trace_topology descriptions; branch evals/main238-pr9337 24990481). Read, stated before any run: read_skill in most of 10 svcreq trials means the optional service_name in the schema (#9262) is what stops skill reads; near 0 means some other main change. For pr9337, read_skill trials above 0 of 10 means the description warning brings skill reads back; PASS counts are reported, n=10, rank only.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "svcreq": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e",
+      "tools": true
+    },
+    "pr9337": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-238c5fa2-pr9337-24990481",
+      "tools": true
+    }
+  },
+  "baseline_arm": "svcreq",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-10-28: two-arm skill-skip diagnostic, Roshan GO 2026-10-28 ('Lets measure it'); no pass threshold, the read is read_skill calls"
+}

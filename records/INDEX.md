@@ -15,7 +15,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | adFailure | no | PASS | 0 | 0 |
 | paymentFailure | yes | PASS | 0 | 0 |
 | paymentUnreachable | yes | PASS | 0 | 0 |
-| recommendationCacheFailure | bucketed | PASS | 6 | 60 |
+| recommendationCacheFailure | bucketed | PASS | 11 | 110 |
 
 ## Batches
 
@@ -27,6 +27,11 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [skill-callee-down-mainskill/batch-20261006T121535Z](skill-callee-down-mainskill/batch-20261006T121535Z/) | 2026-10-06 | recommendationCacheFailure | skillchange 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:v2200-mainskill-callee-down-64a8875f | skill-callee-down-mainskill | skillchange 6/4/0/0/0/0 | skillchange 0 | 5 |
 | [skill-callee-down-main238/batch-20261025T192206Z](skill-callee-down-main238/batch-20261025T192206Z/) | 2026-10-25 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2 | skill-callee-down-main238 | baseline 1/9/0/0/0/0 | baseline 0 | 5 |
 | [skill-callee-down-main238/batch-20261025T193409Z](skill-callee-down-main238/batch-20261025T193409Z/) | 2026-10-25 | recommendationCacheFailure | skillchange 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-callee-down-05a09841 | skill-callee-down-main238 | skillchange 0/10/0/0/0/0 | skillchange 3 | 5 |
+| [skill-callee-down-main238-cfg/batch-20261028T035651Z](skill-callee-down-main238-cfg/batch-20261028T035651Z/) | 2026-10-28 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2 | skill-callee-down-main238-cfg | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
+| [skill-callee-down-v2200-isolate/batch-20261028T071602Z](skill-callee-down-v2200-isolate/batch-20261028T071602Z/) | 2026-10-28 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:v2200-mainskill-2044f311-rebuild | skill-callee-down-v2200-isolate | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
+| [skill-skip-main238-svcreq-r2/batch-20261028T132713Z](skill-skip-main238-svcreq-r2/batch-20261028T132713Z/) | 2026-10-28 | recommendationCacheFailure | svcreq 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e | skill-skip-main238-svcreq-r2 | svcreq 0/10/0/0/0/0 | svcreq 3 | 5 |
+| [skill-skip-main238/batch-20261028T100211Z](skill-skip-main238/batch-20261028T100211Z/) | 2026-10-28 | recommendationCacheFailure | svcreq 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e | skill-skip-main238 | svcreq 0/10/0/0/0/0 | svcreq 3 | 5 |
+| [skill-skip-main238/batch-20261028T101607Z](skill-skip-main238/batch-20261028T101607Z/) | 2026-10-28 | recommendationCacheFailure | pr9337 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-pr9337-24990481 | skill-skip-main238 | pr9337 0/2/8/0/0/0 | pr9337 3 | 5 |
 
 ## Results
 

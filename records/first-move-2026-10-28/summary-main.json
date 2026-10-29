@@ -1,0 +1,424 @@
+{
+ "main": [
+  {
+   "i": 0,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0106015
+  },
+  {
+   "i": 1,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 2,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 3,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 4,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 5,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 6,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 7,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 8,
+   "first_message": [
+    "get_services",
+    "search_traces"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 9,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 10,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 11,
+   "first_message": [
+    "get_services",
+    "search_traces"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 12,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 13,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 14,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 15,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 16,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 17,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 18,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 19,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 20,
+   "first_message": [
+    "get_services",
+    "search_traces"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 21,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 22,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 23,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 24,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 25,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 26,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 27,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 28,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  },
+  {
+   "i": 29,
+   "first_message": [
+    "search_traces",
+    "get_services"
+   ],
+   "read_skill_first": false,
+   "init": {
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5"
+   },
+   "cost": 0.0031058000000000006
+  }
+ ]
+}

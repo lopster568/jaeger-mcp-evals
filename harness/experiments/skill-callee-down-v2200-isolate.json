@@ -1,0 +1,28 @@
+{
+  "name": "skill-callee-down-v2200-isolate",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Diagnostic, one baseline arm only. Identical to the 2026-10-28 config-dir run (batch-20261028T035651Z: harness 725e67d+2d8e458, claude-sonnet-5-5 pinned, CLI 2.1.285, effort high, agent and grader billed to ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR=/home/oni/.claude, gate-band loaded) except the image: the published baseline's source, Jaeger 2.20.0 plus main's skill text (branch evals/v2200-mainskill 2044f311), rebuilt 2026-10-28 because the published image (2c16c87d) was no longer on the host; 2.20.0 config (no JAEGER_CONFIG_FILE). Question: on main 0 of 30 trials called read_skill, on the published 2.20.0 pair 20 of 20. Read: read_skill in most of 10 trials here means the setup (billing, config, gate-band, harness) is not the cause and the Jaeger binary is (main's search_traces change, #9262, is the leading candidate); 0 of 10 means the cause is on the setup side.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:v2200-mainskill-2044f311-rebuild",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-10-28: one-arm isolation diagnostic, Roshan GO 2026-10-28 ('Do them all'); no pass threshold, the read is read_skill calls"
+}

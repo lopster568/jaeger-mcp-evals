@@ -1,0 +1,231 @@
+{
+  "scenario": "recommendationCacheFailure",
+  "batch_id": "batch-20261028T035651Z",
+  "n_per_arm": 10,
+  "arms": [
+    "baseline"
+  ],
+  "seed": 1136718177,
+  "order": [
+    {
+      "arm": "baseline",
+      "trial_index": 4,
+      "order_index": 0
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 7,
+      "order_index": 1
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 8,
+      "order_index": 2
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 9,
+      "order_index": 3
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 5,
+      "order_index": 4
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 2,
+      "order_index": 5
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 1,
+      "order_index": 6
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 0,
+      "order_index": 7
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 6,
+      "order_index": 8
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 3,
+      "order_index": 9
+    }
+  ],
+  "file_hashes_sha256": {
+    "bench.py": "873df2ff89f5a3f72609fb8c9f18f6bdb940213ca29e3ece92fe035f527ace7b",
+    "tools.py": "c9872d5a9082c90172bc401eb797cb74c5e3b9d271148a600c86dbc971a9d786",
+    "fixture_leak.py": "09dfe82d3166b1cab24c307f7da6748c7fa0fa18b6417727dfe66b345f856a91",
+    "score.py": "70c6d919e8d6db049b311bbaf9cca480b2f6602151b8bb175ec19ef807e38e05",
+    "system-prompt.txt": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+    "verdict-schema.json": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+    "agent_loop.py": "11c7d2c6232e70c0cdc59d87d005222e9f5a4d6d4f9550bf52d8be68e9e39f78",
+    "mcp_client.py": "0347a14ca1a6efb82d32a3e78275d2eedd1053d7781ee6fb5dfcd98a3ff669c1",
+    "codex_client.py": "d1c1bd0b29cf94ec2c5e880baf4b4b5cc0e169332f06c681fa81bcf36547c1fb",
+    "leak-words.txt": "cba462380a249f7c90a21cedde0292cd919a4db0eec3f8aacf9aa6c87883cbf7",
+    "judge.py": "05ad2cdfed12b8bb18948e96149e40a01ffca7a5283dec70a33b18c6cb8f29df",
+    "grade.py": "905f39ba91c7aed3e6483e93b329ab6528e2147fa2ee35d935541adf71769023",
+    "grader-prompt.txt": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "providers/__init__.py": "5cbd1f48afb89d7610f4f6550da9864444820ab4f7eb8a2dd583c605f6f2f212",
+    "providers/base.py": "894577a867a69100df7895e687e3f2082b83c7029ee6a740f80d1a69a19f8cc4",
+    "providers/anthropic_provider.py": "cfd316c53048063da7fa5e220a31243b5e306b2ad96c3af94d520aa6bc762d22",
+    "providers/openai_provider.py": "5e54ea7249755637061dd699bcf80782aad0b8db80d09ffa500c6288cf26d13c",
+    "scenario_file": "1b6572afab8cc1873574d23e2b45226099cae2d62d88dc1a3aacd79ca65df814",
+    "prompts/neutral.txt": "bb231e6e43a2839c4297cb811e05c8395f9f6fcab14a9f2d7f4d9a978c87a6de"
+  },
+  "system_under_test": {
+    "jaeger_image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+    "jaeger_image_digest": "sha256:f26897ba5339664e50ac3c9bbca63825d345d17675542ca59cbdef7db930a9c2",
+    "jaeger_commit": "238c5fa2a8e9fa69eadc35535835972b11ee9bd6",
+    "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+    "agent_client": "2.1.285 (Claude Code)",
+    "harness_git_sha": "725e67d294fe2262193833cc540f51408ee863e6-dirty",
+    "python_version": "3.14.7",
+    "pinned_at_utc": "2026-10-28T03:56:51Z"
+  },
+  "tools_list_sha256": "114a00fefa5771c489b37e58208cb6aeb708680201434dd85ff5949cea9f23fe",
+  "tools_list_path": "tools.json",
+  "grader": {
+    "model": "claude-fable-5-1",
+    "prompt_sha256": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "cli_version": "2.1.285 (Claude Code)"
+  },
+  "arm_pin": {
+    "arm": "baseline",
+    "expected_image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+    "sut_jaeger_image_at_run": "jaeger-mcp-evals/jaeger:main-238c5fa2"
+  },
+  "tools_description_check": {
+    "mode": "recorded_only",
+    "descriptions_file": null,
+    "descriptions_sha256": null
+  },
+  "schema_version": 5,
+  "client": "cli",
+  "provider": null,
+  "scenario_sha256": "1b6572afab8cc1873574d23e2b45226099cae2d62d88dc1a3aacd79ca65df814",
+  "scenario_version": 3,
+  "system_prompt_sha256": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+  "verdict_schema_sha256": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+  "model_requested": "claude-sonnet-5-5",
+  "effort": "high",
+  "max_turns": 30,
+  "max_budget_usd": 2.0,
+  "history_policy": {
+    "harness_truncation": "none",
+    "cli_autocompact": "default"
+  },
+  "client_version_pre": "2.1.285 (Claude Code)",
+  "mcp_endpoint": ":16686/jaeger/ui/api/ai/mcp/",
+  "tools_count": 9,
+  "jaeger_image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+  "jaeger_image_id": "sha256:f26897ba5339664e50ac3c9bbca63825d345d17675542ca59cbdef7db930a9c2",
+  "jaeger_commit": "238c5fa2a8e9fa69eadc35535835972b11ee9bd6",
+  "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+  "fixture_overlay_sha256": "6000479bb0408b7da7cd3b427ab87ca9e6e3531b703f1ea95c94ba804306f39f",
+  "fixture_overlay_sha256_sans_image": "ce824d88d3f9dddc36059a290a2581a18121cbd58b490a8109ac4d3d4f0a52d5",
+  "fault": {
+    "flag": "recommendationCacheFailure",
+    "activation_field": "defaultVariant",
+    "activation_value": "on"
+  },
+  "flag_names": [
+    "adFailure",
+    "adHighCpu",
+    "adManualGc",
+    "cartFailure",
+    "emailMemoryLeak",
+    "failedReadinessProbe",
+    "imageSlowLoad",
+    "intlShippingSlowdown",
+    "kafkaQueueProblems",
+    "loadGeneratorTraffic",
+    "loadGeneratorVUs",
+    "paymentFailure",
+    "paymentUnreachable",
+    "productCatalogFailure",
+    "recommendationCacheFailure"
+  ],
+  "preflight": {
+    "leak": "PASS",
+    "readiness": "PASS",
+    "containers": 22,
+    "baseline_traces": 4,
+    "fixture_leak_baseline": "PASS",
+    "fixture_leak_under_fault": "PASS",
+    "oracle": "PASS",
+    "client": null,
+    "client_version": "PASS",
+    "sandbox_probe": {
+      "result": "PASS",
+      "tools": {
+        "baseline": [
+          "StructuredOutput",
+          "mcp__jaeger__get_critical_path",
+          "mcp__jaeger__get_service_dependencies",
+          "mcp__jaeger__get_services",
+          "mcp__jaeger__get_span_details",
+          "mcp__jaeger__get_span_names",
+          "mcp__jaeger__get_trace_errors",
+          "mcp__jaeger__get_trace_topology",
+          "mcp__jaeger__read_skill",
+          "mcp__jaeger__search_traces"
+        ]
+      }
+    },
+    "leak_rendered": "PASS",
+    "thrash": {
+      "bi_mean_non_first": 895,
+      "loadavg": "4.77 4.53 2.33 9/1300 4166"
+    },
+    "restarted_before_run": {
+      "containers": {
+        "recommendation": "2026-10-28T03:56:31Z"
+      },
+      "jaeger": "2026-10-28T03:56:36Z"
+    }
+  },
+  "experiment": {
+    "name": "skill-callee-down-main238-cfg",
+    "file": "harness/experiments/skill-callee-down-main238-cfg.json",
+    "sha256": "e7672465274ab9688f8f10764e2ea76bd8b5490cfd5ad487bcf73fdff4474333",
+    "content": {
+      "name": "skill-callee-down-main238-cfg",
+      "version": 2,
+      "scenario": "recommendationCacheFailure",
+      "hypothesis": "Diagnostic, one baseline arm only, identical to skill-callee-down-main238 baseline (image main-238c5fa2, claude-sonnet-5-5 pinned, CLI 2.1.285, effort high, agent and grader billed to ANTHROPIC_API_KEY) except the CLI config dir: CLAUDE_CONFIG_DIR=/home/oni/.claude, the dir the published pair (batch-20261006T115900Z, batch-20261006T121535Z) ran under, which does not load the gate-band dev mod the 2026-10-26 batches loaded from ~/.claude-p. Question: does the config dir explain why no 2026-10-26 trial called read_skill? Read: read_skill in most of 10 trials points at the config dir; 0 of 10 again leaves billing or main's search_traces schema change (not separable by this run).",
+      "run": {
+        "client": "cli",
+        "provider": null,
+        "model": "claude-sonnet-5-5",
+        "effort": "high",
+        "client_version": "2.1.285",
+        "max_turns": 30,
+        "max_budget_usd": 2,
+        "n_per_arm": 10,
+        "seed": null,
+        "bill_api_key": true
+      },
+      "arms": {
+        "baseline": {
+          "prompt": "neutral",
+          "image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+          "tools": true
+        }
+      },
+      "baseline_arm": "baseline",
+      "thresholds": {},
+      "status": "CONFIRMED v1 2026-10-28: one-arm config-dir diagnostic, Roshan GO 2026-10-28 (API key billing, his instruction); no pass threshold, the read is read_skill calls"
+    }
+  },
+  "harness_git_sha": "725e67d294fe2262193833cc540f51408ee863e6",
+  "harness_dirty": true,
+  "score_py_sha256": "70c6d919e8d6db049b311bbaf9cca480b2f6602151b8bb175ec19ef807e38e05",
+  "billing": "ANTHROPIC_API_KEY"
+}

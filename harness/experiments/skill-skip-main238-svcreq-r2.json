@@ -1,0 +1,28 @@
+{
+  "name": "skill-skip-main238-svcreq-r2",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Replicate of arm svcreq from skill-skip-main238 (batch-20261028T100211Z, read_skill 5/10), same image jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e (7ad03c77) and same setup (claude-sonnet-5-5 pinned, CLI 2.1.285, effort high, agent and grader on ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR=/home/oni/.claude), main config. 2.20.0-based build read 10/10. Read, stated before the run: pooled with the first batch, read_skill near 10/20 means a second main change beyond #9262 lowers skill reads; near 20/20 for this batch (8+/10) means the first 5/10 was sampling variance and #9262 accounts for the skipping. n=10, rank only.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "svcreq": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e",
+      "tools": true
+    }
+  },
+  "baseline_arm": "svcreq",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-10-28: one-arm svcreq replicate, Roshan GO 2026-10-28 ('do that service name required run go ahead'); no pass threshold, the read is read_skill calls"
+}

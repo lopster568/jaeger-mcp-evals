@@ -1,0 +1,28 @@
+{
+  "name": "skill-callee-down-main238-cfg",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "Diagnostic, one baseline arm only, identical to skill-callee-down-main238 baseline (image main-238c5fa2, claude-sonnet-5-5 pinned, CLI 2.1.285, effort high, agent and grader billed to ANTHROPIC_API_KEY) except the CLI config dir: CLAUDE_CONFIG_DIR=/home/oni/.claude, the dir the published pair (batch-20261006T115900Z, batch-20261006T121535Z) ran under, which does not load the gate-band dev mod the 2026-10-26 batches loaded from ~/.claude-p. Question: does the config dir explain why no 2026-10-26 trial called read_skill? Read: read_skill in most of 10 trials points at the config dir; 0 of 10 again leaves billing or main's search_traces schema change (not separable by this run).",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-238c5fa2",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-10-28: one-arm config-dir diagnostic, Roshan GO 2026-10-28 (API key billing, his instruction); no pass threshold, the read is read_skill calls"
+}
