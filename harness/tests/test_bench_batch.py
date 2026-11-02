@@ -11,6 +11,7 @@ Run with: python3 -m unittest discover harness/tests
 """
 import contextlib
 import glob
+import hashlib
 import http.server
 import io
 import json
@@ -195,6 +196,7 @@ def v3_body(traces):
 class Fake(http.server.BaseHTTPRequestHandler):
     home = None
     served_descriptions = {}
+    served_instructions = None
     oracle_signal = True
     oracle_malformed = False
     mcp_calls = []
@@ -248,7 +250,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         if msg.get("method") == "initialize":
-            return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": {"protocolVersion": "2025-06-18"}},
+            return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": dict(
+                {"protocolVersion": "2025-06-18"}, **({"instructions": Fake.served_instructions} if Fake.served_instructions else {}))},
                               [("Mcp-Session-Id", "s1")])
         served = [{"name": n, "description": Fake.served_descriptions.get(n, "stock wording"), "inputSchema": {}}
                   for n in ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")]
@@ -296,6 +299,7 @@ class BenchCase(unittest.TestCase):
             pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(bench.CLAUDE_FLAGS)))
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
+        Fake.served_instructions = None
         Fake.oracle_signal, Fake.oracle_malformed = True, False
         Fake.otlp_posts, Fake.otlp_status = [], 200
         self.env = {"PATH": binp + os.pathsep + os.environ["PATH"], "FAKE_HOME": self.home, "FAKE_IMAGE": STOCK_IMAGE,
@@ -908,6 +912,30 @@ class TestExperiment(BenchCase):
         self.assertEqual(meta["experiment"]["name"], "desc-change-sep28")
         self.assertEqual(meta["tools_list_sha256"], bench.sha256_file(os.path.join(b, "tools.json")))
         self.assertEqual(bench.read_jsonl(os.path.join(b, "cells.jsonl"))[0]["arm"], "descchange")
+
+    def with_instructions(self, text):
+        """Run the shipped experiment with the variant image record naming an instructions file (an absolute
+        path in the temp dir, which the join under experiments/instructions/ keeps as is)."""
+        f = os.path.join(self._tmp.name, "instructions.md")
+        pathlib.Path(f).write_text(text + "\n")
+        real = bench.load_json
+        rec = lambda p: dict(real(p), instructions=f) if real(p).get("tag") == VARIANT_IMAGE else real(p)
+        Fake.served_descriptions = {k: v for k, v in DESC_CHANGE.items() if k != "status"}
+        with mock.patch.object(bench, "load_json", rec):
+            return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+
+    def test_instructions_mismatch_aborts(self):
+        Fake.served_instructions = "served wording"
+        self.assertEqual(self.with_instructions("pre-registered wording"), 1)
+        self.assertIn("not serving the pre-registered MCP instructions", self.err)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
+
+    def test_instructions_match_is_recorded(self):
+        Fake.served_instructions = "served wording"
+        self.assertEqual(self.with_instructions("served wording"), 0, self.err)
+        m = load(os.path.join(self.batch_dir(), "manifest.json"))
+        self.assertEqual(m["instructions_sha256"], hashlib.sha256(b"served wording").hexdigest())
 
     def test_baseline_arm_is_recorded_only(self):
         self.assertEqual(self.bench("run", self.shipped()), 0, self.err)

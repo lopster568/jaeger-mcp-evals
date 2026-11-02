@@ -1161,36 +1161,51 @@ def run(a, cfg):
     # is what gets recorded, since FIXTURE_HOST must never land in records/.
     mcp_url = config.mcp_url(cfg) if any_tools else None
     mcp_endpoint = config.mcp_endpoint(cfg) if any_tools else None
-    tool_list = tools_text = tools_sha = None
+    tool_list = tools_text = tools_sha = instructions = instructions_sha = None
     desc = {}
     for arm in arms:
-        f = None
+        f = ins = None
         base = exp["baseline_arm"]
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
             # A variant image's record (experiments/images/*.json, matched by tag) may say which
             # descriptions it serves: a file under descriptions/, or null for the stock wording
             # (recorded only). Without that key, desc-change.json, what build-variant.sh bakes in.
+            # Its "instructions" key likewise names a file under instructions/ the served MCP
+            # instructions string must equal; absent or null is recorded only.
             rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
                         if r.get("tag") == image_for[arm]), {})
             name = rec.get("descriptions", "desc-change.json")
             f = os.path.join(HARNESS, "experiments", "descriptions", name) if name else None
             f = f if f and os.path.isfile(f) else None
+            ins = rec.get("instructions")
+            ins = os.path.join(HARNESS, "experiments", "instructions", ins) if ins else None
         desc[arm] = {"file": repo_relpath(f) if f else None, "sha256": sha256_file(f) if f else None,
-                     "check": "compared" if f else "recorded_only" if tools_for[arm] else "no_tools", "path": f}
+                     "check": "compared" if f else "recorded_only" if tools_for[arm] else "no_tools", "path": f,
+                     "instructions_path": ins}
     if not any_tools:
         log.detail("pre-flight: no arm here has tools - no MCP server configured; tools/list capture, description check and oracle skipped")
         log("  " + paint(DIM, "skip  no arm here has tools: tools/list, description check and oracle"))
     else:
         log.detail("== pre-flight: capture MCP tools/list (%s) ==" % mcp_url)
         try:
-            tool_list = tools.list_tools(mcp_url, 20.0)
+            served = {}
+            tool_list = tools.list_tools(mcp_url, 20.0, served)
         except MCPError as e:
             return die("ABORT - could not capture tools/list: %s" % e)
         tools_text = tools.tools_text(tool_list)
         tools_sha = hashlib.sha256(tools_text.encode("utf-8")).hexdigest()
         log.detail("pre-flight: %d tools captured, sha256 %s" % (len(tool_list), tools_sha))
         log.check(True, "%d MCP tools served %s" % (len(tool_list), paint(DIM, "(sha256 %s)" % tools_sha[:12])))
+        instructions = served["instructions"]
+        instructions_sha = hashlib.sha256(instructions.encode("utf-8")).hexdigest() if instructions is not None else None
+        log.detail("pre-flight: served instructions sha256 %s" % instructions_sha)
         for arm in arms:
+            if desc[arm]["instructions_path"]:
+                want = read_text(desc[arm]["instructions_path"])
+                if (instructions or "").strip() != want.strip():
+                    return die("ABORT - the fixture is not serving the pre-registered MCP instructions for arm %r (%s)"
+                               % (arm, repo_relpath(desc[arm]["instructions_path"])))
+                log.check(True, "arm %s: instructions match %s" % (arm, os.path.basename(desc[arm]["instructions_path"])))
             if not desc[arm]["path"]:
                 continue
             log.detail("pre-flight: arm %s: served descriptions against %s" % (arm, desc[arm]["file"]))
@@ -1206,6 +1221,8 @@ def run(a, cfg):
     rendered.append(("rendered system prompt", argv[argv.index("--system-prompt") + 1]))
     if tools_text:
         rendered.append(("served tools/list", TOOLS_ALLOW.sub("", tools_text)))
+    if instructions:
+        rendered.append(("served instructions", instructions))
     pre["leak_rendered"] = "PASS" if leak_texts(rendered, out=log.detail) == 0 else "FAIL"
     if not log.check(pre["leak_rendered"] == "PASS", "rendered prompts and served tool descriptions leak-free"):
         return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched")
@@ -1345,7 +1362,7 @@ def run(a, cfg):
     }
     manifest = {"scenario": a.scenario, "batch_id": batch_id, "n_per_arm": a.n_per_arm, "arms": arms, "seed": seed,
                 "order": order, "file_hashes_sha256": hashes, "system_under_test": sut, "tools_list_sha256": tools_sha,
-                "tools_list_path": "tools.json" if tools_text else None,
+                "instructions_sha256": instructions_sha, "tools_list_path": "tools.json" if tools_text else None,
                 "grader": {"model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"], "cli_version": grader_cli}}
     # ponytail: arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.

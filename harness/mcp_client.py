@@ -53,6 +53,7 @@ class MCPClient:
         self.session_id = None
         self.protocol_version = None
         self.server_info = None
+        self.instructions = None
         self.initialized_notification_error = None
         self._next_id = 0
 
@@ -125,6 +126,7 @@ class MCPClient:
         result = msg["result"]
         self.protocol_version = result.get("protocolVersion") or PROTOCOL_VERSION
         self.server_info = result.get("serverInfo")
+        self.instructions = result.get("instructions")
         # A failed notification alone does not end the session: _post has
         # already logged the raw exchange to mcp.jsonl, keep the error here
         # for the init event, and carry on to tools/list.

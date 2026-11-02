@@ -22,11 +22,14 @@ import config
 from mcp_client import MCPClient, MCPError
 
 
-def list_tools(url, timeout):
-    """The served tools/list array; MCPError if it cannot be read or is empty."""
+def list_tools(url, timeout, served=None):
+    """The served tools/list array; MCPError if it cannot be read or is empty.
+    A dict passed as served gets the initialize result's "instructions" (None if absent)."""
     c = MCPClient(url, timeout=timeout, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
     c.initialize()
     tools = c.list_tools()
+    if served is not None:
+        served["instructions"] = c.instructions
     if not tools:
         raise MCPError("tools/list returned an empty tools array from %s" % url)
     return tools
