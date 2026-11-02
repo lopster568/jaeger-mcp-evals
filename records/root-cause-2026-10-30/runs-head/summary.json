@@ -1,0 +1,1168 @@
+{
+ "head": [
+  {
+   "i": 1,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpr24ippy3",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:52:36Z"
+  },
+  {
+   "i": 2,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpfto1f3xm",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:52:40Z"
+  },
+  {
+   "i": 4,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpzhqve1v_",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:52:49Z"
+  },
+  {
+   "i": 7,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmph0umriu0",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031962,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:05Z"
+  },
+  {
+   "i": 8,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpw9yu1j7i",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032037000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:10Z"
+  },
+  {
+   "i": 10,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpbuoxwyf7",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032037000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:20Z"
+  },
+  {
+   "i": 13,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpae_dbjvl",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:34Z"
+  },
+  {
+   "i": 14,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmp_zsmmzrl",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032037000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:39Z"
+  },
+  {
+   "i": 16,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpa5sgwho4",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:48Z"
+  },
+  {
+   "i": 18,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpotpv9e_1",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0034412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:53:58Z"
+  },
+  {
+   "i": 21,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpsg661qs3",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:12Z"
+  },
+  {
+   "i": 23,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpmxrewymi",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:22Z"
+  },
+  {
+   "i": 25,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpzppzdtpe",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:32Z"
+  },
+  {
+   "i": 27,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmp7bknsl_e",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:42Z"
+  },
+  {
+   "i": 29,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmphbkul3pt",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:52Z"
+  },
+  {
+   "i": 30,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpd9xwiayk",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032012000000000004,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:54:56Z"
+  },
+  {
+   "i": 33,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpfdxay83w",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:55:12Z"
+  },
+  {
+   "i": 34,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmp1a6mqkwi",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032037000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:55:17Z"
+  },
+  {
+   "i": 36,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmprloqgrrm",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0031987,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:55:28Z"
+  },
+  {
+   "i": 38,
+   "arm": "head",
+   "rc": 1,
+   "messages": [
+    [
+     "search_traces",
+     "get_services"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmp7a7sbx6t",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0032037000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"search_traces\"",
+    "tools/call \"get_services\""
+   ],
+   "read_skill": false,
+   "utc": "2026-10-30T05:55:38Z"
+  }
+ ],
+ "headreword": [
+  {
+   "i": 0,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpygfwg05d",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.011384,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:52:31Z"
+  },
+  {
+   "i": 3,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpzera7_nu",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035387,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:52:45Z"
+  },
+  {
+   "i": 5,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpz3qva3ym",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:52:53Z"
+  },
+  {
+   "i": 6,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "get_services",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpgvqq_kb4",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0038637000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"get_services\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:00Z"
+  },
+  {
+   "i": 9,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpj0de6gg_",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:15Z"
+  },
+  {
+   "i": 11,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmp1iam7vqj",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:24Z"
+  },
+  {
+   "i": 12,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpkb0gg7as",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:30Z"
+  },
+  {
+   "i": 15,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpaqo2wsu5",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035437000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:43Z"
+  },
+  {
+   "i": 17,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpvglur8or",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035361999999999998,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:53:53Z"
+  },
+  {
+   "i": 19,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpl0yyw_qf",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035437000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:02Z"
+  },
+  {
+   "i": 20,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpznhsyzkm",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:07Z"
+  },
+  {
+   "i": 22,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpvglq5h81",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035387,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:16Z"
+  },
+  {
+   "i": 24,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpivioo67x",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035361999999999998,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:28Z"
+  },
+  {
+   "i": 26,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpu4ycrs6o",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035437000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:37Z"
+  },
+  {
+   "i": 28,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpggjyydck",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035361999999999998,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:54:47Z"
+  },
+  {
+   "i": 31,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpgc0fb6gl",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035437000000000003,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:55:01Z"
+  },
+  {
+   "i": 32,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpvqzxq8no",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:55:07Z"
+  },
+  {
+   "i": 35,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpambv_6s7",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035387,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:55:22Z"
+  },
+  {
+   "i": 37,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmpe3fbb50o",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035412,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:55:33Z"
+  },
+  {
+   "i": 39,
+   "arm": "headreword",
+   "rc": 1,
+   "messages": [
+    [
+     "read_skill",
+     "search_traces"
+    ]
+   ],
+   "init": {
+    "version": "2.1.285",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/tmp/tmptukzxwld",
+    "apiKeySource": "ANTHROPIC_API_KEY"
+   },
+   "cost": 0.0035361999999999998,
+   "server_log": [
+    "server/discover",
+    "initialize",
+    "client protocolVersion 2025-11-25",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call \"read_skill\"",
+    "tools/call \"search_traces\""
+   ],
+   "read_skill": true,
+   "utc": "2026-10-30T05:55:43Z"
+  }
+ ]
+}

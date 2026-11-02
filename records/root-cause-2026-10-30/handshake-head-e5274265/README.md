@@ -1,0 +1,1 @@
+Captured 2026-10-30 from jaeger upstream/main e5274265 (2026-10-28), built locally (go1.27.0, CGO_ENABLED=0, -trimpath) and run with in-memory storage, config scratchpad jaeger-head.yml (fixture jaeger-config-main.yml minus metrics/healthcheck, local ports). Raw initialize and tools/list responses.

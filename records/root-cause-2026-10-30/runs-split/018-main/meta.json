@@ -1,0 +1,29 @@
+{
+ "i": 18,
+ "arm": "main",
+ "rc": 1,
+ "messages": [
+  [
+   "search_traces",
+   "get_services"
+  ]
+ ],
+ "init": {
+  "version": "2.1.285",
+  "model": "claude-sonnet-5-5",
+  "cwd": "/tmp/tmpqi6kiqcw",
+  "apiKeySource": "ANTHROPIC_API_KEY"
+ },
+ "cost": 0.0032783000000000005,
+ "server_log": [
+  "server/discover",
+  "initialize",
+  "client protocolVersion 2025-11-25",
+  "notifications/initialized",
+  "tools/list",
+  "tools/call \"search_traces\"",
+  "tools/call \"get_services\""
+ ],
+ "read_skill": false,
+ "utc": "2026-10-29T19:54:10Z"
+}

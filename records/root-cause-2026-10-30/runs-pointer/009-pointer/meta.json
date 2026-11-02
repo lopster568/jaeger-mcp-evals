@@ -1,0 +1,37 @@
+{
+ "i": 9,
+ "arm": "pointer",
+ "rc": 1,
+ "messages": [
+  [
+   "search_traces",
+   "get_services"
+  ],
+  [
+   "get_trace_errors",
+   "get_trace_topology",
+   "get_trace_errors"
+  ]
+ ],
+ "init": {
+  "version": "2.1.285",
+  "model": "claude-sonnet-5-5",
+  "cwd": "/tmp/tmp6keqf0hi",
+  "apiKeySource": "ANTHROPIC_API_KEY"
+ },
+ "cost": 0.0084968,
+ "server_log": [
+  "server/discover",
+  "initialize",
+  "client protocolVersion 2025-11-25",
+  "notifications/initialized",
+  "tools/list",
+  "tools/call \"search_traces\"",
+  "tools/call \"get_services\"",
+  "tools/call \"get_trace_errors\"",
+  "tools/call \"get_trace_topology\"",
+  "tools/call \"get_trace_errors\""
+ ],
+ "read_skill": false,
+ "utc": "2026-10-30T03:27:27Z"
+}
