@@ -1,0 +1,33 @@
+{
+  "name": "v1-main-d22c65b9-emailMemoryLeak",
+  "version": 1,
+  "scenario": "emailMemoryLeak",
+  "hypothesis": "On emailMemoryLeak, Jaeger main d22c65b9 plus v1 (arm variant) and stock Jaeger main d22c65b9 (arm baseline) differ in how often claude-sonnet-5-5 pinned on the Claude Code CLI 2.1.285 at effort high reaches the cause. v1 is two SKILL.md edits: the callee-down bullet in error-root-cause/SKILL.md (cherry-pick of 64a8875f) and the same rule as a Gotchas bullet in the root SKILL.md; the MCP instructions and tool schemas are identical across arms. Both directions possible; a ceiling or floor pair is reported as no difference. Scenario v1, first live run (ported 2026-10-28, signal never passed live before). Pair file written 2026-11-06 from the cartFailure pair file, same arms and run block. Decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm (confirmed by Roshan 2026-11-04).",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+      "tools": true
+    },
+    "variant": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-11-05 (variant v1 chosen by Roshan 2026-11-05, PLAN_2026-11-05.md; decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm, computed with bench.fisher_p; thresholds left empty because judge.py has no Fisher key; spend GO per batch at run time)"
+}
