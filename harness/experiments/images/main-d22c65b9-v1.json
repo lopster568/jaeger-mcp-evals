@@ -9,7 +9,7 @@
   "base_image_recipe": "scripts/build/docker/base/Dockerfile at d22c65b9 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally under a fixed tag (image ID sha256:7aac3dd25585691c616bbcb65c2890882f703043ceac69facc839d8f72218a0f (identical to the main-238c5fa2 base image ID: same alpine pin)) instead of pushed to the CI-only localhost:5000 registry",
   "built_at_utc": "PENDING: fill after the build",
   "built_on": "fixture host",
-  "binary_sha256": "PENDING: fill from sha256sum of the built binary",
+  "binary_sha256": "539c0809fc09ccc155f67fd23eeb6396bbc101188ca9dc2f25152ab0bad62256",
   "binary_build": "GOTOOLCHAIN=go1.27.0 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath ./cmd/jaeger/ from a git worktree, placeholder UI; go version -m differs only in vcs.revision, vcs.time and the module pseudo-version",
   "descriptions": null,
   "jaeger_config": "jaeger-config-main.yml",
