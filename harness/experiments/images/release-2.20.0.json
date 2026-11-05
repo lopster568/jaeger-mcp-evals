@@ -1,0 +1,13 @@
+{
+  "name": "release-2.20.0",
+  "tag": "quay.io/jaegertracing/jaeger:2.20.0",
+  "digest": "sha256:9ae01775e2b2d4a7a957647fe6e733fe17ca8a2cec87ec8c893f730afe49bf00",
+  "digest_type": "docker image ID of the pulled release image, as recorded in system_under_test.jaeger_image_digest and jaeger_image_id of records/skill-callee-down-cli55/batch-20260930T061358Z/manifest.json (and identical in every other recorded batch on this tag); re-check with docker inspect on the host before a run",
+  "branch": "upstream release tag v2.20.0 (jaegertracing/jaeger), no changes",
+  "tag_commit": "798e4b0fcf22609e381df764a01461affd813e1e",
+  "base_image": "upstream release image (not built locally)",
+  "built_on": "not built here: pulled from quay.io",
+  "descriptions": null,
+  "instructions": "release-2.20.0.md",
+  "jaeger_config": "jaeger-config.yml"
+}

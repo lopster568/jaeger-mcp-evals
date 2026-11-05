@@ -1,0 +1,33 @@
+{
+  "name": "release-v2200-vs-main-cartFailure",
+  "version": 2,
+  "scenario": "cartFailure",
+  "hypothesis": "On cartFailure, Jaeger main d22c65b9 (arm variant) and the stock 2.20.0 release (arm baseline) differ in how often claude-sonnet-5-5 pinned on the Claude Code CLI 2.1.285 at effort high reaches the cause. Exploratory release comparison, both directions possible; the two arms differ in the Jaeger build as a whole (served instructions, skills, tool schemas), not in one change. Decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm (confirmed by Roshan 2026-11-04).",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "quay.io/jaegertracing/jaeger:2.20.0",
+      "tools": true
+    },
+    "variant": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {},
+  "status": "CONFIRMED v1 2026-11-04 (decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm, computed with bench.fisher_p; thresholds left empty because judge.py has no Fisher key)"
+}

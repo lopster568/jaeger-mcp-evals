@@ -1,0 +1,35 @@
+{
+  "name": "skill-callee-down-main-d22c65b9",
+  "version": 2,
+  "scenario": "recommendationCacheFailure",
+  "hypothesis": "The same one-bullet error-root-cause SKILL.md callee-down change (64a8875f, byte-identical to 05a09841) on Jaeger main d22c65b9, which includes #10038 (the investigation strategy names read_skill first), reaches the cause in at least 5 of 10 trials. claude-sonnet-5-5 pinned on the Claude Code CLI 2.1.285 at effort high. Decision rule: it supports the upstream skill PR only if it passes the threshold and the baseline stays at or below 2 of 10. Same rule as skill-callee-down-main238; the only difference from that pair is the base (d22c65b9 instead of 238c5fa2), identical across both arms.",
+  "run": {
+    "client": "cli",
+    "provider": null,
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "client_version": "2.1.285",
+    "max_turns": 30,
+    "max_budget_usd": 2,
+    "n_per_arm": 10,
+    "seed": null,
+    "bill_api_key": true
+  },
+  "arms": {
+    "baseline": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+      "tools": true
+    },
+    "skillchange": {
+      "prompt": "neutral",
+      "image": "jaeger-mcp-evals/jaeger:main-d22c65b9-callee-down-5c1ac509",
+      "tools": true
+    }
+  },
+  "baseline_arm": "baseline",
+  "thresholds": {
+    "accuracy_pass_min": 5
+  },
+  "status": "CONFIRMED v1 2026-11-03: threshold and decision rule pre-registered before any run; same rule as skill-callee-down-main238; Roshan GO 2026-11-03 (revised Stage 2 plan)"
+}

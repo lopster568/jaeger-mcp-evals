@@ -1,0 +1,39 @@
+{
+  "leak": "PASS",
+  "readiness": "PASS",
+  "containers": 22,
+  "baseline_traces": 10,
+  "fixture_leak_baseline": "PASS",
+  "fixture_leak_under_fault": "PASS",
+  "oracle": "PASS",
+  "client": null,
+  "client_version": "PASS",
+  "sandbox_probe": {
+    "result": "PASS",
+    "tools": {
+      "baseline": [
+        "StructuredOutput",
+        "mcp__jaeger__get_critical_path",
+        "mcp__jaeger__get_service_dependencies",
+        "mcp__jaeger__get_services",
+        "mcp__jaeger__get_span_details",
+        "mcp__jaeger__get_span_names",
+        "mcp__jaeger__get_trace_errors",
+        "mcp__jaeger__get_trace_topology",
+        "mcp__jaeger__read_skill",
+        "mcp__jaeger__search_traces"
+      ]
+    }
+  },
+  "leak_rendered": "PASS",
+  "thrash": {
+    "bi_mean_non_first": 0,
+    "loadavg": "1.46 0.92 0.62 1/1579 72747"
+  },
+  "restarted_before_run": {
+    "containers": {
+      "cart": "2026-11-05T19:17:04Z"
+    },
+    "jaeger": "2026-11-05T19:17:05Z"
+  }
+}
