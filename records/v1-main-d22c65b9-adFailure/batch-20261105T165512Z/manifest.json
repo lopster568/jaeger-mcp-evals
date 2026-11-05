@@ -1,0 +1,232 @@
+{
+  "scenario": "adFailure",
+  "batch_id": "batch-20261105T165512Z",
+  "n_per_arm": 10,
+  "arms": [
+    "baseline"
+  ],
+  "seed": 314238496,
+  "order": [
+    {
+      "arm": "baseline",
+      "trial_index": 5,
+      "order_index": 0
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 4,
+      "order_index": 1
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 7,
+      "order_index": 2
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 6,
+      "order_index": 3
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 1,
+      "order_index": 4
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 3,
+      "order_index": 5
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 0,
+      "order_index": 6
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 2,
+      "order_index": 7
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 9,
+      "order_index": 8
+    },
+    {
+      "arm": "baseline",
+      "trial_index": 8,
+      "order_index": 9
+    }
+  ],
+  "file_hashes_sha256": {
+    "bench.py": "563c95f206194731c0fd6bac4162344972497dd0d742a054b0f919da924c36e9",
+    "tools.py": "cc3babbf1100467b980dd47da3fb032f7734fdebd7443289c883f566eadafb01",
+    "fixture_leak.py": "09dfe82d3166b1cab24c307f7da6748c7fa0fa18b6417727dfe66b345f856a91",
+    "score.py": "70c6d919e8d6db049b311bbaf9cca480b2f6602151b8bb175ec19ef807e38e05",
+    "system-prompt.txt": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+    "verdict-schema.json": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+    "agent_loop.py": "11c7d2c6232e70c0cdc59d87d005222e9f5a4d6d4f9550bf52d8be68e9e39f78",
+    "mcp_client.py": "0cb4412b4cbed641ede83d792b6d3a10e87ab57412c298cc2c988d159915821c",
+    "codex_client.py": "d1c1bd0b29cf94ec2c5e880baf4b4b5cc0e169332f06c681fa81bcf36547c1fb",
+    "leak-words.txt": "cba462380a249f7c90a21cedde0292cd919a4db0eec3f8aacf9aa6c87883cbf7",
+    "judge.py": "05ad2cdfed12b8bb18948e96149e40a01ffca7a5283dec70a33b18c6cb8f29df",
+    "grade.py": "905f39ba91c7aed3e6483e93b329ab6528e2147fa2ee35d935541adf71769023",
+    "grader-prompt.txt": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "providers/__init__.py": "5cbd1f48afb89d7610f4f6550da9864444820ab4f7eb8a2dd583c605f6f2f212",
+    "providers/base.py": "894577a867a69100df7895e687e3f2082b83c7029ee6a740f80d1a69a19f8cc4",
+    "providers/anthropic_provider.py": "cfd316c53048063da7fa5e220a31243b5e306b2ad96c3af94d520aa6bc762d22",
+    "providers/openai_provider.py": "5e54ea7249755637061dd699bcf80782aad0b8db80d09ffa500c6288cf26d13c",
+    "scenario_file": "56044ecc86299689c12a9e74e853a76797f79e81cf3642a5ff994ce7988bf9fd",
+    "prompts/neutral.txt": "bb231e6e43a2839c4297cb811e05c8395f9f6fcab14a9f2d7f4d9a978c87a6de"
+  },
+  "system_under_test": {
+    "jaeger_image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+    "jaeger_image_digest": "sha256:cd271314a4e8b835a85095f3dc98e511be0dc722d0b1dd6c781694e6f6b7a930",
+    "jaeger_commit": "d22c65b9bcbf7261172d5c31fb3ffa6b393f1d6c",
+    "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+    "agent_client": "2.1.285 (Claude Code)",
+    "harness_git_sha": "e3728519aa74eebfb809413094d008536a9acda9-dirty",
+    "python_version": "3.14.7",
+    "pinned_at_utc": "2026-11-05T16:55:12Z"
+  },
+  "tools_list_sha256": "acd1e8bdfcd84a29cef1384eccb255c58cc5ac4eeecf32db219df87039953505",
+  "instructions_sha256": "d167aea9cda84e43815b097b7c0024fef66733e54bb4542d36cf7cd98813cfcc",
+  "tools_list_path": "tools.json",
+  "grader": {
+    "model": "claude-fable-5-1",
+    "prompt_sha256": "11a292aad48e3214120c6f800bfcda79f685b09004d68292c43fb5ca19efb656",
+    "cli_version": "2.1.285 (Claude Code)"
+  },
+  "arm_pin": {
+    "arm": "baseline",
+    "expected_image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+    "sut_jaeger_image_at_run": "jaeger-mcp-evals/jaeger:main-d22c65b9"
+  },
+  "tools_description_check": {
+    "mode": "recorded_only",
+    "descriptions_file": null,
+    "descriptions_sha256": null
+  },
+  "schema_version": 5,
+  "client": "cli",
+  "provider": null,
+  "scenario_sha256": "56044ecc86299689c12a9e74e853a76797f79e81cf3642a5ff994ce7988bf9fd",
+  "scenario_version": 2,
+  "system_prompt_sha256": "c07beb1794026ffe82a93592161b066b00dc36db6c17ffd6119392acfddb34cf",
+  "verdict_schema_sha256": "887b319d961520e28fbccc7b05b360f3bec8f77ad45595bd4f617c83c662625d",
+  "model_requested": "claude-sonnet-5-5",
+  "effort": "high",
+  "max_turns": 30,
+  "max_budget_usd": 2.0,
+  "history_policy": {
+    "harness_truncation": "none",
+    "cli_autocompact": "default"
+  },
+  "client_version_pre": "2.1.285 (Claude Code)",
+  "mcp_endpoint": ":16686/jaeger/ui/api/ai/mcp/",
+  "tools_count": 9,
+  "jaeger_image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+  "jaeger_image_id": "sha256:cd271314a4e8b835a85095f3dc98e511be0dc722d0b1dd6c781694e6f6b7a930",
+  "jaeger_commit": "d22c65b9bcbf7261172d5c31fb3ffa6b393f1d6c",
+  "otel_demo_ref": "1755859a9de82c2e5e225be68abc401a5ebf2b4f",
+  "fixture_overlay_sha256": "69ae7b48c484ecf2d0452b8e22d35c9ffbe3bc6f43f9287a62031bf7c76419ab",
+  "fixture_overlay_sha256_sans_image": "293b9f6b5d6061e9bdab78ab1fc3c0774c342c73debee35122315d832e7cf755",
+  "fault": {
+    "flag": "adFailure",
+    "activation_field": "defaultVariant",
+    "activation_value": "on"
+  },
+  "flag_names": [
+    "adFailure",
+    "adHighCpu",
+    "adManualGc",
+    "cartFailure",
+    "emailMemoryLeak",
+    "failedReadinessProbe",
+    "imageSlowLoad",
+    "intlShippingSlowdown",
+    "kafkaQueueProblems",
+    "loadGeneratorTraffic",
+    "loadGeneratorVUs",
+    "paymentFailure",
+    "paymentUnreachable",
+    "productCatalogFailure",
+    "recommendationCacheFailure"
+  ],
+  "preflight": {
+    "leak": "PASS",
+    "readiness": "PASS",
+    "containers": 23,
+    "baseline_traces": 20,
+    "fixture_leak_baseline": "PASS",
+    "fixture_leak_under_fault": "PASS",
+    "oracle": "PASS",
+    "client": null,
+    "client_version": "PASS",
+    "sandbox_probe": {
+      "result": "PASS",
+      "tools": {
+        "baseline": [
+          "StructuredOutput",
+          "mcp__jaeger__get_critical_path",
+          "mcp__jaeger__get_service_dependencies",
+          "mcp__jaeger__get_services",
+          "mcp__jaeger__get_span_details",
+          "mcp__jaeger__get_span_names",
+          "mcp__jaeger__get_trace_errors",
+          "mcp__jaeger__get_trace_topology",
+          "mcp__jaeger__read_skill",
+          "mcp__jaeger__search_traces"
+        ]
+      }
+    },
+    "leak_rendered": "PASS",
+    "thrash": {
+      "bi_mean_non_first": 0,
+      "loadavg": "1.08 0.91 0.92 1/1651 365826"
+    },
+    "restarted_before_run": null
+  },
+  "experiment": {
+    "name": "v1-main-d22c65b9-adFailure",
+    "file": "harness/experiments/v1-main-d22c65b9-adFailure.json",
+    "sha256": "bdc5cdf345e8a9a83f5d6210e478b260ac3ea592966a8520809196235cd80667",
+    "content": {
+      "name": "v1-main-d22c65b9-adFailure",
+      "version": 2,
+      "scenario": "adFailure",
+      "hypothesis": "On adFailure, Jaeger main d22c65b9 plus v1 (arm variant) and stock Jaeger main d22c65b9 (arm baseline) differ in how often claude-sonnet-5-5 pinned on the Claude Code CLI 2.1.285 at effort high reaches the cause. v1 is two SKILL.md edits: the callee-down bullet in error-root-cause/SKILL.md (cherry-pick of 64a8875f) and the same rule as a Gotchas bullet in the root SKILL.md; the MCP instructions and tool schemas are identical across arms. Both directions possible; a ceiling or floor pair is reported as no difference. Stochastic (1 in 10 requests fail even with the flag on); scored in its own bucket, never alongside the deterministic scenarios. Decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm (confirmed by Roshan 2026-11-04).",
+      "run": {
+        "client": "cli",
+        "provider": null,
+        "model": "claude-sonnet-5-5",
+        "effort": "high",
+        "client_version": "2.1.285",
+        "max_turns": 30,
+        "max_budget_usd": 2,
+        "n_per_arm": 10,
+        "seed": null,
+        "bill_api_key": true
+      },
+      "arms": {
+        "baseline": {
+          "prompt": "neutral",
+          "image": "jaeger-mcp-evals/jaeger:main-d22c65b9",
+          "tools": true
+        },
+        "variant": {
+          "prompt": "neutral",
+          "image": "jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025",
+          "tools": true
+        }
+      },
+      "baseline_arm": "baseline",
+      "thresholds": {},
+      "status": "CONFIRMED v1 2026-11-05 (variant v1 chosen by Roshan 2026-11-05, PLAN_2026-11-05.md; decision rule: two-sided Fisher p < 0.05 on PASS at n=10/arm, computed with bench.fisher_p; thresholds left empty because judge.py has no Fisher key; spend GO per batch at run time)"
+    }
+  },
+  "harness_git_sha": "e3728519aa74eebfb809413094d008536a9acda9",
+  "harness_dirty": true,
+  "score_py_sha256": "70c6d919e8d6db049b311bbaf9cca480b2f6602151b8bb175ec19ef807e38e05",
+  "billing": "ANTHROPIC_API_KEY"
+}

@@ -12,12 +12,12 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 
 | scenario | deterministic | readiness | batches recorded | cells scored |
 |---|---|---|---|---|
-| adFailure | no | PASS | 0 | 0 |
-| cartFailure | yes | PASS | 0 | 0 |
+| adFailure | no | PASS | 2 | 20 |
+| cartFailure | yes | PASS | 1 | 0 |
 | emailMemoryLeak | bucketed | PASS | 0 | 0 |
-| paymentFailure | yes | PASS | 0 | 0 |
-| paymentUnreachable | yes | PASS | 0 | 0 |
-| recommendationCacheFailure | bucketed | PASS | 11 | 110 |
+| paymentFailure | yes | PASS | 2 | 20 |
+| paymentUnreachable | yes | PASS | 4 | 21 |
+| recommendationCacheFailure | bucketed | PASS | 14 | 140 |
 
 ## Batches
 
@@ -34,6 +34,18 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [skill-skip-main238-svcreq-r2/batch-20261028T132713Z](skill-skip-main238-svcreq-r2/batch-20261028T132713Z/) | 2026-10-28 | recommendationCacheFailure | svcreq 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e | skill-skip-main238-svcreq-r2 | svcreq 0/10/0/0/0/0 | svcreq 3 | 5 |
 | [skill-skip-main238/batch-20261028T100211Z](skill-skip-main238/batch-20261028T100211Z/) | 2026-10-28 | recommendationCacheFailure | svcreq 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-svcreq-36ad205e | skill-skip-main238 | svcreq 0/10/0/0/0/0 | svcreq 3 | 5 |
 | [skill-skip-main238/batch-20261028T101607Z](skill-skip-main238/batch-20261028T101607Z/) | 2026-10-28 | recommendationCacheFailure | pr9337 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-238c5fa2-pr9337-24990481 | skill-skip-main238 | pr9337 0/2/8/0/0/0 | pr9337 3 | 5 |
+| [skill-callee-down-main-d22c65b9/batch-20261103T102634Z](skill-callee-down-main-d22c65b9/batch-20261103T102634Z/) | 2026-11-03 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | skill-callee-down-main-d22c65b9 | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
+| [release-v2200-vs-main-paymentFailure/batch-20261104T133517Z](release-v2200-vs-main-paymentFailure/batch-20261104T133517Z/) | 2026-11-04 | paymentFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | quay.io/jaegertracing/jaeger:2.20.0 | release-v2200-vs-main-paymentFailure | baseline 10/0/0/0/0/0 | baseline 3 | 5 |
+| [release-v2200-vs-main-paymentFailure/batch-20261104T134340Z](release-v2200-vs-main-paymentFailure/batch-20261104T134340Z/) | 2026-11-04 | paymentFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | release-v2200-vs-main-paymentFailure | variant 10/0/0/0/0/0 | variant 3 | 5 |
+| [v1-main-d22c65b9-adFailure/batch-20261105T165512Z](v1-main-d22c65b9-adFailure/batch-20261105T165512Z/) | 2026-11-05 | adFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-adFailure | baseline 6/4/0/0/0/0 | baseline 0 | 5 |
+| [v1-main-d22c65b9-adFailure/batch-20261105T170641Z](v1-main-d22c65b9-adFailure/batch-20261105T170641Z/) | 2026-11-05 | adFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-adFailure | variant 10/0/0/0/0/0 | variant 3 | 5 |
+| [v1-main-d22c65b9-cartFailure/batch-20261105T172027Z](v1-main-d22c65b9-cartFailure/batch-20261105T172027Z/) | 2026-11-05 | cartFailure | baseline 0 | cli claude-sonnet-5-5 | not recorded | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-cartFailure | baseline 0/0/0/0/0/0 | baseline 2 | 5 |
+| [v1-main-d22c65b9-paymentUnreachable/batch-20261105T154729Z](v1-main-d22c65b9-paymentUnreachable/batch-20261105T154729Z/) | 2026-11-05 | paymentUnreachable | baseline 0 | cli claude-sonnet-5-5 | not recorded | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-paymentUnreachable | baseline 0/0/0/0/0/0 | baseline 2 | 5 |
+| [v1-main-d22c65b9-paymentUnreachable/batch-20261105T155821Z](v1-main-d22c65b9-paymentUnreachable/batch-20261105T155821Z/) | 2026-11-05 | paymentUnreachable | baseline 1 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-paymentUnreachable | baseline 1/0/0/0/0/0 | baseline 2 | 5 |
+| [v1-main-d22c65b9-paymentUnreachable/batch-20261105T163450Z](v1-main-d22c65b9-paymentUnreachable/batch-20261105T163450Z/) | 2026-11-05 | paymentUnreachable | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-paymentUnreachable | baseline 10/0/0/0/0/0 | baseline 3 | 5 |
+| [v1-main-d22c65b9-paymentUnreachable/batch-20261105T164448Z](v1-main-d22c65b9-paymentUnreachable/batch-20261105T164448Z/) | 2026-11-05 | paymentUnreachable | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-paymentUnreachable | variant 10/0/0/0/0/0 | variant 3 | 5 |
+| [v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T160047Z](v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T160047Z/) | 2026-11-05 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-recommendationCacheFailure | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
+| [v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T161201Z](v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T161201Z/) | 2026-11-05 | recommendationCacheFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-recommendationCacheFailure | variant 7/3/0/0/0/0 | variant 0 | 5 |
 
 ## Results
 

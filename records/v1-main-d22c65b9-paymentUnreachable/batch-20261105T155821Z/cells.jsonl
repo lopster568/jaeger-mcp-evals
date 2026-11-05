@@ -1,0 +1,1 @@
+{"order_index": 0, "arm": "baseline", "trial_index": 0, "model": "claude-sonnet-5-5", "out_dir": "0-baseline", "trial_exit_code": 0, "wall_time_s": 14.158, "started_utc": "2026-11-05T15:59:24Z", "ended_utc": "2026-11-05T15:59:39Z", "failed": false}
