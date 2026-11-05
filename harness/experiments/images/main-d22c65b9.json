@@ -13,5 +13,15 @@
   "binary_build": "GOTOOLCHAIN=go1.27.0 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath ./cmd/jaeger/ from a git worktree, placeholder UI; go version -m differs only in vcs.revision, vcs.time and the module pseudo-version",
   "descriptions": null,
   "jaeger_config": "jaeger-config-main.yml",
-  "instructions": "main-d22c65b9.md"
+  "instructions": "main-d22c65b9.md",
+  "rebuilds": [
+    {
+      "built_at_utc": "2026-11-05T15:38:50Z",
+      "built_on": "fixture host jaeger-run-1 (GCP t2d-standard-8)",
+      "digest": "sha256:cd271314a4e8b835a85095f3dc98e511be0dc722d0b1dd6c781694e6f6b7a930",
+      "binary_sha256": "01b01195b01c6320b700546f41383a6c49fcf4ce151e6ec9ab15563bc50cfa05 (identical to the original build)",
+      "base_image_id": "sha256:f33a978b704f",
+      "note": "Fixture host moved from the home box to the GCP VM on 2026-11-05; runs record the image ID they actually used."
+    }
+  ]
 }
