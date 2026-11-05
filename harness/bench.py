@@ -201,13 +201,17 @@ def ofrep_variant(cfg, flag):
     return "" if v is None else str(v)
 
 
-def traces(cfg, service, start_us, end_us, limit, timeout):
+def traces(cfg, service, start_us, end_us, limit, timeout, operation=None):
     """Recent traces of service from Jaeger's v3 API (2.20.0 and later): one {"traceID", "spans"}
     dict per trace, each span the OTLP JSON span plus "serviceName" of its resource. v3 returns
-    every trace's spans flattened across resourceSpans in one body, and 404 when nothing matches."""
+    every trace's spans flattened across resourceSpans in one body, and 404 when nothing matches.
+    operation narrows the search to traces with that span name, for a signal on a rare operation."""
     iso = lambda us: datetime.fromtimestamp(us / 1e6, timezone.utc).isoformat(timespec="microseconds")
-    q = urllib.parse.urlencode({"query.serviceName": service, "query.startTimeMin": iso(start_us),
-                                "query.startTimeMax": iso(end_us), "query.searchDepth": limit})
+    q = {"query.serviceName": service, "query.startTimeMin": iso(start_us),
+         "query.startTimeMax": iso(end_us), "query.searchDepth": limit}
+    if operation:
+        q["query.operationName"] = operation
+    q = urllib.parse.urlencode(q)
     try:
         resource_spans = http_json(config.jaeger_base(cfg) + "/api/v3/traces?" + q, timeout=timeout)["result"]["resourceSpans"]
     except urllib.error.HTTPError as e:
@@ -1444,7 +1448,8 @@ def run(a, cfg):
         sig = re.compile(signal_re, re.I)
         for i in range(1, poll_max + 1):
             try:
-                fault["signal_traces_seen"] = sum(1 for t in traces(cfg, gt_service, flip_us, now_us(), 50, 30) if sig.search(json.dumps(t)))
+                fault["signal_traces_seen"] = sum(1 for t in traces(cfg, gt_service, flip_us, now_us(), 50, 30, scen.get("signal_operation"))
+                                                  if sig.search(json.dumps(t)))
                 log.detail("bench: poll %d/%d: %d matching traces" % (i, poll_max, fault["signal_traces_seen"]))
             except Exception as e:
                 log.detail("bench: poll %d/%d: Jaeger query failed: %s" % (i, poll_max, e))
