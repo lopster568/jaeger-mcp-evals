@@ -46,7 +46,6 @@ Per scenario, both arms share the scenario version, the neutral prompt, the full
 ## Caveats
 
 - Scenario fixes found on this host before any trial counted: paymentUnreachable v3 (the resolver error text differs by host), cartFailure v2 (the signal wait polls the rare EmptyCart operation), emailMemoryLeak v2 (10000x; at 1000x email crashed too rarely for the signal wait). Aborted batches are listed in [records/INDEX.md](../../records/INDEX.md) and count toward no result.
-- The ten batches from 2026-11-05 record `harness_dirty: true` because eight files from earlier experiments sat untracked in harness/experiments/ (the release-v2200-vs-main pair files and their image records, committed later in 21d0abd). None is read by these runs, and every file the manifests hash, including bench.py, score.py, the scenario and the grader prompt, matches the commit they name. The 2026-11-06 batches record a clean tree.
 - Mechanism grades are from one grader pass; they were not re-graded as the 2.20.0 pair was.
 
 ## Reproduce
