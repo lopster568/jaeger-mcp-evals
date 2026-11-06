@@ -14,7 +14,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 |---|---|---|---|---|
 | adFailure | no | PASS | 2 | 20 |
 | cartFailure | yes | PASS | 3 | 20 |
-| emailMemoryLeak | bucketed | PASS | 1 | 0 |
+| emailMemoryLeak | bucketed | PASS | 3 | 20 |
 | paymentFailure | yes | PASS | 4 | 40 |
 | paymentUnreachable | yes | PASS | 4 | 21 |
 | recommendationCacheFailure | bucketed | PASS | 14 | 140 |
@@ -51,6 +51,8 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [v1-main-d22c65b9-paymentUnreachable/batch-20261105T164448Z](v1-main-d22c65b9-paymentUnreachable/batch-20261105T164448Z/) | 2026-11-05 | paymentUnreachable | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-paymentUnreachable | variant 10/0/0/0/0/0 | variant 3 | 5 |
 | [v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T160047Z](v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T160047Z/) | 2026-11-05 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-recommendationCacheFailure | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
 | [v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T161201Z](v1-main-d22c65b9-recommendationCacheFailure/batch-20261105T161201Z/) | 2026-11-05 | recommendationCacheFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-recommendationCacheFailure | variant 7/3/0/0/0/0 | variant 0 | 5 |
+| [v1-main-d22c65b9-emailMemoryLeak/batch-20261106T034017Z](v1-main-d22c65b9-emailMemoryLeak/batch-20261106T034017Z/) | 2026-11-06 | emailMemoryLeak | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9 | v1-main-d22c65b9-emailMemoryLeak | baseline 9/1/0/0/0/0 | baseline 0 | 5 |
+| [v1-main-d22c65b9-emailMemoryLeak/batch-20261106T035241Z](v1-main-d22c65b9-emailMemoryLeak/batch-20261106T035241Z/) | 2026-11-06 | emailMemoryLeak | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-emailMemoryLeak | variant 10/0/0/0/0/0 | variant 3 | 5 |
 
 ## Results
 
