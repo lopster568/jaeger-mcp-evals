@@ -69,7 +69,8 @@ cp "$WT/cmd/jaeger/Dockerfile" "$WT/cmd/jaeger/sampling-strategies.json" "$BUILD
 cp "$WT/scripts/build/docker/base/Dockerfile" "$BUILD_DIR/base/Dockerfile"
 
 BASE_IMAGE_TAG="evals-baseimg-alpine:latest"
-BASE_IMAGE_RECIPE="scripts/build/docker/base/Dockerfile (FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry"
+BASE_FROM=$(grep -m1 '^FROM' "$BUILD_DIR/base/Dockerfile" | sed 's/ AS .*//')
+BASE_IMAGE_RECIPE="scripts/build/docker/base/Dockerfile at $SHORT_SHA ($BASE_FROM) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry"
 IMAGE_TAG="jaeger-mcp-evals/jaeger:${NAME}-${SHORT_SHA}"
 RD="variant-build/$NAME"
 REMOTE_STEPS=(

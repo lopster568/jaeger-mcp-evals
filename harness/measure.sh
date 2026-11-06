@@ -42,7 +42,7 @@ BASE_SHA=$(git -C "$REPO" rev-parse --verify "$BASE_REF^{commit}" 2>/dev/null) |
 HS=${HEAD_SHA:0:8} BS=${BASE_SHA:0:8}
 EXP="measure-$SCENARIO-$HS"
 EXP_FILE="$ROOT/harness/experiments/$EXP.json"
-CHANGE_NAME="measure-change-$HS" BASE_NAME="measure-base-$BS"
+CHANGE_NAME="measure-change" BASE_NAME="measure-base"  # one record per arm; the tag carries the sha
 CHANGE_TAG="jaeger-mcp-evals/jaeger:$CHANGE_NAME-$HS" BASE_TAG="jaeger-mcp-evals/jaeger:$BASE_NAME-$BS"
 
 # Wait for load-generator traffic to refill Jaeger's in-memory store after a container swap.
@@ -52,7 +52,7 @@ run() { echo "+ $*"; [ "$DRY" -eq 1 ] || "$@"; }
 echo "measure: scenario $SCENARIO, base $BS ($BASE_REF), head $HS, n=$N per arm"
 for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   set -- $t
-  if [ -f "$ROOT/harness/experiments/images/$1.json" ] && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
+  if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
   else run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"; fi
 done
@@ -82,6 +82,14 @@ else:
     json.dump(doc, open(path, "w"), indent=2); open(path, "a").write("\n")
     print("measure: wrote %s" % path)
 PY
+
+# Commit the pair file and the image records before any trial (docs/USAGE.md, Protocol: the rule is in history first).
+PRE=("harness/experiments/$EXP.json" "harness/experiments/images/$BASE_NAME.json" "harness/experiments/images/$CHANGE_NAME.json")
+if [ "$DRY" -eq 1 ]; then echo "+ git commit ${PRE[*]}"
+else
+  git -C "$ROOT" add -- "${PRE[@]}" || die "git add failed for the pair file or image records"
+  git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
+fi
 
 echo "measure: model claude-sonnet-5-5, $N trials per arm, 2 arms, PAID"
 echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
