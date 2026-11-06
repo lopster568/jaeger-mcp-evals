@@ -10,7 +10,6 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/lib.sh"
-COMPOSE='docker compose --env-file .env --env-file .env.override -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml'
 # Must match the running collector's own arguments (docker inspect otel-collector), or
 # validation fails for unrelated reasons: the demo's profiles pipeline needs this gate.
 CFGS='--config=/etc/otelcol-config.yml --config=/etc/otelcol-config-full.yml --config=/etc/otelcol-config-observability.yml --config=/etc/otelcol-config-extras.yml --feature-gates=service.profilesSupport'

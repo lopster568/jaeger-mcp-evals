@@ -23,3 +23,6 @@ cp_line() {
   if [ -z "$FIXTURE_SSH_USER" ]; then printf 'cd ~ && cp %s %s' "${*:1:$#-1}" "$dest"
   else printf 'scp -q %s %s %s:%s' "$SSH_OPTS" "${*:1:$#-1}" "$TARGET" "$dest"; fi
 }
+
+# The compose invocation the fixture runs under (FIXTURE.md); run it from the demo dir.
+COMPOSE='docker compose --env-file .env --env-file .env.override -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml'
