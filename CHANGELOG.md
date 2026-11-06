@@ -98,3 +98,19 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 - emailMemoryLeak: version none to 1, comparable: no prior version in this repo. Ported from the private screening clone where v1 was drafted on 2026-10-04, with its two evidence files; what PASS means is unchanged from that draft, and only the notes changed (this repo's bench.py line numbers, and the 2026-10-06 screen that aborted at the signal wait before any trial). Not yet run to a trial on the fixture.
 - cartFailure: version none to 1, comparable: no prior version. New scenario: every request to empty a cart fails to connect to its store and the caller discards the error. Written from the 3.0.0 source; evidence traces not yet captured, so readiness fails until they are.
+
+## 2026-11-03
+
+- Tooling: pre-flight records the MCP server's initialize instructions (sha256 in the manifest) and leak-scans them with the tools. An image record with an `instructions` key names the expected file under `harness/experiments/instructions/`, and a variant arm aborts before the flag flips if the fixture serves different text. No scenario or scoring change.
+
+## 2026-11-05
+
+- recommendationCacheFailure: version 3 to 4, comparable: yes. The oracle's `search_traces` call adds `search_depth: 100`, so pre-flight finds the slow pre-restart traces instead of only the newest ten. Pre-flight only; what PASS means is unchanged.
+- cartFailure: evidence traces captured on Jaeger main 238c5fa2, so readiness passes. No version change.
+- paymentUnreachable: version 2 to 3, comparable: yes. `signal_regex` also matches `lookup badAddress`, the resolver error text on hosts whose DNS answers SERVFAIL (Docker on a cloud VM) instead of NXDOMAIN. Signal wait only; what PASS means is unchanged.
+
+## 2026-11-06
+
+- Tooling: optional scenario key `signal_operation` narrows the signal wait's trace search to one span name, for a fault on an operation too rare to show up among the newest 50 traces of its service. No scoring change.
+- cartFailure: version 1 to 2, comparable: yes. Adds `signal_operation: POST /oteldemo.CartService/EmptyCart`; v1 could never pass its own signal wait. What PASS means is unchanged, and v1 ran no trial.
+- emailMemoryLeak: version 1 to 2, comparable: no. Activation 1000x to 10000x and `signal_wait_s` 900 to 600. At 1000x email was OOM-killed only every 15 to 25 minutes, too rarely for the signal wait; at 10000x it is killed on almost every request with the same dropped connections. What PASS means is unchanged; v1 ran no trial.

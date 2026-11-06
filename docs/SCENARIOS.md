@@ -72,6 +72,8 @@ Keys, as in the example above:
   first restart under the fault; the batch aborts if the restart never comes.
 - `restart_before_run` (optional): containers that pre-flight restarts, followed by Jaeger, so the
   trace store never holds that restart.
+- `signal_operation` (optional): a span name. The signal wait searches only traces with that operation,
+  for a fault on a call too rare to appear among the newest 50 traces of `ground_truth.service`.
 
 ## The evidence traces
 
