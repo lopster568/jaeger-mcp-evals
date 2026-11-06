@@ -32,11 +32,11 @@ flowchart LR
 claude         # once: /login, then /exit; setup checks the CLI with this login
 make setup     # free: install the fixture, start it and Phoenix, wait until it passes pre-flight
 make smoke     # paid: one agent trial end to end, about 50k tokens
-
 # your own experiment
 python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan
 python3 harness/bench.py run harness/experiments/<name>.json            # paid: runs the trials and scores them
 python3 harness/bench.py verify                                         # free: re-scores every run from its raw files
+make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base
 ```
 
 > [!WARNING]

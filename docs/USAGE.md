@@ -123,6 +123,14 @@ A batch aborts before the flag flips on:
 - Cost of the published pair (skill-callee-down-cli55, 10 trials per arm, sum of `cost_usd` in scores.jsonl): baseline 0.77 USD, variant 2.77 USD. Wall time from the first cell start to the last cell end in cells.jsonl: about 4.5 minutes and 8 minutes. The grader adds one call per trial.
 - For a pull request, attach `RESULT.md` (from `judge.py`) and the batch directory `bench.py run` copied to `records/<name>/`.
 
+## Measure a change
+
+`harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name>`) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `merge-base HEAD upstream/main` (else `origin/main`, else `--base`) as the base, builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial, asks for a y/N, then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
+
+Cost: 2 x n trials (default 10 per arm, claude-sonnet-5-5), measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial. `--dry-run` checks and prints every step without building, swapping or running.
+
+For a pull request attach `records/<experiment>/RESULT.md` and the two batch directories under `records/<experiment>/`.
+
 ## Protocol
 
 Results published in this repo come from one protocol:
@@ -146,7 +154,8 @@ Results published in this repo come from one protocol:
 | `tool_used_min`, `tool_used_max` | runs using each named tool |
 | `tool_output_chars_median_drop_pct_min` | percentage drop in median `tool_output_chars` against baseline |
 | `accuracy_pass_min` | the PASS count |
-| exit code | 0 all pass, 1 any fails, 2 refusal unless both manifests carry one experiment sha256 and `arm_pin` blocks matching the argument order |
+| `fisher_p_max` | PASS only if two-sided Fisher p (`bench.fisher_p`) of baseline vs arm PASS counts is below the value; both arms need the same n |
+| exit code | 0 all pass, 1 any fails, 2 refusal: an empty `thresholds` block, or manifests that do not carry one experiment sha256 and `arm_pin` blocks matching the argument order |
 
 ## Reading results
 
