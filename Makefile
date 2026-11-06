@@ -10,7 +10,7 @@ PYTHON ?= python3
 CLI := $(PYTHON) harness/fixture_cli.py
 PREFLIGHT := PYTHON=$(PYTHON) bash fixture/preflight.sh
 
-.PHONY: help setup preflight fixture up phoenix smoke down clean test verify
+.PHONY: help setup preflight fixture up phoenix smoke measure down clean test verify
 
 help:
 	@echo "Set up"
@@ -22,6 +22,7 @@ help:
 	@echo "Run"
 	@echo "  make smoke      PAID: dry run, then one agent trial (about 50k tokens)"
 	@echo "  $(PYTHON) harness/bench.py run harness/experiments/<name>.json [--dry-run]   PAID without --dry-run"
+	@echo "  make measure JAEGER=<checkout> SCENARIO=<name>   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
 	@echo "Check"
 	@echo "  make test       offline unit tests"
 	@echo "  make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
@@ -41,6 +42,11 @@ fixture up phoenix down clean test:
 # Makes ONE paid agent call (Claude Code CLI, claude-sonnet-5-5, effort high, budget cap in the experiment file).
 smoke:
 	@$(PREFLIGHT) && $(CLI) smoke
+
+# PAID: builds two images, swaps the fixture's jaeger twice and runs 2 x 10 trials; asks first (harness/measure.sh).
+measure:
+	@test -n "$(JAEGER)" -a -n "$(SCENARIO)" || { echo "usage: make measure JAEGER=<jaeger-checkout> SCENARIO=<name>"; exit 2; }
+	@bash harness/measure.sh "$(JAEGER)" "$(SCENARIO)"
 
 verify:
 	@$(PYTHON) harness/bench.py verify
