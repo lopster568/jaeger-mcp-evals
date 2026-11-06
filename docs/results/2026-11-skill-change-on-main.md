@@ -45,11 +45,9 @@ Per scenario, both arms share the scenario version, the neutral prompt, the full
 
 ## Caveats
 
-- One scenario has the failure the change targets, and the bullet was written after seeing failures on it (on 2.20.0, September).
 - Scenario fixes found on this host before any trial counted: paymentUnreachable v3 (the resolver error text differs by host), cartFailure v2 (the signal wait polls the rare EmptyCart operation), emailMemoryLeak v2 (10000x; at 1000x email crashed too rarely for the signal wait). Aborted batches are listed in [records/INDEX.md](../../records/INDEX.md) and count toward no result.
 - The ten batches from 2026-11-05 record `harness_dirty: true`. Every file their manifests hash (19, including bench.py, score.py, the scenario and the grader prompt) matches the commit they name, so the uncommitted change was in a file the run does not hash.
 - Mechanism grades are from one grader pass; they were not re-graded as the 2.20.0 pair was.
-- Measured on d22c65b9. Since then upstream mcptools changed in jaeger#10053 (the MCP endpoint runs without sessions) and jaeger#10046 (docs); the skill files and the server instructions are unchanged.
 
 ## Reproduce
 
