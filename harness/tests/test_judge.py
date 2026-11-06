@@ -173,6 +173,32 @@ class JudgeTests(unittest.TestCase):
         with open(path) as f:
             self.assertEqual(f.read().count("EXPERIMENT FAIL"), 1)
 
+    def fisher_pair(self, thresholds, base_pass, var_pass, n=10):
+        """Both batches written with an experiment carrying only these thresholds."""
+        exp = dict(EXPERIMENT, thresholds=thresholds)
+        for d, arm, k in ((self.baseline_dir, "baseline", base_pass), (self.variant_dir, "descchange", var_pass)):
+            m = {"scenario": "paymentFailure", "experiment": {"name": exp["name"], "file": "x.json", "sha256": "ab", "content": exp},
+                 "arm_pin": {"arm": arm, "expected_image": "x"}}
+            with open(os.path.join(d, "manifest.json"), "w") as f:
+                json.dump(m, f)
+            write_scores(d, [make_row(arm, [], 1, "PASS" if i < k else "FAIL") for i in range(n)])
+
+    def test_fisher_p_max_pass_and_fail(self):
+        self.fisher_pair({"fisher_p_max": 0.05}, 0, 7)  # p = 0.0031
+        lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+        self.assertEqual(code, 0)
+        self.assertIn("fisher_p_max: PASS (measured=%s, required<0.05)" % round(bench.fisher_p(0, 7, 10), 4), lines)
+        self.fisher_pair({"fisher_p_max": 0.05}, 3, 6)  # p = 0.37
+        lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+        self.assertEqual(code, 1)
+        self.assertIn("fisher_p_max: FAIL (measured=%s, required<0.05)" % round(bench.fisher_p(3, 6, 10), 4), lines)
+
+    def test_empty_thresholds_refuse(self):
+        self.fisher_pair({}, 0, 10)
+        lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+        self.assertEqual(code, 2)
+        self.assertIn("nothing was judged", lines[0])
+
     def test_refusal_writes_nothing(self):
         write_manifest(self.baseline_dir, arm_pin="baseline", sha256="aaa")
         write_manifest(self.variant_dir, arm_pin="descchange", sha256="bbb")

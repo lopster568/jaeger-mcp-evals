@@ -18,6 +18,7 @@ judge.py:
   - refuses (exit 2) if the baseline batch's arm_pin is not the experiment's
     baseline_arm, or the variant batch's arm_pin is not one of its other arms
     (the two directories were probably swapped or mismatched)
+  - refuses (exit 2) if the experiment's thresholds block is empty: nothing would be judged
   - for each non-baseline arm, from scores.jsonl:
       - per-tool run counts: how many of that arm's runs used a given tool
         at least once, for every tool named under tool_used_min / tool_used_max
@@ -27,6 +28,8 @@ judge.py:
       - PASS count, using score.py's strict verdict == "PASS"; INVALID rows (sandbox check
         failed) and LEAK rows (the answer names a flag) stay in n, are never a PASS, and
         each arm with any gets a WARNING line
+      - fisher_p_max: two-sided Fisher p (bench.fisher_p) of the baseline and arm PASS counts,
+        n per arm; PASS when p < the value
 
 Prints one PASS/FAIL line per threshold (per test arm, if there is more
 than one), then a final verdict line. A judged pair (exit 0 or 1) also writes those
@@ -36,8 +39,8 @@ naming the experiment sha256 and both batch ids, and regenerates records/INDEX.m
 Exit codes:
   0 - EXPERIMENT PASS: every threshold passed.
   1 - EXPERIMENT FAIL: at least one threshold failed.
-  2 - a manifest is missing, the two experiment files differ, or an arm_pin
-      mismatch suggests the wrong batch directories were passed; nothing was judged.
+  2 - a manifest is missing, the two experiment files differ, the thresholds block is empty,
+      or an arm_pin mismatch suggests the wrong batch directories were passed; nothing was judged.
 """
 import json
 import os
@@ -187,6 +190,8 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
             f"({test_arms}) - wrong batch directory?"
         ], 2)
 
+    if not thresholds:
+        return (["judge: the experiment has no thresholds; nothing was judged"], 2)
     tool_min = thresholds.get("tool_used_min") or {}
     tool_max = thresholds.get("tool_used_max") or {}
     tool_names = set(tool_min) | set(tool_max)
@@ -236,6 +241,14 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
         if "accuracy_pass_min" in thresholds:
             min_pass = thresholds["accuracy_pass_min"]
             check("accuracy_pass_min", m["pass_count"] >= min_pass, m["pass_count"], ">=", min_pass)
+        if "fisher_p_max" in thresholds:
+            import bench  # here, not at the top: bench imports judge
+            n, pmax = baseline_metrics["n"], thresholds["fisher_p_max"]
+            if m["n"] != n:  # the table below needs equal arms
+                check("fisher_p_max", False, "N/A (n %d vs %d)" % (n, m["n"]), "<", pmax)
+            else:
+                p = bench.fisher_p(baseline_metrics["pass_count"], m["pass_count"], n)
+                check("fisher_p_max", p < pmax, round(p, 4), "<", pmax)
 
     all_pass = all(results)
     lines.append("EXPERIMENT PASS" if all_pass else "EXPERIMENT FAIL")
