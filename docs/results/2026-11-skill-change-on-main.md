@@ -20,7 +20,7 @@ The rule is in the root SKILL.md too because on main the agent reads the root sk
 
 ## Pre-registration
 
-The rule, two-sided Fisher p < 0.05 on PASS at n=10 per arm, is written in each committed experiment file before its runs (for example [v1-main-d22c65b9-recommendationCacheFailure.json](../../harness/experiments/v1-main-d22c65b9-recommendationCacheFailure.json)). judge.py has no Fisher threshold, so the experiment files carry an empty thresholds block and these pairs have no RESULT.md: judge.py would report a pass for an empty block. The p values below are `bench.fisher_p`, computed from each batch's scores.jsonl.
+The rule, two-sided Fisher p < 0.05 on PASS at n=10 per arm, is written in each committed experiment file before its runs (for example [v1-main-d22c65b9-recommendationCacheFailure.json](../../harness/experiments/v1-main-d22c65b9-recommendationCacheFailure.json)). The experiment files were confirmed before judge.py had a Fisher threshold (`fisher_p_max`, added 2026-11-06), so their thresholds block is empty, judge.py refuses them, and these pairs have no RESULT.md. The p values below are `bench.fisher_p`, computed from each batch's scores.jsonl.
 
 ## Results
 
