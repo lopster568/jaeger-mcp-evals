@@ -433,6 +433,9 @@ def oracle(scenario, cfg, out=print):
     try:
         s = MCPClient(config.mcp_url(cfg), timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
         s.initialize()
+        # jaeger#10073 (2026-11-07) renamed search_traces to find_traces, same arguments; older images keep the old name.
+        served = {t["name"] for t in s.list_tools()}
+        rename = {"search_traces": "find_traces"} if "search_traces" not in served and "find_traces" in served else {}
         for c in calls:
             spec = json.dumps(c["arguments"])
             ids = list(dict.fromkeys(re.findall(r'"trace_id":\s*"([0-9a-fA-F]+)"', text))) if "$trace_id" in spec else [None]
@@ -443,7 +446,7 @@ def oracle(scenario, cfg, out=print):
                 for sid in sids:
                     args = json.loads(s1.replace("$span_id", sid) if sid else s1)
                     n += 1
-                    r = s.call_tool(c["tool"], args)
+                    r = s.call_tool(rename.get(c["tool"], c["tool"]), args)
                     if r["is_error"] and not (r["raw"] or {}).get("isError"):  # transport or JSON-RPC error: stop here
                         raise MCPError(r["text"])
                     text += r["text"] + "\n"

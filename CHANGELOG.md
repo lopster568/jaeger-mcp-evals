@@ -115,3 +115,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - cartFailure: version 1 to 2, comparable: yes. Adds `signal_operation: POST /oteldemo.CartService/EmptyCart`; v1 could never pass its own signal wait. What PASS means is unchanged, and v1 ran no trial.
 - emailMemoryLeak: version 1 to 2, comparable: no. Activation 1000x to 10000x and `signal_wait_s` 900 to 600. At 1000x email was OOM-killed only every 15 to 25 minutes, too rarely for the signal wait; at 10000x it is killed on almost every request with the same dropped connections. What PASS means is unchanged; v1 ran no trial.
 - Tooling: `harness/measure.sh` (`make measure`) builds a Jaeger checkout's HEAD and base, runs one scenario on each and judges the pair; `fixture/build-image.sh` and `fixture/swap-jaeger.sh` are its steps, and `build-variant.sh` now calls `build-image.sh`. `judge.py` gains the threshold `fisher_p_max` and refuses (exit 2) an experiment whose `thresholds` block is empty, which it used to pass vacuously. No scenario or scoring change, comparable: yes.
+
+## 2026-11-07
+
+- Tooling: Jaeger main renamed the `search_traces` tool to `find_traces` (jaeger#10073, same arguments). When a fixture serves `find_traces` and not `search_traces`, the scenario oracles' `search_traces` calls run as `find_traces`; older images are unchanged. No scenario version change: the oracle is a pre-flight check and what PASS means is unchanged.

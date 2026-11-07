@@ -145,6 +145,9 @@ class TestOracleSpanId(unittest.TestCase):
             def initialize(self):
                 pass
 
+            def list_tools(self):
+                return [{"name": n} for n in ("search_traces", "get_trace_topology", "get_span_details")]
+
             def call_tool(self, name, args):
                 seen.append((name, args))
                 o = outputs.get(name)
@@ -166,6 +169,35 @@ class TestOracleSpanId(unittest.TestCase):
             {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa01"]}, {"trace_id": "aa", "span_ids": ["aaaaaaaaaaaaaa02"]},
             {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb01"]}, {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb02"]}])
 
+
+class TestOracleRename(unittest.TestCase):
+    def test_search_traces_runs_as_find_traces_when_only_that_is_served(self):
+        from unittest import mock
+        seen = []
+
+        class Client:
+            def __init__(self, *a, **k):
+                pass
+
+            def initialize(self):
+                pass
+
+            def list_tools(self):
+                return [{"name": "find_traces"}]
+
+            def call_tool(self, name, args):
+                seen.append(name)
+                return {"is_error": False, "raw": {}, "text": "sig"}
+
+        with tempfile.TemporaryDirectory() as h:
+            os.makedirs(os.path.join(h, "scenarios"))
+            with open(os.path.join(h, "scenarios", "x.json"), "w") as f:
+                json.dump({"signal_regex": "sig", "oracle": [{"tool": "search_traces", "arguments": {}}]}, f)
+            with mock.patch.object(bench, "HARNESS", h), mock.patch.object(bench, "MCPClient", Client), \
+                    mock.patch.object(bench.config, "mcp_url", lambda cfg: "u"):
+                rc, out = gate(bench.oracle, "x", {})
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, ["find_traces"])
 
 def span(trace_id, name, attrs=()):
     return {"traceId": trace_id, "name": name, "status": {},
