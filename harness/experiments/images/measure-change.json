@@ -1,12 +1,13 @@
 {
   "name": "measure-change",
   "tag": "jaeger-mcp-evals/jaeger:measure-change-6aee67e4",
-  "digest": "sha256:6aeba744cfa3140bf6b9b22776b8c6bff8b3b616429e18674ed84affebb08871",
+  "digest": "sha256:7d16761306bd750b65ef285fada6b90eab571fdc81400d76b31f2a1a39e7f2a5",
   "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
   "branch": "6aee67e4",
   "branch_commit": "6aee67e4b558525faabe98c26f29587881d159bd",
   "base_image": "evals-baseimg-alpine:latest",
   "base_image_recipe": "scripts/build/docker/base/Dockerfile at 6aee67e4 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
-  "built_at_utc": "2026-11-07T15:20:03Z",
-  "built_on": "fixture host"
+  "built_at_utc": "2026-11-07T15:58:15Z",
+  "built_on": "fixture host",
+  "descriptions": null
 }
