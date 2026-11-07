@@ -55,6 +55,9 @@ for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
   else run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"; fi
+  # Both arms serve the checkout's own tool wording; without this key bench.py checks a non-baseline image against desc-change.json.
+  run python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["descriptions"]=None; open(p,"w").write(json.dumps(d,indent=2)+"\n")' \
+    "$ROOT/harness/experiments/images/$1.json" || die "cannot set descriptions: null in the $1 image record"
 done
 
 # Pair file, written before any run (pre-registration). An existing one must match.
@@ -110,11 +113,11 @@ arm_run() {  # arm tag: swap, wait, run; sets BATCH
   [ "$DRY" -eq 1 ] && echo "+ sleep $SETTLE" || sleep "$SETTLE"
   if [ "$DRY" -eq 1 ]; then echo "+ python3 harness/bench.py run $EXP_FILE"; BATCH="<$1 batch dir>"; return; fi
   local out; out=$(mktemp)
-  python3 harness/bench.py run "$EXP_FILE" | tee "$out"
+  python3 harness/bench.py run "$EXP_FILE" 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr
   [ "${PIPESTATUS[0]}" -eq 0 ] || die "bench.py run failed for the $1 arm; the pair is discarded (see docs/USAGE.md, Protocol)"
   BATCH=$(sed 's/\x1b\[[0-9;]*m//g' "$out" | sed -n 's/^Batch  *\([^ ]*\).*/\1/p' | tail -1)
   rm -f "$out"
-  [ -d "$BATCH" ] || die "bench.py run left no batch directory for the $1 arm"
+  BATCH=$([ -n "$BATCH" ] && cd "$ROOT" && cd "$BATCH" 2>/dev/null && pwd) || die "bench.py run left no batch directory for the $1 arm"
 }
 arm_run baseline "$BASE_TAG"; B_DIR=$BATCH
 arm_run variant "$CHANGE_TAG"; V_DIR=$BATCH

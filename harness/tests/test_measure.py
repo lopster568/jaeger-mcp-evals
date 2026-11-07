@@ -39,6 +39,8 @@ class Measure(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         for want in ("build-image.sh", "swap-jaeger.sh", "bench.py run", "judge.py", "fisher_p_max", "claude-sonnet-5-5"):
             self.assertIn(want, r.stdout)
+        for rec in ("measure-base.json", "measure-change.json"):  # stock wording: no desc-change.json check on the variant
+            self.assertTrue(any('d["descriptions"]=None' in l and l.endswith(rec) for l in r.stdout.splitlines()), rec)
         self.assertFalse(self.pair.exists())  # dry run writes no pair file
         self.assertEqual(subprocess.run(["git", "-C", self.repo, "worktree", "list"], capture_output=True, text=True).stdout.count("\n"), 1)
 
