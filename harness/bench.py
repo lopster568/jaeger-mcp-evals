@@ -462,6 +462,24 @@ def oracle(scenario, cfg, out=print):
     return 1
 
 
+def oracle_warning(scenario, version, image, tool_names, message):
+    def url(msg):
+        body = "scenario: %s (version %s)\njaeger image: %s\nserved tools: %s\noracle: FAIL - %s" % (
+            scenario, version, image, ", ".join(sorted(tool_names)), msg)
+        return "https://github.com/lopster568/jaeger-mcp-evals/issues/new?" + urllib.parse.urlencode(
+            {"title": "oracle fails on %s: %s" % (image, scenario), "body": body})
+    shown, cut = message, message
+    while len(url(cut)) > 6000 and cut:  # cut the error text, never the structure
+        cut = cut[:len(cut) * 3 // 4 - 1]
+    return ["  WARN  the scripted check that the MCP tools can reach the fault's evidence failed, probably because this "
+            "Jaeger serves different tool names or inputs than the harness expects.",
+            "        Trials continue because the fault was confirmed in Jaeger's store. A baseline and a change that both "
+            "score 0 may be a tool problem: read the trajectories.",
+            "        oracle: FAIL - " + shown[:300],
+            "        Please open an issue:",
+            "        " + url(cut)]
+
+
 def fisher_p(a, b, n):
     """Two-sided Fisher's exact p-value for two arms of n trials each,
     a PASS in baseline and b PASS in variant (2x2 table, row margins n/n)."""
@@ -1043,7 +1061,7 @@ def run(a, cfg):
 
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
-           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "client": None,
+           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
     if a.client == "api" and a.provider == "openai":
@@ -1485,16 +1503,22 @@ def run(a, cfg):
         if rc == 0 and any_tools:
             # Needs the fault live, so it runs here and not in the read-only pre-flight.
             log.detail("== oracle under fault (scripted MCP calls must reach the signal) ==")
-            ok = oracle(a.scenario, cfg, out=log.detail) == 0
+            said = []
+            ok = oracle(a.scenario, cfg, out=lambda m: (said.append(m), log.detail(m))) == 0
             pre["oracle"] = "PASS" if ok else "FAIL"
-            log.check(ok, "oracle reached the signal " + paint(DIM, "(" + log.step[-1].split(" reached ", 1)[-1] + ")")
-                      if ok else "oracle never reached the signal")
+            pre["oracle_message"] = said[-1].split(": ", 1)[-1] if said else None
+            if ok:
+                log.check(ok, "oracle reached the signal " + paint(DIM, "(" + log.step[-1].split(" reached ", 1)[-1] + ")"))
+            else:
+                # Not an abort: the signal wait above already proved the fault is in the store.
+                log.step = []
+                for line in oracle_warning(a.scenario, scen.get("version"), image, [t["name"] for t in tool_list],
+                                           (pre["oracle_message"] or "").split("FAIL - ", 1)[-1]):
+                    log(paint(YELLOW, line))
         write_json(os.path.join(bdir, "preflight.json"), pre)
         write_json(os.path.join(bdir, "manifest.json"), manifest)  # manifest.preflight is the same dict
         if rc != 0:
             return die("ABORT - the fixture names a flag while the fault is active; no trials run")
-        if pre["oracle"] == "FAIL":
-            return die("ABORT - the oracle's scripted MCP calls never reached the signal under the fault; no trials run")
 
         fails = 0
         secrets = api_secrets(a, cfg)

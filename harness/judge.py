@@ -267,6 +267,8 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
 
     dest = os.path.join(records, exp["name"])
     os.makedirs(dest, exist_ok=True)
+    notes = ["Note: the oracle failed in the %s batch; trials ran on the signal wait alone." % label
+             for label, m in (("baseline", base), ("variant", var)) if (m.get("preflight") or {}).get("oracle") == "FAIL"]
     path = os.path.join(dest, "RESULT.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join([
@@ -279,7 +281,7 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
             "- baseline batch: `%s`" % batch_id(base, baseline_batch_dir),
             "- variant batch: `%s`" % batch_id(var, variant_batch_dir),
             "- judged (UTC): %s" % datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "", "```"] + lines + ["```", ""]))
+            "", "```"] + lines + ["```", ""] + (notes + [""] if notes else [])))
     bench.write_index(records, out=lambda *a: None)
     return path
 

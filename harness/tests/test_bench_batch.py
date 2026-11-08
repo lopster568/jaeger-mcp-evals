@@ -15,6 +15,7 @@ import hashlib
 import http.server
 import io
 import json
+import urllib.parse
 import os
 import pathlib
 import platform
@@ -1177,8 +1178,7 @@ class TestOracle(BenchCase):
 
     def test_batch_survives_a_malformed_oracle_result(self):
         Fake.oracle_malformed = True
-        self.assertEqual(self.run_batch(1), 1, self.err)
-        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.run_batch(1), 0, self.err)
         self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["oracle"], "FAIL")
         self.assertTrue(load(os.path.join(self.batch_dir(), "restore.json"))["default_confirmed"])
 
@@ -1187,14 +1187,38 @@ class TestOracle(BenchCase):
             calls = load(f)["oracle"]
             self.assertTrue(calls and all(isinstance(c.get("tool"), str) and isinstance(c.get("arguments"), dict) for c in calls), f)
 
-    def test_batch_aborts_and_restores_when_oracle_fails(self):
+    def test_batch_warns_and_runs_trials_when_oracle_fails(self):
         Fake.oracle_signal = False
-        self.assertEqual(self.run_batch(1), 1, self.err)
-        self.assertIn("oracle", self.err)
-        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(len(self.calls()), 2)  # trials ran
         self.assertTrue(load(os.path.join(self.batch_dir(), "restore.json"))["default_confirmed"])
         self.assertEqual(self.flag_file(), self.pristine())
-        self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["oracle"], "FAIL")
+        pre = load(os.path.join(self.batch_dir(), "preflight.json"))
+        self.assertEqual(pre["oracle"], "FAIL")
+        self.assertIn("never matched", pre["oracle_message"])
+        self.assertEqual(load(os.path.join(self.batch_dir(), "manifest.json"))["preflight"]["oracle"], "FAIL")
+        self.assertIn("trials continue because the fault was confirmed", self.err.lower().replace("\n", " ").replace("        ", ""))
+        url = next(l.strip() for l in self.err.splitlines() if l.strip().startswith("https://github.com/lopster568/jaeger-mcp-evals/issues/new?"))
+        self.assertLess(len(url), 6000)
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertEqual(q["title"], ["oracle fails on %s: paymentFailure" % STOCK_IMAGE])
+        self.assertIn("scenario: paymentFailure (version ", q["body"][0])
+        self.assertIn("jaeger image: " + STOCK_IMAGE, q["body"][0])
+        self.assertIn("served tools: ", q["body"][0])
+        self.assertIn("oracle: FAIL - ", q["body"][0])
+
+    def test_issue_url_cuts_the_error_text_not_the_structure(self):
+        lines = bench.oracle_warning("s", 3, "img:1", ["a", "b"], "x" * 20000)
+        url = lines[-1].strip()
+        self.assertLess(len(url), 6000)
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertIn("served tools: a, b\noracle: FAIL - x", q["body"][0])
+
+    def test_batch_records_oracle_pass(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        pre = load(os.path.join(self.batch_dir(), "manifest.json"))["preflight"]
+        self.assertEqual(pre["oracle"], "PASS")
+        self.assertNotIn("issues/new", self.err)
 
 
 class TestNoTools(BenchCase):

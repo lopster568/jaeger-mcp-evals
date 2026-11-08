@@ -43,9 +43,11 @@ EXPERIMENT = {
 }
 
 
-def write_manifest(batch_dir, arm_pin=None, sha256="deadbeef"):
+def write_manifest(batch_dir, arm_pin=None, sha256="deadbeef", oracle=None):
     manifest = {"scenario": "paymentFailure", "arms": [arm_pin] if arm_pin else ["baseline", "descchange"],
                 "experiment": {"name": EXPERIMENT["name"], "file": "x.json", "sha256": sha256, "content": EXPERIMENT}}
+    if oracle:
+        manifest["preflight"] = {"oracle": oracle}
     if arm_pin is not None:
         manifest["arm_pin"] = {"arm": arm_pin, "expected_image": "irrelevant-for-tests"}
     with open(os.path.join(batch_dir, "manifest.json"), "w") as f:
@@ -149,6 +151,20 @@ class JudgeTests(unittest.TestCase):
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
             judge_mod.main()
         return e.exception.code, out.getvalue()
+
+    def test_result_md_notes_an_oracle_fail_only(self):
+        path = os.path.join(self.tmp, "records", EXPERIMENT["name"], "RESULT.md")
+        for base, var, want in (("PASS", "PASS", []), ("FAIL", "PASS", ["baseline"]), ("PASS", "FAIL", ["variant"])):
+            write_manifest(self.baseline_dir, arm_pin="baseline", oracle=base)
+            write_scores(self.baseline_dir, baseline_rows())
+            write_manifest(self.variant_dir, arm_pin="descchange", oracle=var)
+            write_scores(self.variant_dir, descchange_rows_all_thresholds_met())
+            code, out = self.main()
+            self.assertEqual(code, 0)  # the verdict is unchanged
+            with open(path) as f:
+                result = f.read()
+            notes = [l for l in result.splitlines() if l.startswith("Note: the oracle failed")]
+            self.assertEqual(notes, ["Note: the oracle failed in the %s batch; trials ran on the signal wait alone." % w for w in want])
 
     def test_main_writes_result_md_and_index(self):
         write_manifest(self.baseline_dir, arm_pin="baseline")

@@ -120,3 +120,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 - Tooling: Jaeger main renamed the `search_traces` tool to `find_traces` (jaeger#10073, same arguments). When a fixture serves `find_traces` and not `search_traces`, the scenario oracles' `search_traces` calls run as `find_traces`; older images are unchanged. No scenario version change: the oracle is a pre-flight check and what PASS means is unchanged.
 - Tooling: `measure.sh` reads bench.py's Batch line from stderr (it stopped after every baseline arm) and sets `"descriptions": null` on both image records (the variant arm aborted at pre-flight against desc-change.json). First end-to-end `make measure` run: records/measure-recommendationCacheFailure-6aee67e4, jaeger#10068 on main 5319091a, 0/10 to 10/10 PASS. No scenario version change.
+
+## 2026-11-09
+
+- Tooling: an oracle failure in a batch's pre-flight no longer aborts the batch. It logs a warning with a prefilled issue link and trials run on the signal wait alone; the manifest's `preflight.oracle_message` records the error and judge.py adds a note line to RESULT.md. `bench.py oracle` still exits 1. No scenario version change.

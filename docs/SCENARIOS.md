@@ -65,6 +65,10 @@ Keys, as in the example above:
   tools reach the signal; an argument `"$trace_id"` expands to one call per trace
   id seen in an earlier call's output, and `"$span_id"` to one call per span id that
   earlier calls for the same trace printed (get_span_details takes at most 20 ids).
+  In a batch run's pre-flight an oracle failure is a warning with a prefilled issue link, not an abort:
+  the signal wait has already proved the fault is in the store, and the result is recorded as
+  `preflight.oracle` (`PASS` or `FAIL`, with `oracle_message`) in the manifest; judge.py notes a FAIL in RESULT.md.
+  The standalone `bench.py oracle` still exits 1.
 - `notes`: free text; `score.py` never reads it.
 - `expected_restarts` (optional): containers the fault is allowed to restart. A restart, OOM kill
   or start-time change in any other container during a trial makes it INVALID.
