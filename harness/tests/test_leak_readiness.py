@@ -69,6 +69,12 @@ class TestLeak(unittest.TestCase):
 
 
 class TestReadiness(unittest.TestCase):
+    def test_scenario_keys_are_plain(self):
+        # a dated note typed into a key name once made signal_wait_s fall back to its default
+        for f in sorted(pathlib.Path(HARNESS_DIR, "scenarios").glob("*.json")):
+            for k in json.loads(f.read_text()):
+                self.assertRegex(k, r"^[a-z][a-z0-9_]*$", f.name)
+
     def test_shipped_scenarios_pass(self):
         for s in ("paymentFailure", "adFailure", "paymentUnreachable"):
             rc, out = gate(bench.readiness, s)

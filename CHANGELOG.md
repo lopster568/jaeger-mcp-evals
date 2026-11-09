@@ -125,3 +125,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 - Tooling: an oracle failure in a batch's pre-flight no longer aborts the batch. It logs a warning with a prefilled issue link and trials run on the signal wait alone; the manifest's `preflight.oracle_message` records the error and judge.py adds a note line to RESULT.md. `bench.py oracle` still exits 1. No scenario version change.
 - Tooling: the oracle's first call (the search) is compiled to a `find_traces` statement when the served tool takes only `sql` (jaeger#10083); older images get the arguments unchanged. Scenario files are untouched, so no scenario version change: the oracle is a pre-flight check and what PASS means is unchanged.
+
+## 2026-11-10
+
+- recommendationCacheFailure: version 4 unchanged, comparable: yes. `signal_wait_s` 1800 was typed into a key name with a dated note, so bench.py read the 480 s default; the key is plain now and the note is in `notes`. Pre-flight procedure only, not what PASS means. A test now checks every scenario key.
