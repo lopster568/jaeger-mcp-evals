@@ -14,7 +14,8 @@ judge.py:
   - refuses (exit 2) if the two manifests carry different experiment sha256 values, unless
     their manifests agree on CROSS_FIELDS (everything but the arm's image); then it judges
     with the variant experiment's thresholds and says so on the first output line. Else it
-    names the differing fields.
+    names the differing fields. With one experiment sha256 it refuses (exit 2) if the manifests
+    differ on SAME_RUN_FIELDS (scenario, its version and hash, prompt, system prompt).
   - refuses (exit 2) if the baseline batch's arm_pin is not the experiment's
     baseline_arm, or the variant batch's arm_pin is not one of its other arms
     (the two directories were probably swapped or mismatched)
@@ -39,7 +40,8 @@ naming the experiment sha256 and both batch ids, and regenerates records/INDEX.m
 Exit codes:
   0 - EXPERIMENT PASS: every threshold passed.
   1 - EXPERIMENT FAIL: at least one threshold failed.
-  2 - a manifest is missing, the two experiment files differ, the thresholds block is empty,
+  2 - a manifest is missing, the two experiment files differ, the manifests
+      differ on the scenario, prompt or system prompt, the thresholds block is empty,
       or an arm_pin mismatch suggests the wrong batch directories were passed; nothing was judged.
 """
 import json
@@ -99,6 +101,7 @@ def _load_manifest(batch_dir):
 CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",
                 "client", "provider", "model_requested", "effort", "max_turns", "max_budget_usd", "n_per_arm",
                 "fixture_overlay_sha256", "system_prompt_sha256"]
+SAME_RUN_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256", "system_prompt_sha256"]
 
 
 OVERLAY, OVERLAY_NOIMG = "fixture_overlay_sha256", "fixture_overlay_sha256_sans_image"
@@ -153,6 +156,13 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
             return ([
                 "judge: baseline and variant batches ran different experiment files "
                 f"(sha256 {baseline_sha!r} != {variant_sha!r}) and their manifests differ on: "
+                + "; ".join(f"{k} ({a!r} vs {b!r})" for k, a, b in diffs) + "; refusing to compare"
+            ], 2)
+    else:  # arms legitimately differ in image and overlay, but not in what was asked
+        diffs = _cross_diffs(baseline_manifest, variant_manifest, SAME_RUN_FIELDS)
+        if diffs:
+            return ([
+                "judge: baseline and variant batches ran one experiment file but their manifests differ on: "
                 + "; ".join(f"{k} ({a!r} vs {b!r})" for k, a, b in diffs) + "; refusing to compare"
             ], 2)
 

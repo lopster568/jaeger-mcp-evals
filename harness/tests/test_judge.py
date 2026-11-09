@@ -44,7 +44,7 @@ EXPERIMENT = {
 
 
 def write_manifest(batch_dir, arm_pin=None, sha256="deadbeef", oracle=None):
-    manifest = {"scenario": "paymentFailure", "arms": [arm_pin] if arm_pin else ["baseline", "descchange"],
+    manifest = {"scenario": "paymentFailure", "scenario_sha256": "s1", "arms": [arm_pin] if arm_pin else ["baseline", "descchange"],
                 "experiment": {"name": EXPERIMENT["name"], "file": "x.json", "sha256": sha256, "content": EXPERIMENT}}
     if oracle:
         manifest["preflight"] = {"oracle": oracle}
@@ -193,7 +193,7 @@ class JudgeTests(unittest.TestCase):
         """Both batches written with an experiment carrying only these thresholds."""
         exp = dict(EXPERIMENT, thresholds=thresholds)
         for d, arm, k in ((self.baseline_dir, "baseline", base_pass), (self.variant_dir, "descchange", var_pass)):
-            m = {"scenario": "paymentFailure", "experiment": {"name": exp["name"], "file": "x.json", "sha256": "ab", "content": exp},
+            m = {"scenario": "paymentFailure", "scenario_sha256": "s1", "experiment": {"name": exp["name"], "file": "x.json", "sha256": "ab", "content": exp},
                  "arm_pin": {"arm": arm, "expected_image": "x"}}
             with open(os.path.join(d, "manifest.json"), "w") as f:
                 json.dump(m, f)
@@ -255,6 +255,26 @@ class JudgeTests(unittest.TestCase):
         lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
         self.assertEqual(code, 2)
         self.assertIn("wrong batch directory", lines[0])
+
+    def test_same_experiment_refuses_when_the_scenario_or_system_prompt_differs(self):
+        # the arms may differ in overlay and image, never in what the agent was asked
+        for edit in ({"scenario_sha256": "s2"}, {"scenario_version": 2}, {"system_prompt_sha256": "x"}):
+            write_manifest(self.baseline_dir, arm_pin="baseline")
+            write_scores(self.baseline_dir, baseline_rows())
+            write_manifest(self.variant_dir, arm_pin="descchange")
+            mp = os.path.join(self.variant_dir, "manifest.json")
+            m = json.load(open(mp))
+            m.update(edit)
+            json.dump(m, open(mp, "w"))
+            write_scores(self.variant_dir, descchange_rows_all_thresholds_met())
+            lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+            self.assertEqual(code, 2, edit)
+            self.assertIn("one experiment file but their manifests differ on: " + next(iter(edit)), lines[0])
+        m.update(fixture_overlay_sha256="o2", jaeger_image="other")  # overlay and image alone are fine
+        for k in edit:
+            m.pop(k)
+        json.dump(m, open(mp, "w"))
+        self.assertEqual(judge_mod.judge(self.baseline_dir, self.variant_dir)[1], 0)
 
     def _cross_pair(self, variant_edit=None, noimg=None, **kw):
         write_manifest(self.baseline_dir, arm_pin="baseline", sha256="aaa")
