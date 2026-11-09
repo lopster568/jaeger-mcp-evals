@@ -117,7 +117,7 @@ Repeat the OFREP call and expect the new variant; never trust an unconfirmed fli
 cd ~/otel-demo-3.0.0 && cp overlay/demo.flagd.json.pristine src/flagd/demo.flagd.json
 ```
 
-Confirm through OFREP. `bench.py run` restores in a `finally` block and records the result in `restore.json`.
+Confirm through OFREP (the restore check polls it up to 5 times, 2 s apart). `bench.py run` restores in a `finally` block and records the result in `restore.json`.
 
 ## De-flagging
 

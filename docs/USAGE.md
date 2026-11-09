@@ -79,7 +79,7 @@ verbatim except that the long `hypothesis` is elided:
    ```
    > [!TIP]
    > The dry run is free: a read-only pre-flight that prints the plan and seed, never flips the flag or calls a model.
-2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled, restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
+2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled (a cell still running after 30 minutes is killed and counts as a failed cell), restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json
    ```
@@ -104,7 +104,7 @@ verbatim except that the long `hypothesis` is elided:
 `scores.jsonl`), so `measure.sh` stops before judging.
 
 > [!CAUTION]
-> Exit 5 means the flag was not confirmed back at its default. Check the fixture before anything else; this code wins over 4 and 6.
+> Exit 5 means the flag was not confirmed back at its default after polling OFREP for 10 seconds. Check the fixture before anything else; this code wins over 4 and 6.
 
 A batch aborts before the flag flips on:
 

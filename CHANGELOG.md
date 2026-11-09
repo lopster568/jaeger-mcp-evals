@@ -132,3 +132,6 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - Tooling: `bench.py run` exits 7 when a trial failed to score (grader timeout, invalid label); it exited 0, `measure.sh` went on to judge, and the failed trial counted in n and never as PASS.
 - Tooling: `judge.py` with one experiment sha256 (the `measure.sh` case) now refuses when the two manifests differ on scenario, scenario version or hash, prompt or system prompt; only a cross-experiment pair was checked before. Overlay and image may still differ.
 - Tooling: `judge.py` on a cross-experiment pair with no `arm_pin` on the variant batch no longer judges the variant experiment's `baseline_arm` as a test arm.
+- Tooling: bench.py confirms the restore with the same bounded OFREP poll the flip uses (5 reads, 2 s apart) instead of one read, so a slow flagd reload or one failed request no longer exits 5 and discards a paid pair.
+- Tooling: a dead stderr (Ctrl-C under `make measure` killing tee, an ssh drop) no longer stops the harness; the screen write swallows OSError and the flag restore still runs. batch.log is unaffected.
+- Tooling: a cell running longer than `CELL_TIMEOUT_S` (30 minutes; the longest of 780 recorded cells took 236 s) is killed and recorded as failed with exit 124, so a hung agent cannot hold the fault flag on and the 3-consecutive-failures abort applies.
