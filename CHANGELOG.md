@@ -129,3 +129,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-11-10
 
 - recommendationCacheFailure: version 4 unchanged, comparable: yes. `signal_wait_s` 1800 was typed into a key name with a dated note, so bench.py read the 480 s default; the key is plain now and the note is in `notes`. Pre-flight procedure only, not what PASS means. A test now checks every scenario key.
+- Tooling: `bench.py run` exits 7 when a trial failed to score (grader timeout, invalid label); it exited 0, `measure.sh` went on to judge, and the failed trial counted in n and never as PASS.

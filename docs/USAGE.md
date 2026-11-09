@@ -100,7 +100,8 @@ verbatim except that the long `hypothesis` is elided:
 > Step 2 spends money: one agent trial per cell, plus one grader call per new mechanism answer.
 
 `run` exits 0 done; 1 bad file or pre-flight failure; 4 aborted after 3 consecutive cell failures;
-6 interrupted or incomplete.
+6 interrupted or incomplete; 7 a trial failed to score (a grader timeout or invalid label; see the error rows in
+`scores.jsonl`), so `measure.sh` stops before judging.
 
 > [!CAUTION]
 > Exit 5 means the flag was not confirmed back at its default. Check the fixture before anything else; this code wins over 4 and 6.
@@ -144,6 +145,7 @@ Results published in this repo come from one protocol:
   - any trial ran on another model;
   - the fixture changed outside the scenario's declared restarts (the trial scores INVALID);
   - the batch stopped before 10 trials (run exits 4 or 6);
+  - a trial failed to score (run exits 7);
   - the leak check is red (pre-flight aborts, or the trial scores LEAK);
   - a trial has no cached grade (`bench.py verify` fails).
 

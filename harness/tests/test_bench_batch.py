@@ -687,7 +687,7 @@ class TestBatch(BenchCase):
         self.assertIn("ERROR=0 INVALID=0 LEAK=0 stops=error_max_turns:1 read_skill_attempted", blog)
         self.assertIn("stops error_max_turns:1", self.err)
         shutil.rmtree(self.runs)
-        self.assertEqual(self.run_batch(1, FAKE_JUNK="1"), 0, self.err)
+        self.assertEqual(self.run_batch(1, FAKE_JUNK="1"), 7, self.err)
         blog = read(os.path.join(self.batch_dir(), "batch.log"))
         self.assertIn("noskill: n=1 PASS=0 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=1 INVALID=0 LEAK=0 stops=- ", blog)
         self.assertIn("band paymentFailure/noskill: n=1 passes=0", blog)
@@ -795,6 +795,13 @@ class TestBatch(BenchCase):
         b = self.assert_restored()
         self.assertTrue(os.path.isfile(os.path.join(b, "scores.jsonl")))
         self.assertEqual(self.calls(), [])
+
+    def test_a_trial_that_fails_to_score_exits_7(self):
+        with mock.patch.object(bench.score, "score", side_effect=RuntimeError("grader timeout")):
+            self.assertEqual(self.run_batch(1), 7, self.err)
+        self.assertIn("2 of 2 trials failed to score", self.err)
+        rows = bench.read_jsonl(os.path.join(self.batch_dir(), "scores.jsonl"))
+        self.assertTrue(rows and all("grader timeout" in r["error"] for r in rows))
 
     def test_unconfirmed_restore_exits_5(self):
         self.assertEqual(self.run_batch(1, FAKE_FAIL_RESTORE="1"), 5, self.err)

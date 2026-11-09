@@ -23,7 +23,7 @@ run exit codes: 0 done (or dry run / first-only), 1 bad experiment file, pre-fli
 setup failure (nothing ran), 4 aborted after 3 consecutive cell failures, 5 the flag was not
 confirmed back at its default after the restore (check the fixture by hand; wins
 over every other code), 6 interrupted (SIGINT, SIGTERM or SIGHUP) or fewer cells
-ran than planned.
+ran than planned, 7 a trial failed to score (grader or scoring error; the batch ran).
 band exit codes: 0 certified, 2 n < 10 (rank only), 3 pass rate 0 or 1 (read the
 trajectories). leak and readiness: 0 pass, 1 fail, 2 bad input. oracle: 0 pass, 1 fail.
 soak: 0 pass, 5 fail. pack: 0 written, 1 refused (a scan hit or a missing batch).
@@ -1677,6 +1677,11 @@ def run(a, cfg):
     if interrupted or (not a.first_only and st["ran"] < len(plan)):
         log(paint(YELLOW, "bench: ran %d of %d planned cells; batch INCOMPLETE" % (st["ran"], len(plan))))
         return 6
+    failed = sum("error" in s for s in rows)
+    if failed:  # judge.py counts such a row in n and never as PASS, so the pair would read worse than it is
+        log(paint(BOLD_RED, "bench: %d of %d trials failed to score (see the error rows in %s); fix the cause and re-score or re-run before judging"
+                  % (failed, len(rows), shown(os.path.join(bdir, "scores.jsonl")))))
+        return 7
     log.detail("bench: batch complete: %s" % bdir)
     return 0
 
