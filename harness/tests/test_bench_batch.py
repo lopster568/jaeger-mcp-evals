@@ -143,6 +143,8 @@ for e in [
      "usage": {"input_tokens": 10, "output_tokens": 20}, "result": "done", "structured_output": verdict},
 ]:
     print(json.dumps(e))
+if os.environ.get("FAKE_CLAUDE_HANG"):
+    import time; time.sleep(60)
 sys.exit(int(os.environ.get("FAKE_CLAUDE_EXIT", "0")))
 """
 
@@ -740,6 +742,14 @@ class TestBatch(BenchCase):
         self.assertEqual(self.run_batch(3, "--first-only"), 0, self.err)
         self.assertEqual(len(bench.read_jsonl(os.path.join(self.batch_dir(), "cells.jsonl"))), 1)
         self.assertEqual(len(self.calls()), 1)
+
+    def test_hung_cell_is_killed_recorded_failed_and_flag_restored(self):
+        with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
+            self.assertEqual(self.run_batch(3, FAKE_CLAUDE_HANG="1"), 4, self.err)
+        b = self.assert_restored()
+        cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
+        self.assertEqual([(c["failed"], c["trial_exit_code"]) for c in cells], [(True, 124)] * 3)
+        self.assertIn("cell killed after", read(os.path.join(b, "%d-%s" % (cells[0]["order_index"], cells[0]["arm"]), "stderr.txt")))
 
     def test_three_failures_abort_exit_4(self):
         self.assertEqual(self.run_batch(3, FAKE_CLAUDE_EXIT="1"), 4, self.err)

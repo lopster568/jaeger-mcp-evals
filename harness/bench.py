@@ -81,6 +81,10 @@ CLIENTS = ("api", "cli", "codex")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new"]
 TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
+# Wall-clock cap on one cell. --max-turns and --max-budget-usd do not fire while the agent is blocked on
+# a model or MCP call, and the fault flag stays on until every cell is done. The longest of 780 recorded
+# cells took 236 s.
+CELL_TIMEOUT_S = 1800
 BASELINE_LOOKBACK_S = 600
 HISTORY_POLICY = {"cli": {"harness_truncation": "none", "cli_autocompact": "default"},
                   "api": {"harness_truncation": "none", "cli_autocompact": "n/a"},
@@ -1752,6 +1756,12 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                         rc = p.wait(timeout=1)
                         break
                     except subprocess.TimeoutExpired:
+                        if time.monotonic() - t0 > CELL_TIMEOUT_S:
+                            p.kill()
+                            p.wait()
+                            se.write("bench: cell killed after %d s (CELL_TIMEOUT_S)\n" % CELL_TIMEOUT_S)
+                            rc = 124
+                            break
                         tick()
             except BaseException:  # an interrupt must not leave the agent running
                 p.kill()
