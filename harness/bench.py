@@ -1775,8 +1775,11 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
         log.detail("bench: restore cp OK")
     else:
         log(paint(BOLD_RED, "bench: RESTORE FAILED - cp of the pristine flag file did not succeed - MANUAL INTERVENTION NEEDED"))
-    sleep(2)
-    after = ofrep_variant(cfg, flag)
+    for _ in range(5):  # as long as the flip gets: a slow flagd reload or one failed request is not a failed restore
+        sleep(2)
+        after = ofrep_variant(cfg, flag)
+        if after == default_variant:
+            break
     confirmed = after == default_variant
     if confirmed:
         log.detail("bench: OFREP confirms %r back at default (%r)" % (flag, after))

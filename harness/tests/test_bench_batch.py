@@ -808,6 +808,33 @@ class TestBatch(BenchCase):
         r = load(os.path.join(self.batch_dir(), "restore.json"))
         self.assertFalse(r["cp_ok"] or r["default_confirmed"])
 
+    def ofrep_blind_until(self, reads):
+        """An ofrep_variant that reports nothing for the first `reads` reads after the restore cp has run."""
+        real, n = bench.ofrep_variant, {"after_cp": 0}
+
+        def blind(cfg, flag):
+            if "cp overlay/demo.flagd.json.pristine" in read(os.path.join(self.home, "ssh.log")):
+                n["after_cp"] += 1
+                if n["after_cp"] <= reads:
+                    return ""
+            return real(cfg, flag)
+
+        return blind, n
+
+    def test_slow_restore_is_confirmed_by_polling(self):
+        blind, n = self.ofrep_blind_until(2)
+        with mock.patch.object(bench, "ofrep_variant", blind):
+            self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(n["after_cp"], 3)
+        self.assert_restored()
+
+    def test_restore_never_confirmed_exits_5(self):
+        blind, n = self.ofrep_blind_until(99)
+        with mock.patch.object(bench, "ofrep_variant", blind):
+            self.assertEqual(self.run_batch(1), 5, self.err)
+        self.assertEqual(n["after_cp"], 5)
+        self.assertFalse(load(os.path.join(self.batch_dir(), "restore.json"))["default_confirmed"])
+
     def test_interrupt_inside_a_cell_leaves_a_row(self):
         real, n = bench.observe, {"calls": 0}
 
