@@ -104,6 +104,8 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     mcp = json.load(open(sys.argv[sys.argv.index("--mcp-config") + 1]))
     names = ["StructuredOutput"] + (["mcp__jaeger__" + n for n in ("get_critical_path", "get_trace_errors",
                                      "get_trace_topology", "get_services")] if mcp["mcpServers"] else [])
+    if mcp["mcpServers"] and os.environ.get("FAKE_SQL_ONLY"):
+        names.insert(1, "mcp__jaeger__find_traces")
     tools, system, mode = [{"name": n, "input_schema": {}} for n in names], [{"type": "text", "text": "sys"}], os.environ.get("FAKE_PROBE")
     if mode == "extra_tool":
         tools.append({"name": "Bash", "input_schema": {}})
@@ -200,6 +202,7 @@ class Fake(http.server.BaseHTTPRequestHandler):
     served_instructions = None
     oracle_signal = True
     oracle_malformed = False
+    sql_only = False  # tools/list serves find_traces with the jaeger#10083 sql-only schema
     mcp_calls = []
     otlp_posts, otlp_status = [], 200
 
@@ -244,7 +247,7 @@ class Fake(http.server.BaseHTTPRequestHandler):
             if Fake.oracle_malformed:
                 return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": "not-a-dict"})
             fault = self.flags()["paymentFailure"]["defaultVariant"] != "off" and Fake.oracle_signal
-            doc = {"traces": [{"trace_id": "aa11"}, {"trace_id": "bb22"}]} if msg["params"]["name"] == "search_traces" else trace(fault)
+            doc = {"traces": [{"trace_id": "aa11"}, {"trace_id": "bb22"}]} if msg["params"]["name"] in ("search_traces", "find_traces") else trace(fault)
             return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": {"content": [{"type": "text", "text": json.dumps(doc)}]}})
         if msg.get("method") == "notifications/initialized":
             self.send_response(202)
@@ -256,6 +259,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
                               [("Mcp-Session-Id", "s1")])
         served = [{"name": n, "description": Fake.served_descriptions.get(n, "stock wording"), "inputSchema": {}}
                   for n in ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")]
+        if Fake.sql_only:
+            served.append({"name": "find_traces", "description": "stock wording", "inputSchema": {"properties": {"sql": {}}}})
         self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": {"tools": served}})
 
 
@@ -301,7 +306,7 @@ class BenchCase(unittest.TestCase):
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
         Fake.served_instructions = None
-        Fake.oracle_signal, Fake.oracle_malformed = True, False
+        Fake.oracle_signal, Fake.oracle_malformed, Fake.sql_only = True, False, False
         Fake.otlp_posts, Fake.otlp_status = [], 200
         self.env = {"PATH": binp + os.pathsep + os.environ["PATH"], "FAKE_HOME": self.home, "FAKE_IMAGE": STOCK_IMAGE,
                     "FIXTURE_HOST": "127.0.0.1", "FIXTURE_SSH_USER": "tester", "FIXTURE_DEMO_DIR": "otel-demo-3.0.0",
@@ -1161,6 +1166,25 @@ class TestOracle(BenchCase):
         calls = [c for c in Fake.mcp_calls if c[0] == "tools/call"]
         self.assertEqual(calls, [("tools/call", "search_traces", {"service_name": "checkout", "with_errors": True}),
                                  ("tools/call", "get_trace_errors", {"trace_id": "aa11"})])
+
+    def test_sql_only_server_gets_a_statement_and_still_reaches_the_signal(self):
+        Fake.sql_only = True
+        self.flip("100%")
+        self.assertEqual(self.bench("oracle", "paymentFailure"), 0, self.out)
+        stmt = ("SELECT DISTINCT trace_id FROM spans WHERE between(start_time, now() - '1h', now()) "
+                "AND service = 'checkout' AND status = 'error' LIMIT 10")
+        calls = [c for c in Fake.mcp_calls if c[0] == "tools/call"]
+        self.assertEqual(calls, [("tools/call", "find_traces", {"sql": stmt}),
+                                 ("tools/call", "get_trace_errors", {"trace_id": "aa11"})])
+        self.assertIn(stmt, self.out)
+
+    def test_batch_oracle_sends_sql_to_a_sql_only_server(self):
+        Fake.sql_only = True
+        self.env["FAKE_SQL_ONLY"] = "1"
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["oracle"], "PASS")
+        searches = [c for c in Fake.mcp_calls if c[1] == "find_traces"]
+        self.assertTrue(searches and all(set(c[2]) == {"sql"} for c in searches))
 
     def test_fail_without_fault_tries_every_trace(self):
         self.assertEqual(self.bench("oracle", "paymentFailure"), 1, self.out)

@@ -65,6 +65,7 @@ Keys, as in the example above:
   tools reach the signal; an argument `"$trace_id"` expands to one call per trace
   id seen in an earlier call's output, and `"$span_id"` to one call per span id that
   earlier calls for the same trace printed (get_span_details takes at most 20 ids).
+  The first call is the search; its arguments are compiled to a find_traces statement when the served tool takes only `sql`.
   In a batch run's pre-flight an oracle failure is a warning with a prefilled issue link, not an abort:
   the signal wait has already proved the fault is in the store, and the result is recorded as
   `preflight.oracle` (`PASS` or `FAIL`, with `oracle_message`) in the manifest; judge.py notes a FAIL in RESULT.md.

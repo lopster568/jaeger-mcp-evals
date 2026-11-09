@@ -170,34 +170,99 @@ class TestOracleSpanId(unittest.TestCase):
             {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb01"]}, {"trace_id": "bb", "span_ids": ["bbbbbbbbbbbbbb02"]}])
 
 
-class TestOracleRename(unittest.TestCase):
-    def test_search_traces_runs_as_find_traces_when_only_that_is_served(self):
-        from unittest import mock
-        seen = []
+# Schemas as served (runs/*/batch-*/tools.json): 2.20.0 requires service_name; main 5319091a has the
+# structured inputs and sql; main 89279ae26 (jaeger#10083) has sql only.
+S2200 = {"properties": {"service_name": {}, "with_errors": {}}, "required": ["service_name"]}
+S5319 = {"properties": {"service_name": {}, "with_errors": {}, "sql": {}}}
+SQL_ONLY = {"properties": {"sql": {}}}
 
-        class Client:
-            def __init__(self, *a, **k):
-                pass
 
-            def initialize(self):
-                pass
+def run_oracle(served, oracle_calls, scenario_doc=None):
+    from unittest import mock
+    seen = []
 
-            def list_tools(self):
-                return [{"name": "find_traces"}]
+    class Client:
+        def __init__(self, *a, **k):
+            pass
 
-            def call_tool(self, name, args):
-                seen.append(name)
-                return {"is_error": False, "raw": {}, "text": "sig"}
+        def initialize(self):
+            pass
 
-        with tempfile.TemporaryDirectory() as h:
-            os.makedirs(os.path.join(h, "scenarios"))
-            with open(os.path.join(h, "scenarios", "x.json"), "w") as f:
-                json.dump({"signal_regex": "sig", "oracle": [{"tool": "search_traces", "arguments": {}}]}, f)
-            with mock.patch.object(bench, "HARNESS", h), mock.patch.object(bench, "MCPClient", Client), \
-                    mock.patch.object(bench.config, "mcp_url", lambda cfg: "u"):
-                rc, out = gate(bench.oracle, "x", {})
-        self.assertEqual(rc, 0, out)
-        self.assertEqual(seen, ["find_traces"])
+        def list_tools(self):
+            return [{"name": n, "inputSchema": sc} for n, sc in served.items()]
+
+        def call_tool(self, name, args):
+            seen.append((name, args))
+            return {"is_error": False, "raw": {}, "text": "sig"}
+
+    with tempfile.TemporaryDirectory() as h:
+        os.makedirs(os.path.join(h, "scenarios"))
+        with open(os.path.join(h, "scenarios", "x.json"), "w") as f:
+            json.dump({"signal_regex": "sig", "oracle": oracle_calls}, f)
+        with mock.patch.object(bench, "HARNESS", h), mock.patch.object(bench, "MCPClient", Client), \
+                mock.patch.object(bench.config, "mcp_url", lambda cfg: "u"):
+            rc, out = gate(bench.oracle, "x", {})
+    return rc, out, seen
+
+
+def scenario_search(name):
+    with open(os.path.join(os.path.dirname(bench.__file__), "scenarios", name + ".json")) as f:
+        return json.load(f)["oracle"][0]
+
+
+class TestOracleSearchTool(unittest.TestCase):
+    def test_2200_schema_passes_through_to_search_traces(self):
+        call = {"tool": "search_traces", "arguments": {"service_name": "cart", "with_errors": True}}
+        rc, out, seen = run_oracle({"search_traces": S2200}, [call])
+        self.assertEqual((rc, seen), (0, [("search_traces", call["arguments"])]), out)
+
+    def test_5319091a_schema_passes_through_to_find_traces(self):
+        call = {"tool": "search_traces", "arguments": {"service_name": "cart", "with_errors": True}}
+        rc, out, seen = run_oracle({"find_traces": S5319}, [call])
+        self.assertEqual((rc, seen), (0, [("find_traces", call["arguments"])]), out)
+
+    def test_sql_only_schema_sends_one_statement(self):
+        cases = {
+            "cartFailure": "SELECT DISTINCT trace_id FROM spans WHERE between(start_time, now() - '15m', now()) "
+                           "AND service = 'cart' AND status = 'error' LIMIT 10",
+            "recommendationCacheFailure": "SELECT DISTINCT trace_id FROM spans WHERE between(start_time, now() - '5m', now()) "
+                                          "AND service = 'recommendation' AND name = 'get_product_list' LIMIT 100",
+        }
+        for name, want in cases.items():
+            with self.subTest(scenario=name):
+                rc, out, seen = run_oracle({"find_traces": SQL_ONLY}, [scenario_search(name)])
+                self.assertEqual((rc, seen), (0, [("find_traces", {"sql": want})]), out)
+                self.assertIn(want, "\n".join(out))  # the PASS line carries the statement
+
+    def test_unsupported_argument_fails_without_a_call(self):
+        call = {"tool": "search_traces", "arguments": {"service_name": "cart", "attributes": {"a": "b"}}}
+        rc, out, seen = run_oracle({"find_traces": SQL_ONLY}, [call])
+        self.assertEqual((rc, seen), (1, []))
+        self.assertIn("oracle x: FAIL - cannot compile attributes", "\n".join(out))
+
+
+class TestToStatement(unittest.TestCase):
+    HEAD = "SELECT DISTINCT trace_id FROM spans WHERE between(start_time, now() - '%s', now())"
+
+    def test_defaults(self):
+        self.assertEqual(bench.to_statement({}), self.HEAD % "1h" + " LIMIT 10")
+
+    def test_every_supported_key(self):
+        args = {"service_name": "a", "span_name": "b", "with_errors": True, "start_time_min": "-1h30m", "search_depth": 5}
+        self.assertEqual(bench.to_statement(args), self.HEAD % "1h30m" + " AND service = 'a' AND name = 'b' AND status = 'error' LIMIT 5")
+        self.assertNotIn("status", bench.to_statement({"with_errors": False}))
+
+    def test_refusals(self):
+        for args in ({"attributes": {}}, {"duration_min": "1s"}, {"start_time_max": "now"},
+                     {"start_time_min": "2026-11-01T00:00:00Z"}, {"service_name": "o'brien"},
+                     {"span_name": "x'--"}, {"search_depth": 0}, {"search_depth": "10"}):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                bench.to_statement(args)
+
+    def test_statement_shape_is_one_jaeger_accepts(self):
+        # internal/sqlquery/compile_test.go "window only" accepts exactly this head, unaliased
+        self.assertTrue(bench.to_statement({}).startswith(
+            "SELECT DISTINCT trace_id FROM spans WHERE between(start_time, now() - '1h', now())"))
 
 def span(trace_id, name, attrs=()):
     return {"traceId": trace_id, "name": name, "status": {},

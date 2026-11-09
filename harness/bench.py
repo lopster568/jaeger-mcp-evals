@@ -414,6 +414,37 @@ def readiness(scenario, out=print, harness=HARNESS):
     return 0 if ok else 1
 
 
+def to_statement(args):
+    """Compile a structured search_traces call to the find_traces statement (jaeger#10083's mapping).
+    Raises ValueError for an argument the mapping does not cover."""
+    extra = set(args) - {"service_name", "span_name", "with_errors", "start_time_min", "search_depth"}
+    if extra:
+        raise ValueError("cannot compile %s to a find_traces statement" % ", ".join(sorted(extra)))
+    lookback = str(args.get("start_time_min", "-1h"))
+    if not re.fullmatch(r"-(\d+[smh])+", lookback):
+        raise ValueError("cannot compile start_time_min %r to a find_traces statement" % lookback)
+    where = ["between(start_time, now() - '%s', now())" % lookback[1:]]
+    for key, col in (("service_name", "service"), ("span_name", "name")):
+        if key in args:
+            if not isinstance(args[key], str) or "'" in args[key]:
+                raise ValueError("cannot compile %s %r to a find_traces statement" % (key, args[key]))
+            where.append("%s = '%s'" % (col, args[key]))
+    if args.get("with_errors"):
+        where.append("status = 'error'")
+    limit = args.get("search_depth", 10)
+    if type(limit) is not int or limit < 1:
+        raise ValueError("cannot compile search_depth %r to a find_traces statement" % (limit,))
+    return "SELECT DISTINCT trace_id FROM spans WHERE %s LIMIT %d" % (" AND ".join(where), limit)
+
+
+def search_arguments(args, schema):
+    """The arguments for the served search tool: compiled to a statement when it takes only `sql`."""
+    props = (schema or {}).get("properties") or {}
+    if "sql" in props and "service_name" not in props:
+        return {"sql": to_statement(args)}
+    return args
+
+
 def oracle(scenario, cfg, out=print):
     """Run the scenario's scripted MCP calls in order; PASS once their concatenated text
     output matches signal_regex. An argument value "$trace_id" runs that call once per
@@ -433,9 +464,9 @@ def oracle(scenario, cfg, out=print):
     try:
         s = MCPClient(config.mcp_url(cfg), timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
         s.initialize()
-        # jaeger#10073 (2026-11-07) renamed search_traces to find_traces, same arguments; older images keep the old name.
-        served = {t["name"] for t in s.list_tools()}
-        rename = {"search_traces": "find_traces"} if "search_traces" not in served and "find_traces" in served else {}
+        # jaeger#10073 renamed search_traces to find_traces; jaeger#10083 made find_traces take only `sql`.
+        schemas = {t["name"]: t.get("inputSchema") or {} for t in s.list_tools()}
+        search = next((n for n in ("search_traces", "find_traces") if n in schemas), "search_traces")
         for c in calls:
             spec = json.dumps(c["arguments"])
             ids = list(dict.fromkeys(re.findall(r'"trace_id":\s*"([0-9a-fA-F]+)"', text))) if "$trace_id" in spec else [None]
@@ -445,8 +476,12 @@ def oracle(scenario, cfg, out=print):
                 sids = list(dict.fromkeys(re.findall(r"\b[0-9a-f]{16}\b", per_trace.get(tid, "")))) if "$span_id" in s1 else [None]
                 for sid in sids:
                     args = json.loads(s1.replace("$span_id", sid) if sid else s1)
+                    if c["tool"] == "search_traces":
+                        args = search_arguments(args, schemas.get(search, {}))
+                        if "sql" in args:
+                            out("oracle %s: %s sql %s" % (scenario, search, args["sql"]))
                     n += 1
-                    r = s.call_tool(rename.get(c["tool"], c["tool"]), args)
+                    r = s.call_tool(search if c["tool"] == "search_traces" else c["tool"], args)
                     if r["is_error"] and not (r["raw"] or {}).get("isError"):  # transport or JSON-RPC error: stop here
                         raise MCPError(r["text"])
                     text += r["text"] + "\n"
