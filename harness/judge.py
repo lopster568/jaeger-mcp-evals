@@ -171,7 +171,7 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
     if cross:
         baseline_arm = baseline_manifest["experiment"]["content"]["baseline_arm"]
         vpin = (variant_manifest.get("arm_pin") or {}).get("arm")
-        test_arms = [vpin] if vpin else list(exp["arms"])
+        test_arms = [vpin] if vpin else [a for a in exp["arms"] if a != exp["baseline_arm"]]
         lines0 = [f"judge: CROSS-EXPERIMENT comparison: baseline from {baseline_manifest['experiment']['name']} "
                   f"({baseline_sha}), variant from {variant_manifest['experiment']['name']} ({variant_sha}); "
                   "thresholds from the variant's experiment; manifests agree on: " + ", ".join(fields)]

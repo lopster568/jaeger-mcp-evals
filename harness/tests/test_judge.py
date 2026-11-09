@@ -323,6 +323,12 @@ class JudgeTests(unittest.TestCase):
             path = judge_mod.write_result(lines, self.baseline_dir, self.variant_dir, records=rec)
         self.assertIn("compared by hand, not by manifest: reproduced by hand", open(path).read())
 
+    def test_cross_without_variant_arm_pin_leaves_the_baseline_arm_out(self):
+        lines, code = self._cross_pair(lambda m: m.pop("arm_pin"), noimg=("o1", "o1"))
+        self.assertEqual(code, 0)
+        self.assertTrue(any("descchange" in l for l in lines))
+        self.assertFalse(any(l.startswith("arm baseline") for l in lines), lines)
+
     def test_cross_experiment_model_difference_refused(self):
         lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"), noimg=("o1", "o1"))
         self.assertEqual(code, 2)
