@@ -1679,7 +1679,7 @@ def run(a, cfg):
         return 6
     failed = sum("error" in s for s in rows)
     if failed:  # judge.py counts such a row in n and never as PASS, so the pair would read worse than it is
-        log(paint(BOLD_RED, "bench: %d of %d trials failed to score (see the error rows in %s); fix the cause and re-score or re-run before judging"
+        log(paint(BOLD_RED, "bench: %d of %d trials failed to score (see the error rows in %s); fix the cause and re-run the batch before judging"
                   % (failed, len(rows), shown(os.path.join(bdir, "scores.jsonl")))))
         return 7
     log.detail("bench: batch complete: %s" % bdir)
