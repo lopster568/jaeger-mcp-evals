@@ -700,8 +700,11 @@ class Log:
     def screen(self, msg, end="\n"):
         clear = "\r\x1b[K" if self.live_on else ""
         self.live_on = end == ""
-        self.stream.write(clear + (msg if self.color else ANSI.sub("", msg)) + end)
-        self.stream.flush()
+        try:
+            self.stream.write(clear + (msg if self.color else ANSI.sub("", msg)) + end)
+            self.stream.flush()
+        except OSError:  # a dead screen (tee killed by Ctrl-C, ssh dropped) must not stop the restore; batch.log has every line
+            pass
 
     def __call__(self, msg):
         self.screen(msg)

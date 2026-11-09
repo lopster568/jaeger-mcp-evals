@@ -779,6 +779,26 @@ class TestBatch(BenchCase):
                 self.assert_restored()
                 shutil.rmtree(self.runs)
 
+    def test_dead_stderr_at_restore_still_copies_the_flag_back(self):
+        class Dying(io.StringIO):  # tee gone: every write from the Restore section on fails
+            def write(self, s):
+                if "Restore" in s:
+                    self.dead = True
+                if getattr(self, "dead", False):
+                    raise BrokenPipeError
+                return super().write(s)
+
+            def flush(self):
+                if getattr(self, "dead", False):
+                    raise BrokenPipeError
+
+        with mock.patch.dict(os.environ, self.env), mock.patch.object(bench, "sleep"), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(Dying()):
+            rc = bench.main(["run", self.knob()])
+        self.assertEqual(rc, 0)
+        b = self.assert_restored()
+        self.assertIn("flag paymentFailure back at default", read(os.path.join(b, "batch.log")))
+
     def test_interrupt_during_fault_wait_scores_and_exits_6(self):
         calls = {"n": 0}
 
