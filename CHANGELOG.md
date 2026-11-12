@@ -2,10 +2,6 @@
 
 Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS.md, Changelog rule).
 
-## 2026-11-13
-
-- Docs only: results page and README now lead with the merged #10068 pair on main 5319091a. No scenario or scoring change.
-
 ## 2026-09-25
 
 - paymentFailure: version none to 1, comparable: yes. First version tag, no scoring change.
@@ -145,3 +141,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - Tooling: FIXTURE_HOST_ONLY=1 in fixture.env makes preflight, `make setup` and `make up` work on a fixture host with no claude CLI (the agent-side checks still run where the agent runs, and `make smoke` ignores the flag). No scenario or scoring change.
 - Tooling: `make up` retries a failed `docker compose pull` up to 4 times with a 10 s, 20 s, 30 s backoff, one line per failed attempt, before it fails. No scenario or scoring change.
 - Tooling: `fixture/forward.sh SSH_TARGET` keeps the ssh port forwards to a remote fixture alive (restart loop, ExitOnForwardFailure, keepalives, UTC-stamped restart log); `--check` probes each forwarded port once for gating a batch. No scenario or scoring change.
+- Docs only: results page and README now lead with the merged #10068 pair on main 5319091a. No scenario or scoring change.
