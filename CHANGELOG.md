@@ -143,3 +143,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-11-13
 
 - Tooling: FIXTURE_HOST_ONLY=1 in fixture.env makes preflight, `make setup` and `make up` work on a fixture host with no claude CLI (the agent-side checks still run where the agent runs, and `make smoke` ignores the flag). No scenario or scoring change.
+- Tooling: `make up` retries a failed `docker compose pull` up to 4 times with a 10 s, 20 s, 30 s backoff, one line per failed attempt, before it fails. No scenario or scoring change.

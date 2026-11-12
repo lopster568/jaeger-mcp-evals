@@ -30,6 +30,10 @@ if a[:2] == ["version", "--format"]: print("29.8.1")
 elif a[:3] == ["compose", "version", "--short"]: print("5.6.0")
 elif a[:2] == ["image", "inspect"]: sys.exit(0 if a[2] in os.environ.get("FAKE_PRESENT", "") else 1)
 elif "config" in a: print(json.dumps({"services": {n: {"image": i} for n, i in services.items()}}))
+elif "pull" in a and os.environ.get("FAKE_PULL_FAILS") and not os.path.exists(os.environ["FAKE_PULL_FAILS"] + "x"):
+    f = os.environ["FAKE_PULL_FAILS"]; n = int(open(f).read()) if os.path.exists(f) else 0; open(f, "w").write(str(n + 1))
+    if n >= 2: open(f + "x", "w").close()
+    print("Error: dial tcp: i/o timeout"); sys.exit(1)
 elif "pull" in a:
     for n in a[a.index("pull") + 1:]: print(" %%s Pulling" %% n); print(" abc123 Pull complete"); print(" %%s Pulled" %% n)
 elif "up" in a and "phoenix" not in a:
@@ -222,6 +226,30 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertIn("ok    Demo         OpenTelemetry Demo 3.0.0, overlay up to date", text)
         self.assertIn("ok    Images       3 present", text)
+
+    def test_pull_is_retried_then_succeeds(self):
+        with mock.patch.object(fc, "PULL_BACKOFF_S", 0):
+            rc, text = self.setup_run(FAKE_PULL_FAILS=str(self.t / "n"))
+        self.assertEqual(rc, 0, text)
+        self.assertIn("..    Images       pull attempt 1 of 4 failed, retrying in 0s", text)
+        self.assertIn("..    Images       pull attempt 2 of 4 failed, retrying in 0s", text)
+        self.assertIn("..    Images       pull attempt 3 of 4 failed, retrying in 0s", text)
+        self.assertIn("ok    Images       3 pulled", text)
+
+    def test_pull_gives_up_after_the_last_try(self):
+        (self.t / "n").write_text("-99")  # never reaches the success count
+        with mock.patch.object(fc, "PULL_BACKOFF_S", 0), mock.patch.object(fc, "PULL_TRIES", 2):
+            rc, text = self.setup_run(FAKE_PULL_FAILS=str(self.t / "n"))
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL  Images       docker compose pull failed", text)
+
+    def test_host_only_setup_skips_claude_and_waits_on_the_fixture(self):
+        (self.t / "bin" / "claude").unlink()
+        rc, text = self.setup_run(FIXTURE_HOST_ONLY="1", JAEGER_UI_PORT=self.env["PHOENIX_PORT"],
+                                  JAEGER_BASE_PATH="", MIN_CONTAINERS="3")
+        self.assertEqual(rc, 0, text)
+        self.assertRegex(text, r"ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+\n")
+        self.assertIn("ok    Ready        3 containers running, Jaeger answers", text)
 
     def test_compose_up_failure_shows_log_tail(self):
         rc, text = self.setup_run(FAKE_UP_RC="1")

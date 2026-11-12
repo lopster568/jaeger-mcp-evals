@@ -44,6 +44,7 @@ OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/com
            "jaeger-config-main.yml": "overlay/jaeger-config-main.yml", "otelcol-config-extras.yml": "overlay/otelcol-config-extras.yml"}
 COMPOSE = ["docker", "compose", "--env-file", ".env", "--env-file", ".env.override", "-f", "compose.yaml",
            "-f", "compose.full.yaml", "-f", "compose.observability.yaml", "-f", "overlay/compose.overlay.yaml"]
+PULL_TRIES, PULL_BACKOFF_S = 4, 10  # registry timeouts (ghcr.io through a NAT) pass on a retry; pulls resume per layer
 READY_BUDGET_S, READY_SLEEP_S, THRASH_STOP = 600, 30, 3  # the ready wait: 10 min, a dry run every 30 s
 GOTCHAS = ("fixture/FIXTURE.md, Gotchas", "known fixture failures and fixes")
 NAME_W = 13
@@ -275,8 +276,13 @@ def images(d):
             st.text = "pulling %d of %d" % (len(pulled), len(missing))
 
     st.text = "pulling %d image%s" % (len(missing), "s" if len(missing) > 1 else "")
-    rc, _ = sh(COMPOSE[:2] + ["--progress", "plain"] + COMPOSE[2:] + ["pull"]
-               + sorted(n for n, i in services.items() if i in missing), cwd=d, on_line=count)
+    for attempt in range(1, PULL_TRIES + 1):
+        rc, _ = sh(COMPOSE[:2] + ["--progress", "plain"] + COMPOSE[2:] + ["pull"]
+                   + sorted(n for n, i in services.items() if i in missing), cwd=d, on_line=count)
+        if rc == 0 or attempt == PULL_TRIES:
+            break
+        out(line("..", "Images", "pull attempt %d of %d failed, retrying in %ds" % (attempt, PULL_TRIES, PULL_BACKOFF_S * attempt)))
+        time.sleep(PULL_BACKOFF_S * attempt)
     must(rc, "docker compose pull")
     present = len(want) - len(missing)
     st.ok("%d pulled" % len(missing) + (sep() + "%d present" % present if present else ""))
