@@ -2,7 +2,7 @@
 
 A harness for evaluating the MCP tools and skills Jaeger serves to AI agents, as [jaegertracing/jaeger#9135](https://github.com/jaegertracing/jaeger/issues/9135) asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
 
-**Status:** six scenarios, one pair each on Jaeger main. A skill change took claude-sonnet-5-5 from 0/10 to 7/10 PASS on recommendationCacheFailure (p = 0.003, n=10 per arm), with no PASS count lower on the other five. See the [main results page](docs/results/2026-11-skill-change-on-main.md), the earlier [2.20.0 page](docs/results/2026-09-recommendation-cache.md) and [records/INDEX.md](records/INDEX.md).
+**Status:** a skill change took claude-sonnet-5-5 from 0/10 to 10/10 PASS on recommendationCacheFailure (p = 1.1e-5, n=10 per arm, Jaeger main 5319091a), and was merged as [jaegertracing/jaeger#10068](https://github.com/jaegertracing/jaeger/pull/10068). Six scenarios, one pair each, were measured earlier on main d22c65b9: see the [main results page](docs/results/2026-11-skill-change-on-main.md), the [2.20.0 page](docs/results/2026-09-recommendation-cache.md) and [records/INDEX.md](records/INDEX.md).
 
 ```mermaid
 flowchart LR

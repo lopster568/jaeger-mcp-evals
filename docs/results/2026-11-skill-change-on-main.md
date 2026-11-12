@@ -2,6 +2,16 @@
 
 Two Gotcha bullets in the built-in skills took claude-sonnet-5-5 from 0/10 to 7/10 PASS on recommendationCacheFailure on images built from Jaeger main d22c65b9 (two-sided Fisher p = 0.003, n=10 per arm, model confirmed on 20 of 20 trials). On the other five scenarios no arm has a lower PASS count with the change. The protocol is in [docs/USAGE.md](../USAGE.md#protocol).
 
+This page is the earlier change, with the rule in both the sub-skill and the root SKILL.md, on Jaeger main d22c65b9. What upstream merged is the sub-skill copy alone, measured on a later build in the first section below.
+
+## As merged: the sub-skill copy alone on main 5319091a
+
+| Scenario | Stock main PASS | Change PASS | 95% CI (stock, change) | p | Calls (stock, change) | Cost USD (stock, change) |
+|---|---|---|---|---|---|---|
+| recommendationCacheFailure | [0/10](../../records/measure-recommendationCacheFailure-6aee67e4/batch-20261107T181046Z/) (10 PARTIAL) | [10/10](../../records/measure-recommendationCacheFailure-6aee67e4/batch-20261107T182513Z/) | [0.00, 0.28], [0.72, 1.00] | 1.1e-5 | 11, 22.5 | 0.70, 1.83 |
+
+Judge result: [RESULT.md](../../records/measure-recommendationCacheFailure-6aee67e4/RESULT.md), EXPERIMENT PASS against the pre-set rule of two-sided Fisher p < 0.05, n=10 per arm, claude-sonnet-5-5 on Claude Code CLI 2.1.285 at effort high. Between d22c65b9 and 5319091a upstream renamed search_traces to find_traces ([#10073](https://github.com/jaegertracing/jaeger/pull/10073)), added find_spans ([#9643](https://github.com/jaegertracing/jaeger/pull/9643)) and reworded the server instructions. On 5319091a the agent opens error-root-cause/SKILL.md on its own: it was read in 10 of 10 trials in both arms, so the index copy was dropped. This pair, one Gotcha bullet in the sub-skill plus find_traces in its allowed-tools, is what [jaegertracing/jaeger#10068](https://github.com/jaegertracing/jaeger/pull/10068) merged on 2026-11-08. The other five scenarios were not re-run on this build; the no-regression check below is for both copies on d22c65b9.
+
 ## The change
 
 The bullet measured on 2.20.0 in [2026-09-recommendation-cache.md](2026-09-recommendation-cache.md), cherry-picked onto main, plus the same rule as a Gotchas bullet in the root SKILL.md (14 insertions, 1 deletion, two files):

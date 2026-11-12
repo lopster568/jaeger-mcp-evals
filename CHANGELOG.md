@@ -2,6 +2,10 @@
 
 Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS.md, Changelog rule).
 
+## 2026-11-13
+
+- Docs only: results page and README now lead with the merged #10068 pair on main 5319091a. No scenario or scoring change.
+
 ## 2026-09-25
 
 - paymentFailure: version none to 1, comparable: yes. First version tag, no scoring change.
