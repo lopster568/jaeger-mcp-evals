@@ -175,3 +175,9 @@ Set `FIXTURE_SSH_USER` and `FIXTURE_HOST` in fixture.env to run the demo on anot
 with key-based ssh. Every command in this page then runs over ssh from the harness, with
 `FIXTURE_DEMO_DIR` relative to that user's home, files are copied with scp, and `localhost`
 in the health checks becomes `FIXTURE_HOST`.
+
+### Remote layout
+
+On the fixture host (clone this repo there too), set `FIXTURE_HOST_ONLY=1` and leave `FIXTURE_SSH_USER` empty in fixture.env, then run `make fixture`, `make up` and optionally `make phoenix`. `FIXTURE_HOST_ONLY=1` skips the claude checks in preflight and makes `make up` wait on the fixture alone (`MIN_CONTAINERS` running, Jaeger answering) instead of on bench.py's pre-flight, so a host without the Claude Code CLI does not loop for 10 minutes.
+On the agent machine (the one with the Claude Code CLI, logged in), set `FIXTURE_HOST` to the host (or to a loopback alias for a port forward), `FIXTURE_SSH_USER` to the ssh user, and `FIXTURE_HOST_ONLY=0`. `bench.py run` and `make smoke` enforce the claude checks there; `bench.py run ... --dry-run` is the readiness check for the whole chain.
+Both machines need the same `JAEGER_UI_PORT`, `OFREP_PORT` and `PHOENIX_PORT`.

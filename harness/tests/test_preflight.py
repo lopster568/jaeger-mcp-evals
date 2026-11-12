@@ -21,7 +21,7 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True):
+    def run_script(self, port, jaeger, logged_in=True, host_only=""):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
                 shim = os.path.join(d, name)
@@ -29,7 +29,7 @@ class Preflight(unittest.TestCase):
                 os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%d:16686"\n' % port)
-            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "")
+            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only)
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
 
     def test_busy_port_fails_unless_stack_is_ours(self):
@@ -44,6 +44,10 @@ class Preflight(unittest.TestCase):
             self.assertEqual(ok.returncode, 0)
             self.assertEqual(ok.stdout, "")  # silent on success; make prints the Tools line
         self.assertEqual(self.run_script(port, jaeger=False).returncode, 0)  # free again
+
+    def test_host_only_skips_the_claude_checks(self):
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="1").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="0").returncode, 1)
 
     def test_logged_out_claude_fails(self):
         r = self.run_script(1, jaeger=False, logged_in=False)

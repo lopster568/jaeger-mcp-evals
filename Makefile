@@ -1,5 +1,6 @@
 # Shortcuts for fixture/FIXTURE.md, which stays the manual. Local mode only: the demo runs
 # on this machine. With a remote fixture host, run these targets on that host.
+# On a fixture host with no claude CLI set FIXTURE_HOST_ONLY=1 in fixture.env (FIXTURE.md, Remote host).
 # Settings come from fixture.env, then fixture.env.example; an environment variable wins.
 # The steps live in harness/fixture_cli.py; fixture/preflight.sh runs first, before any Python.
 
@@ -41,7 +42,7 @@ fixture up phoenix down clean test:
 
 # Makes ONE paid agent call (Claude Code CLI, claude-sonnet-5-5, effort high, budget cap in the experiment file).
 smoke:
-	@$(PREFLIGHT) && $(CLI) smoke
+	@export FIXTURE_HOST_ONLY=0; $(PREFLIGHT) && $(CLI) smoke
 
 # PAID: builds two images, swaps the fixture's jaeger twice and runs 2 x 10 trials; asks first (harness/measure.sh).
 measure:

@@ -139,3 +139,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - Tooling: bench.py confirms the restore with the same bounded OFREP poll the flip uses (5 reads, 2 s apart) instead of one read, so a slow flagd reload or one failed request no longer exits 5 and discards a paid pair.
 - Tooling: a dead stderr (Ctrl-C under `make measure` killing tee, an ssh drop) no longer stops the harness; the screen write swallows OSError and the flag restore still runs. batch.log is unaffected.
 - Tooling: a cell running longer than `CELL_TIMEOUT_S` (30 minutes; the longest of 780 recorded cells took 236 s) is killed and recorded as failed with exit 124, so a hung agent cannot hold the fault flag on and the 3-consecutive-failures abort applies.
+
+## 2026-11-13
+
+- Tooling: FIXTURE_HOST_ONLY=1 in fixture.env makes preflight, `make setup` and `make up` work on a fixture host with no claude CLI (the agent-side checks still run where the agent runs, and `make smoke` ignores the flag). No scenario or scoring change.

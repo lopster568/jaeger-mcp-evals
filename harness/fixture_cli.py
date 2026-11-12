@@ -196,12 +196,17 @@ def first_token(argv):
         return "?"
 
 
-def tools():
+def host_only(cfg):
+    return cfg.get("FIXTURE_HOST_ONLY") == "1"
+
+
+def tools(cfg):
     mm = lambda v: ".".join(v.lstrip("v").split(".")[:2])
     versions = ("docker " + mm(first_token(["docker", "version", "--format", "{{.Server.Version}}"])),
                 "compose " + mm(first_token(["docker", "compose", "version", "--short"])),
-                "python %d.%d" % sys.version_info[:2], "claude " + first_token(["claude", "--version"]))
-    out(line("ok", "Tools", sep().join(versions) + ", logged in"))
+                "python %d.%d" % sys.version_info[:2]) + (
+                () if host_only(cfg) else ("claude " + first_token(["claude", "--version"]),))
+    out(line("ok", "Tools", sep().join(versions) + ("" if host_only(cfg) else ", logged in")))
 
 
 def demo_dir(cfg):
@@ -367,6 +372,26 @@ def ready(cfg):
         time.sleep(READY_SLEEP_S)
 
 
+def ready_host(cfg):
+    """FIXTURE_HOST_ONLY: no agent here, so wait on the fixture alone (MIN_CONTAINERS running, Jaeger answering);
+    bench.py's pre-flight, which needs claude, runs on the agent machine."""
+    st, why = Step("Ready", "waiting for the fixture"), ""
+    while True:
+        n = len(sh(["docker", "ps", "-q"], merge=False)[1])
+        try:
+            with urllib.request.urlopen(config.jaeger_base(dict(cfg, FIXTURE_HOST="localhost")) + "/", timeout=5):
+                why = "%d of %s containers" % (n, cfg["MIN_CONTAINERS"]) if n < int(cfg["MIN_CONTAINERS"]) else ""
+        except OSError:
+            why = "Jaeger not answering"
+        if not why:
+            st.ok("%d containers running, Jaeger answers" % n)
+            return
+        if time.monotonic() - st.t0 + READY_SLEEP_S > READY_BUDGET_S:
+            raise Failed("gave up after %s: %s" % (st.elapsed(), why), [], [("docker compose ps -a", "which container is not up")])
+        st.text = why
+        time.sleep(READY_SLEEP_S)
+
+
 def phoenix(cfg, d):
     """FIXTURE.md, Trajectory store. Phoenix takes one to two minutes to answer."""
     st = Step("Phoenix", "starting")
@@ -476,7 +501,7 @@ def main(argv=None):
         if cmd != "tools":
             header(cmd)
         if cmd in ("setup", "tools", "smoke"):
-            tools()
+            tools(cfg)
         if cmd == "smoke":
             smoke(cfg)
         if cmd in ("down", "clean"):
@@ -486,7 +511,7 @@ def main(argv=None):
         if cmd in ("setup", "up"):
             d = demo_dir(cfg)
             containers(d, images(d))
-            ready(cfg)
+            (ready_host if host_only(cfg) else ready)(cfg)
         if cmd in ("setup", "phoenix"):
             phoenix(cfg, demo_dir(cfg))
         if cmd == "setup":
