@@ -41,7 +41,7 @@ SMOKE_SIZE = "about 50k tokens"
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",
            "jaeger-config.yml": "overlay/jaeger-config.yml",
-           "jaeger-config-main.yml": "overlay/jaeger-config-main.yml", "otelcol-config-extras.yml": "overlay/otelcol-config-extras.yml"}
+           "otelcol-config-extras.yml": "overlay/otelcol-config-extras.yml"}
 COMPOSE = ["docker", "compose", "--env-file", ".env", "--env-file", ".env.override", "-f", "compose.yaml",
            "-f", "compose.full.yaml", "-f", "compose.observability.yaml", "-f", "overlay/compose.overlay.yaml"]
 PULL_TRIES, PULL_BACKOFF_S = 4, 10  # give up after PULL_TRIES attempts in a row with no new image; pulls resume per layer

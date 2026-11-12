@@ -1,18 +1,17 @@
 # The fixture
 
-OpenTelemetry Demo 3.0.0 (tag `3.0.0`, commit `1755859a`) with Jaeger 2.20.0 in place of the demo's 2.19.0, since 2.20.0 is the first release serving MCP tools in-process (`jaeger_query.ai.enable_mcp`) with the built-in skills. MCP endpoint: `http://localhost:16686/jaeger/ui/api/ai/mcp/` (streamable HTTP, 9 tools including `read_skill`).
+OpenTelemetry Demo 3.0.0 (tag `3.0.0`, commit `1755859a`) with Jaeger 2.23.0 (the bootstrap pin, `jaeger_query.ai.mcp: {}`) in place of the demo's 2.19.0; every image `make measure` builds from a main-lineage checkout takes the same config. MCP endpoint: `http://localhost:16686/jaeger/ui/api/ai/mcp/` (streamable HTTP, 9 tools including `read_skill`).
 Faults are the demo's own feature flags in `src/flagd/demo.flagd.json`, the only file a run edits.
 By default the demo runs on this machine and every command below runs locally; for a separate host see Remote host.
 The top-level Makefile runs Install (`make fixture`), Bring up (`make up`) and the trajectory store (`make phoenix`) for the local case; `make setup` runs all three.
 
-## The five overlay files
+## The four overlay files
 
 | File here | Goes to (in the demo checkout) | What it changes |
 |---|---|---|
-| `env.override` | `.env.override` | Pins `DEMO_VERSION=3.0.0` (the demo's `.env` leaves it at `latest`) and `JAEGERTRACING_IMAGE=quay.io/jaegertracing/jaeger:2.20.0` |
-| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd); mounts the Jaeger config named by `JAEGER_CONFIG_FILE` (default `jaeger-config.yml`) and the collector config below; higher memory limits for product-catalog, checkout, payment, astronomy-db, load-generator, ad, quote, fraud-detection, flagd; switches off six unused services (below) |
-| `jaeger-config.yml` | `overlay/jaeger-config.yml` | The demo's `src/jaeger/config.yml` plus `jaeger_query.ai.enable_mcp: true` |
-| `jaeger-config-main.yml` | `overlay/jaeger-config-main.yml` | The same with `ai: mcp: {}` in place of `enable_mcp`, for images built from Jaeger main, which reject `enable_mcp` |
+| `env.override` | `.env.override` | Pins `DEMO_VERSION=3.0.0` (the demo's `.env` leaves it at `latest`) and `JAEGERTRACING_IMAGE=quay.io/jaegertracing/jaeger:2.23.0` |
+| `compose.overlay.yaml` | `overlay/compose.overlay.yaml` | Fixed host ports (16686 Jaeger, 8013 and 8016 flagd); mounts `jaeger-config.yml` and the collector config below; higher memory limits for product-catalog, checkout, payment, astronomy-db, load-generator, ad, quote, fraud-detection, flagd; switches off six unused services (below) |
+| `jaeger-config.yml` | `overlay/jaeger-config.yml` | The demo's `src/jaeger/config.yml` plus `jaeger_query.ai.mcp: {}` |
 | `otelcol-config-extras.yml` | `overlay/otelcol-config-extras.yml` | Fixed `memory_limiter` limit (the percentage form can crash the collector at start on some Docker hosts), the de-flagging processors, and no exporters or extension for the six switched-off services |
 
 `fixture_overlay_sha256` in every run record hashes these files as mounted (`sha256sum overlay/* .env.override`), so leave their bytes alone; old comments in them do not affect behaviour.
@@ -37,7 +36,7 @@ git rev-parse HEAD      # starts with 1755859a
 mkdir overlay
 cp <this repo>/fixture/env.override .env.override
 cp <this repo>/fixture/compose.overlay.yaml <this repo>/fixture/jaeger-config.yml \
-   <this repo>/fixture/jaeger-config-main.yml <this repo>/fixture/otelcol-config-extras.yml overlay/
+   <this repo>/fixture/otelcol-config-extras.yml overlay/
 cp src/flagd/demo.flagd.json overlay/demo.flagd.json.pristine
 ```
 
@@ -47,7 +46,7 @@ fixture.env names the pristine copy `FIXTURE_PRISTINE_FLAG_FILE`.
 
 ```
 cp fixture/env.override ~/otel-demo-3.0.0/.env.override
-cp fixture/compose.overlay.yaml fixture/jaeger-config.yml fixture/jaeger-config-main.yml fixture/otelcol-config-extras.yml ~/otel-demo-3.0.0/overlay/
+cp fixture/compose.overlay.yaml fixture/jaeger-config.yml fixture/otelcol-config-extras.yml ~/otel-demo-3.0.0/overlay/
 (cd ~/otel-demo-3.0.0 && sha256sum overlay/* .env.override)
 ```
 
@@ -143,9 +142,9 @@ docker compose --env-file .env --env-file .env.override \
   up -d --no-deps --force-recreate jaeger
 ```
 
-An image built from Jaeger main also needs the line `JAEGER_CONFIG_FILE=jaeger-config-main.yml` in `.env.override` before the `up`; remove it when switching back to a 2.20.0 image, which keeps `jaeger-config.yml`. `make fixture` rewrites `.env.override`, so redo both after it.
+`make fixture` rewrites `.env.override`, so redo the swap after it.
 
-Switch back with `quay.io/jaegertracing/jaeger:2.20.0`. `bench.py run` reads the running image via `docker inspect jaeger`, and the arms record different `fixture_overlay_sha256` by design.
+Switch back with `quay.io/jaegertracing/jaeger:2.23.0`. `bench.py run` reads the running image via `docker inspect jaeger`, and the arms record different `fixture_overlay_sha256` by design.
 Either direction empties the trace store: let the load generator refill it (or run `bench.py soak`) before a batch.
 
 ## Build a variant
@@ -155,7 +154,7 @@ bash fixture/build-variant.sh <experiment-name>            # local steps only
 bash fixture/build-variant.sh <experiment-name> --remote   # then build in the fixture's Docker
 ```
 
-Needs Go and a Jaeger checkout at `JAEGER_SRC` with branch `evals/desc-change` cut from `v2.20.0`.
+Needs Go and a Jaeger checkout at `JAEGER_SRC` with branch `evals/desc-change` cut from a main-lineage commit (a 2.20.0 build no longer boots on this fixture).
 It applies `harness/experiments/descriptions/desc-change.json` via `apply-descriptions.py` (refuses a `status` containing `DRAFT`), commits, and builds a static linux/amd64 binary.
 `--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`.
 It never restarts a running container. Exit codes: 0 built and recorded, 1 refused or a git step failed, 2 local build failed, 3 stopped after the local build, 4 fixture step failed.
