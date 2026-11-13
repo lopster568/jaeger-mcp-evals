@@ -17,7 +17,7 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | emailMemoryLeak | bucketed | PASS | 3 | 20 |
 | paymentFailure | yes | PASS | 4 | 40 |
 | paymentUnreachable | yes | PASS | 4 | 21 |
-| recommendationCacheFailure | bucketed | PASS | 16 | 160 |
+| recommendationCacheFailure | bucketed | PASS | 18 | 180 |
 
 ## Batches
 
@@ -55,6 +55,8 @@ cells scored count manifest.json/scores.jsonl under records/ for that scenario.
 | [v1-main-d22c65b9-emailMemoryLeak/batch-20261106T035241Z](v1-main-d22c65b9-emailMemoryLeak/batch-20261106T035241Z/) | 2026-11-06 | emailMemoryLeak | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:main-d22c65b9-v1-403dc025 | v1-main-d22c65b9-emailMemoryLeak | variant 10/0/0/0/0/0 | variant 3 | 5 |
 | [measure-recommendationCacheFailure-6aee67e4/batch-20261107T181046Z](measure-recommendationCacheFailure-6aee67e4/batch-20261107T181046Z/) | 2026-11-07 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:measure-base-5319091a | measure-recommendationCacheFailure-6aee67e4 | baseline 0/10/0/0/0/0 | baseline 3 | 5 |
 | [measure-recommendationCacheFailure-6aee67e4/batch-20261107T182513Z](measure-recommendationCacheFailure-6aee67e4/batch-20261107T182513Z/) | 2026-11-07 | recommendationCacheFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:measure-change-6aee67e4 | measure-recommendationCacheFailure-6aee67e4 | variant 10/0/0/0/0/0 | variant 3 | 5 |
+| [measure-recommendationCacheFailure-b6ad85f8/batch-20261113T054023Z](measure-recommendationCacheFailure-b6ad85f8/batch-20261113T054023Z/) | 2026-11-13 | recommendationCacheFailure | baseline 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:measure-base-3df0f610 | measure-recommendationCacheFailure-b6ad85f8 | baseline 2/8/0/0/0/0 | baseline 0 | 5 |
+| [measure-recommendationCacheFailure-b6ad85f8/batch-20261113T055853Z](measure-recommendationCacheFailure-b6ad85f8/batch-20261113T055853Z/) | 2026-11-13 | recommendationCacheFailure | variant 10 | cli claude-sonnet-5-5 | claude-sonnet-5-5 | high | 2.1.285 (Claude Code) | jaeger-mcp-evals/jaeger:measure-change-b6ad85f8 | measure-recommendationCacheFailure-b6ad85f8 | variant 10/0/0/0/0/0 | variant 3 | 5 |
 
 ## Results
 
@@ -63,6 +65,7 @@ One row per records/<experiment>/RESULT.md, the last `harness/judge.py` answer f
 | experiment | verdict | result |
 |---|---|---|
 | measure-recommendationCacheFailure-6aee67e4 | EXPERIMENT PASS | [RESULT.md](measure-recommendationCacheFailure-6aee67e4/RESULT.md) |
+| measure-recommendationCacheFailure-b6ad85f8 | EXPERIMENT PASS | [RESULT.md](measure-recommendationCacheFailure-b6ad85f8/RESULT.md) |
 | skill-callee-down-cli55 | EXPERIMENT PASS | [RESULT.md](skill-callee-down-cli55/RESULT.md) |
 | skill-callee-down-main238 | EXPERIMENT FAIL | [RESULT.md](skill-callee-down-main238/RESULT.md) |
 | skill-callee-down-mainskill | EXPERIMENT PASS | [RESULT.md](skill-callee-down-mainskill/RESULT.md) |

@@ -1,0 +1,41 @@
+{
+  "leak": "PASS",
+  "readiness": "PASS",
+  "containers": 22,
+  "baseline_traces": 4,
+  "fixture_leak_baseline": "PASS",
+  "fixture_leak_under_fault": "PASS",
+  "oracle": "PASS",
+  "oracle_message": "PASS - /demo\\.product\\.count\"(?:,\\s*\"type\":\\s*\"int64\",\\s*\"value\"|,\\s*\"value\":\\s*\\{\\s*\"intValue\")?:\\s*\"?\\d{7,}/ reached at call 170: get_span_details {\"trace_id\": \"98c551ef16b268fa3364ae41ba44d69f\", \"span_ids\": [\"34a3149b918e953c\"]}",
+  "client": null,
+  "client_version": "PASS",
+  "sandbox_probe": {
+    "result": "PASS",
+    "tools": {
+      "baseline": [
+        "StructuredOutput",
+        "mcp__jaeger__find_spans",
+        "mcp__jaeger__find_traces",
+        "mcp__jaeger__get_critical_path",
+        "mcp__jaeger__get_service_dependencies",
+        "mcp__jaeger__get_services",
+        "mcp__jaeger__get_span_details",
+        "mcp__jaeger__get_span_names",
+        "mcp__jaeger__get_trace_errors",
+        "mcp__jaeger__get_trace_topology",
+        "mcp__jaeger__read_skill"
+      ]
+    }
+  },
+  "leak_rendered": "PASS",
+  "thrash": {
+    "bi_mean_non_first": 1,
+    "loadavg": "0.70 0.89 0.68 1/1631 54725"
+  },
+  "restarted_before_run": {
+    "containers": {
+      "recommendation": "2026-11-13T05:40:09Z"
+    },
+    "jaeger": "2026-11-13T05:40:13Z"
+  }
+}

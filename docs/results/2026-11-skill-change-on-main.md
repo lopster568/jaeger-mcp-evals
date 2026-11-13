@@ -12,6 +12,16 @@ This page is the earlier change, with the rule in both the sub-skill and the roo
 
 Judge result: [RESULT.md](../../records/measure-recommendationCacheFailure-6aee67e4/RESULT.md), EXPERIMENT PASS against the pre-set rule of two-sided Fisher p < 0.05, n=10 per arm, claude-sonnet-5-5 on Claude Code CLI 2.1.285 at effort high. Between d22c65b9 and 5319091a upstream renamed search_traces to find_traces ([#10073](https://github.com/jaegertracing/jaeger/pull/10073)), added find_spans ([#9643](https://github.com/jaegertracing/jaeger/pull/9643)) and reworded the server instructions. On 5319091a the agent opens error-root-cause/SKILL.md on its own: it was read in 10 of 10 trials in both arms, so the index copy was dropped. This pair, one Gotcha bullet in the sub-skill plus find_traces in its allowed-tools, is what [jaegertracing/jaeger#10068](https://github.com/jaegertracing/jaeger/pull/10068) merged on 2026-11-08. The other five scenarios were not re-run on this build; the no-regression check below is for both copies on d22c65b9.
 
+### Replicated on main b6ad85f8, 2026-11-13
+
+After the merge the change was measured again with `make measure` on a fixture booted on the 2.23.0 bootstrap image: Jaeger main b6ad85f8 (which contains #10068) against the same commit with only #10068 reverted. Same rule, model, client and effort.
+
+| Scenario | Main without #10068 PASS | Main PASS | 95% CI (without, with) | p | Calls (without, with) | Cost USD (without, with) |
+|---|---|---|---|---|---|---|
+| recommendationCacheFailure | [2/10](../../records/measure-recommendationCacheFailure-b6ad85f8/batch-20261113T054023Z/) (8 PARTIAL) | [10/10](../../records/measure-recommendationCacheFailure-b6ad85f8/batch-20261113T055853Z/) | [0.06, 0.51], [0.72, 1.00] | 0.0007 | 12.5, 19.5 | 1.11, 2.11 |
+
+Judge result: [RESULT.md](../../records/measure-recommendationCacheFailure-b6ad85f8/RESULT.md), EXPERIMENT PASS. The sub-skill was read in 10 of 10 trials in both arms, and every trial connected to the MCP server and passed the fixture and sandbox checks. The two baseline passes found the growing demo.product.count without the rule. This build is newer than 5319091a (find_traces takes SQL only since #10083, and the agent also used find_spans), so the two pairs sit side by side rather than as one series.
+
 ## The change
 
 The bullet measured on 2.20.0 in [2026-09-recommendation-cache.md](2026-09-recommendation-cache.md), cherry-picked onto main, plus the same rule as a Gotchas bullet in the root SKILL.md (14 insertions, 1 deletion, two files):
