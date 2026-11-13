@@ -33,6 +33,8 @@ elif "config" in a: print(json.dumps({"services": {n: {"image": i} for n, i in s
 elif "pull" in a and os.environ.get("FAKE_PULL_FAILS") and not os.path.exists(os.environ["FAKE_PULL_FAILS"] + "x"):
     f = os.environ["FAKE_PULL_FAILS"]; n = int(open(f).read()) if os.path.exists(f) else 0; open(f, "w").write(str(n + 1))
     if n >= 2: open(f + "x", "w").close()
+    names = a[a.index("pull") + 1:]
+    if os.environ.get("FAKE_PULL_PROGRESS"): print(" %%s Pulled" %% names[n %% len(names)])
     print("Error: dial tcp: i/o timeout"); sys.exit(1)
 elif "pull" in a:
     for n in a[a.index("pull") + 1:]: print(" %%s Pulling" %% n); print(" abc123 Pull complete"); print(" %%s Pulled" %% n)
@@ -231,9 +233,15 @@ class Setup(unittest.TestCase):
         with mock.patch.object(fc, "PULL_BACKOFF_S", 0):
             rc, text = self.setup_run(FAKE_PULL_FAILS=str(self.t / "n"))
         self.assertEqual(rc, 0, text)
-        self.assertIn("..    Images       pull attempt 1 of 4 failed, retrying in 0s", text)
-        self.assertIn("..    Images       pull attempt 2 of 4 failed, retrying in 0s", text)
-        self.assertIn("..    Images       pull attempt 3 of 4 failed, retrying in 0s", text)
+        self.assertEqual(text.count("..    Images       pull failed at 0 of 3, retrying in 0s"), 3, text)
+        self.assertIn("ok    Images       3 pulled", text)
+
+    def test_pull_keeps_retrying_while_each_attempt_completes_an_image(self):
+        # three failed attempts, each completing one more image: with PULL_TRIES 1 the old rule gave up after one
+        with mock.patch.object(fc, "PULL_BACKOFF_S", 0), mock.patch.object(fc, "PULL_TRIES", 1):
+            rc, text = self.setup_run(FAKE_PULL_FAILS=str(self.t / "n"), FAKE_PULL_PROGRESS="1")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("..    Images       pull failed at 3 of 3, retrying in 0s", text)
         self.assertIn("ok    Images       3 pulled", text)
 
     def test_pull_gives_up_after_the_last_try(self):
