@@ -142,3 +142,5 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - Tooling: `make up` retries a failed `docker compose pull` up to 4 times with a 10 s, 20 s, 30 s backoff, one line per failed attempt, before it fails. No scenario or scoring change.
 - Tooling: `fixture/forward.sh SSH_TARGET` keeps the ssh port forwards to a remote fixture alive (restart loop, ExitOnForwardFailure, keepalives, UTC-stamped restart log); `--check` probes each forwarded port once for gating a batch. No scenario or scoring change.
 - Docs only: results page and README now lead with the merged #10068 pair on main 5319091a. No scenario or scoring change.
+- Tooling: `make up` keeps retrying a failed pull while each attempt completes an image, and gives up after 4 attempts in a row that complete none (a live run through Cloud NAT needed more than 4 attempts while still progressing).
+- Tooling: preflight on the agent machine of a remote fixture (`FIXTURE_SSH_USER` set) no longer requires Docker or checks the demo's ports; those belong to the fixture host, whose own `make up` checks them.

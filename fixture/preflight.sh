@@ -6,8 +6,11 @@ OVERLAY="${OVERLAY:-$ROOT/fixture/compose.overlay.yaml}"
 . "$ROOT/fixture/lib.sh"  # FIXTURE_HOST_ONLY=1 (fixture.env or environment): a fixture host with no agent, so no claude check
 fail() { echo "preflight: $1"; exit 1; }
 
-command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop"
-docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compose v2 is missing or docker does not run; install the Docker Compose plugin or start Docker"
+# FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Docker and the demo's
+# ports are that host's, checked there by its own make up; this machine runs only the agent.
+REMOTE=; [ -n "$FIXTURE_SSH_USER" ] && REMOTE=1
+[ -n "$REMOTE" ] || command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop"
+[ -n "$REMOTE" ] || docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compose v2 is missing or docker does not run; install the Docker Compose plugin or start Docker"
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
 [ "$FIXTURE_HOST_ONLY" = 1 ] || command -v claude >/dev/null || fail "claude (the Claude Code CLI) is not installed; the agent and the grader need it"
@@ -18,7 +21,7 @@ command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 o
 
 # The stack is ours when a container named jaeger exists (running or stopped): its ports are expected
 # to be taken, so re-running setup works. Otherwise a busy port belongs to something else.
-if [ -z "$(docker ps -aq --filter name=^jaeger$ 2>/dev/null)" ]; then
+if [ -z "$REMOTE" ] && [ -z "$(docker ps -aq --filter name=^jaeger$ 2>/dev/null)" ]; then
   for p in $(sed -n 's/^ *- "\([0-9]*\):[0-9]*".*/\1/p' "$OVERLAY"); do
     (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && fail "port $p is in use by another program; stop it (see: ss -ltnp | grep :$p) and re-run"
   done
