@@ -1,13 +1,13 @@
 {
   "name": "measure-change",
-  "tag": "jaeger-mcp-evals/jaeger:measure-change-6aee67e4",
-  "digest": "sha256:182beeb55daf9f47de13c101c2b4db791f6ec74ed4cede6168ae29092b671a72",
+  "tag": "jaeger-mcp-evals/jaeger:measure-change-b6ad85f8",
+  "digest": "sha256:27d5286c69c059ca3ae9231b34ccff0285d0f9f05c2a6d7bc68bd3e39e6dd8b0",
   "digest_type": "local docker image ID (sha256 of image config) - never pushed to a registry, so no registry digest exists",
-  "branch": "6aee67e4",
-  "branch_commit": "6aee67e4b558525faabe98c26f29587881d159bd",
+  "branch": "b6ad85f8",
+  "branch_commit": "b6ad85f8021ebe61c44aa08678d870a08f72df19",
   "base_image": "evals-baseimg-alpine:latest",
-  "base_image_recipe": "scripts/build/docker/base/Dockerfile at 6aee67e4 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
-  "built_at_utc": "2026-11-07T18:05:08Z",
+  "base_image_recipe": "scripts/build/docker/base/Dockerfile at b6ad85f8 (FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6) - same recipe make's create-baseimg target uses for its default BASE_IMAGE, built locally instead of pushed to the CI-only localhost:5000 registry",
+  "built_at_utc": "2026-11-13T05:34:21Z",
   "built_on": "fixture host",
   "descriptions": null
 }
