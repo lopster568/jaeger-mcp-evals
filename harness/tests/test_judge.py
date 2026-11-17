@@ -231,6 +231,51 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("tool_output_chars_median_drop_pct_min: FAIL (measured=N/A (no variant data), required>=10)", lines)
         self.assertEqual(lines[-1], "EXPERIMENT FAIL")
 
+    def _versioned(self, base, var, manifest_pre=None, row_edit=None):
+        """A matching pair whose rows carry client_version base / var (None: not recorded)."""
+        for d, arm, v, rows in ((self.baseline_dir, "baseline", base, baseline_rows()),
+                                (self.variant_dir, "descchange", var, descchange_rows_all_thresholds_met())):
+            write_manifest(d, arm_pin=arm)
+            if manifest_pre:
+                m = json.load(open(os.path.join(d, "manifest.json")))
+                json.dump(dict(m, client_version_pre=manifest_pre), open(os.path.join(d, "manifest.json"), "w"))
+            write_scores(d, [dict(r, client_version=v) if v else r for r in rows])
+        self.err = io.StringIO()
+        with contextlib.redirect_stderr(self.err):
+            return judge_mod.judge(self.baseline_dir, self.variant_dir)
+
+    def test_same_client_version_judges_as_before(self):
+        lines, code = self._versioned("2.1.285", "2.1.285")
+        self.assertEqual((code, lines[-1]), (0, "EXPERIMENT PASS"))
+        self.assertEqual(self.err.getvalue(), "")
+
+    def test_client_version_differing_between_arms_refuses_naming_both(self):
+        lines, code = self._versioned("2.1.285", "2.1.326")
+        self.assertEqual(code, 2)
+        self.assertEqual(lines, ["judge: refusing to compare: the client version differs (baseline arm ran on 2.1.285; "
+                                 "variant arm ran on 2.1.326); keep each pair on one client"])
+
+    def test_client_version_differing_within_an_arm_refuses(self):
+        write_manifest(self.baseline_dir, arm_pin="baseline")
+        write_scores(self.baseline_dir, [dict(r, client_version="2.1.285" if i else "2.1.326") for i, r in enumerate(baseline_rows())])
+        write_manifest(self.variant_dir, arm_pin="descchange")
+        write_scores(self.variant_dir, [dict(r, client_version="2.1.285") for r in descchange_rows_all_thresholds_met()])
+        lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+        self.assertEqual(code, 2)
+        self.assertIn("baseline arm ran on 2.1.285 and 2.1.326", lines[0])
+
+    def test_unrecorded_version_does_not_refuse_and_is_said_once(self):
+        lines, code = self._versioned(None, None)
+        self.assertEqual((code, lines[-1]), (0, "EXPERIMENT PASS"))
+        self.assertEqual(self.err.getvalue(), "judge: client version not recorded\n")
+
+    def test_manifest_version_stands_in_for_rows_without_one(self):
+        lines, code = self._versioned(None, "2.1.326", manifest_pre="2.1.285 (Claude Code)")
+        self.assertEqual(code, 2)
+        lines, code = self._versioned(None, None, manifest_pre="2.1.285 (Claude Code)")
+        self.assertEqual((code, lines[-1]), (0, "EXPERIMENT PASS"))
+        self.assertNotIn("judge: client version not recorded", lines)
+
     def test_mismatched_experiment_sha256_refuses(self):
         # Same thresholds, different sha256 - as if the experiment file were
         # edited between the baseline run and the variant run.

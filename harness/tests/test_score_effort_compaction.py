@@ -115,5 +115,38 @@ class TestCompaction(unittest.TestCase):
         self.assertEqual(s["compaction_events"], 0)
 
 
+class TestClientLimits(unittest.TestCase):
+    META = {"scenario": "paymentFailure", "max_turns": 30, "max_budget_usd": "2.0"}
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def limits(self, events, meta=None):
+        s, _ = quiet_score(make_run(tempfile.mkdtemp(dir=self._tmp.name), events, meta or self.META))
+        return s["client_limits"]
+
+    def test_clean_trial_has_none_and_the_version_is_read_from_init(self):
+        d = make_run(tempfile.mkdtemp(dir=self._tmp.name), [dict(INIT, claude_code_version="2.1.285"), CALL, RESULT, FINAL], self.META)
+        s, _ = quiet_score(d)
+        self.assertEqual((s["client_limits"], s["client_version"]), ([], "2.1.285"))
+
+    def test_each_reason(self):
+        retry = {"type": "system", "subtype": "api_retry", "attempt": 1, "max_retries": 10}
+        self.assertEqual(self.limits([INIT, dict(FINAL, subtype="error_max_turns")]), ["stopped: error_max_turns"])
+        self.assertEqual(self.limits([INIT, FINAL, COMPACT]), ["compacted 1"])
+        self.assertEqual(self.limits([INIT, dict(FINAL, num_turns=24)]), ["near turn limit 24/30"])
+        self.assertEqual(self.limits([INIT, dict(FINAL, num_turns=23)]), [])
+        self.assertEqual(self.limits([INIT, dict(FINAL, total_cost_usd=1.6)]), ["near budget 1.60/2"])
+        self.assertEqual(self.limits([INIT, retry, retry, FINAL]), ["api retries 2"])
+        self.assertEqual(self.limits([INIT, dict(FINAL, subtype="error_max_turns", num_turns=31)]),
+                         ["stopped: error_max_turns", "near turn limit 31/30"])
+
+    def test_no_result_event_and_no_caps_in_meta(self):
+        self.assertEqual(self.limits([INIT, CALL], {"scenario": "paymentFailure"}), ["stopped: no_result"])
+
+
 if __name__ == "__main__":
     unittest.main()

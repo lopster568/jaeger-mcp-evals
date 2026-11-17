@@ -95,7 +95,7 @@ if sys.argv[1:] == ["--help"]:
 if "claude-fable-5-1" in sys.argv:  # the mechanism grader
     with open(os.path.join(os.environ["FAKE_HOME"], "grader-calls.jsonl"), "a") as f:
         f.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "claudecode": "CLAUDECODE" in os.environ,
-                            "api_key": "ANTHROPIC_API_KEY" in os.environ}) + "\\n")
+                            "api_key": "ANTHROPIC_API_KEY" in os.environ, "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
     res = {"type": "result", "subtype": "success", "result": "",
            "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}
     src = os.environ.get("FAKE_KEY_SOURCE", "ANTHROPIC_API_KEY" if "ANTHROPIC_API_KEY" in os.environ else "none")
@@ -115,7 +115,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     if mode == "memory":
         system.append({"type": "text", "text": "Contents of /x/CLAUDE.md (project instructions)"})
     with open(os.path.join(os.environ["FAKE_HOME"], "probe-calls.jsonl"), "a") as f:
-        f.write(json.dumps({"argv": sys.argv, "mcp": mcp, "cwd": os.getcwd()}) + "\\n")
+        f.write(json.dumps({"argv": sys.argv, "mcp": mcp, "cwd": os.getcwd(), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
     body = {"model": "m", "system": system, "tools": tools,
             "messages": [{"role": "user", "content": "userEmail probe-secret@example.com"}]}
     if mode != "silent":
@@ -128,7 +128,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     sys.exit(0)
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "claudecode": "CLAUDECODE" in os.environ,
-                        "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir(".")}) + "\\n")
+                        "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir("."), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
 verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [{"service": "checkout"}], "confidence": "high",
            "evidence_span_ids": [], "abstain": False}
 if os.environ.get("FAKE_JUNK"):
@@ -1502,6 +1502,14 @@ class TestSandboxProbe(BenchCase):
                 for f in files:
                     self.assertNotIn("probe-secret", read(os.path.join(dirpath, f)), f)
 
+    def test_trial_probe_and_grader_get_the_client_env_and_it_is_not_in_argv(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        want = ["false", "1"]
+        for seen in (self.calls(), self.probes(), bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))):
+            self.assertTrue(seen)
+            self.assertEqual({tuple(c["client_env"]) for c in seen}, {tuple(want)})
+        self.assertNotIn("ENABLE_TOOL_SEARCH", json.dumps(load(glob.glob(os.path.join(self.batch_dir(), "0-*", "meta.json"))[0])["client_argv"]))
+
     def test_failures_abort_before_the_flag(self):
         for mode, why in (("extra_tool", "tools sent"), ("server_tool", "server-side tool web_search"),
                           ("memory", "memory marker 'CLAUDE.md'"), ("silent", "no model request")):
@@ -1514,6 +1522,31 @@ class TestSandboxProbe(BenchCase):
                 self.assertEqual(self.flag_file(), self.pristine())
                 self.assertNotIn("python3 -", read(os.path.join(self.home, "ssh.log")))
                 self.assertFalse(os.path.exists(self.runs))
+
+    def write_recorded(self, rows):
+        os.makedirs(os.path.join(self.records, "old", "batch-1"))
+        with open(os.path.join(self.records, "old", "batch-1", "scores.jsonl"), "w") as f:
+            f.writelines(json.dumps(dict({"scenario_used": "paymentFailure", "model_asserted": "sonnet"}, **r)) + "\n" for r in rows)
+
+    def test_stage_one_names_the_cli_version_and_says_when_cost_is_unknown(self):
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
+        self.assertIn("ok    claude CLI 2.1.282 accepts the flags the harness passes", self.err)
+        self.assertIn("ok    expected cost unknown: no recorded trial of paymentFailure on sonnet", self.err)
+
+    def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
+        self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +
+                            [{"cost_usd": 9, "num_turns": 30, "scenario_used": "other"}, {"cost_usd": 9, "model_asserted": "m2"}])
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
+        self.assertRegex(self.err, r"ok    expected cost about 0\.\d\d USD for \d+ trials \(recorded median 0\.20, p90 0\.30, max 0\.30 per trial, cap 2\)")
+        self.assertNotIn("cut off", self.err)
+        self.assertNotIn("turns;", self.err)
+
+    def test_warns_before_spending_when_a_recorded_trial_is_near_the_cap_or_the_turn_limit(self):
+        self.write_recorded([{"cost_usd": 1.2, "num_turns": 25}, {"cost_usd": 0.4, "num_turns": 9}])
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
+        self.assertIn("WARNING: a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
+                      "or expect ERROR trials", self.err)
+        self.assertIn("WARNING: a recorded trial reached 25 of 30 turns", self.err)
 
     def test_dry_run_probes_too(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)

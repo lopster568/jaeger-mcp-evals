@@ -21,6 +21,8 @@ LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
 DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+# Set on every Claude CLI call the harness makes (trials, sandbox probe, grader): no tool-search placeholder tool, no self-update.
+CLIENT_ENV = {"ENABLE_TOOL_SEARCH": "false", "DISABLE_AUTOUPDATER": "1"}
 # Set by bench.py for an experiment with run.bill_api_key: the grader bills this key instead of the
 # logged-in plan, and a call whose init event reports another apiKeySource fails. Environment only.
 API_KEY = None
@@ -62,7 +64,7 @@ def call_cli(truth, text):
     """One grader call; {"label", "reason"}. Raises RuntimeError on anything but a valid label."""
     if BILLING_FAILED:
         raise RuntimeError("grader: billing: an earlier call failed the apiKeySource check; no further grader calls")
-    env = {k: v for k, v in os.environ.items() if k not in DROP_ENV}
+    env = dict({k: v for k, v in os.environ.items() if k not in DROP_ENV}, **CLIENT_ENV)
     if API_KEY:
         env["ANTHROPIC_API_KEY"] = API_KEY
     with tempfile.TemporaryDirectory() as work:

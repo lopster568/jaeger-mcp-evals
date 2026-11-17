@@ -98,6 +98,13 @@ def _load_manifest(batch_dir):
         return json.load(f), None
 
 
+def _versions(manifest, rows):
+    """The client version of each row: its own (observed in the stream), else the manifest's client_version_pre
+    ("2.1.285 (Claude Code)" -> "2.1.285"); None where neither was recorded."""
+    pre = next((t for t in str(manifest.get("client_version_pre") or "").split() if t[:1].isdigit()), None)
+    return [r.get("client_version") or pre for r in rows] or [pre]
+
+
 CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",
                 "client", "provider", "model_requested", "effort", "max_turns", "max_budget_usd", "n_per_arm",
                 "fixture_overlay_sha256", "system_prompt_sha256"]
@@ -208,6 +215,14 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
 
     baseline_rows = load_rows(baseline_batch_dir)
     variant_rows = load_rows(variant_batch_dir)
+    seen = {"baseline": _versions(baseline_manifest, [r for r in baseline_rows if r.get("arm") == baseline_arm]),
+            "variant": _versions(variant_manifest, [r for r in variant_rows if r.get("arm") in test_arms])}
+    if len({v for vs in seen.values() for v in vs if v}) > 1:
+        return (["judge: refusing to compare: the client version differs (" + "; ".join(
+            "%s arm ran on %s" % (k, " and ".join(sorted({v for v in vs if v}))) for k, vs in seen.items() if any(vs))
+            + "); keep each pair on one client"], 2)
+    if any(v is None for vs in seen.values() for v in vs):
+        print("judge: client version not recorded", file=sys.stderr)  # not in lines: RESULT.md stays as it was
     baseline_metrics = arm_metrics(baseline_rows, baseline_arm, tool_names)
     if baseline_metrics["n"] == 0:
         return ([f"judge: no rows for baseline arm '{baseline_arm}' found in {baseline_batch_dir}"], 2)

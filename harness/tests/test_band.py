@@ -73,6 +73,14 @@ class TestBand(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
+    def test_client_limits_line(self):
+        rc, text = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]]))
+        self.assertIn("Client limits: none", text)
+        self.tmp2 = tempfile.mkdtemp(dir=self.tmp)
+        rc, text = run_band(make_batch(self.tmp2, [[INIT, CALL, RESULT, COMPACT, dict(PASS_FINAL, subtype="error_max_turns")]]))
+        self.assertIn("Client limits: 1 trial(s)\n  noskill  ", text)
+        self.assertIn("0-noskill: stopped: error_max_turns; compacted 1", text)
+
     def test_rank_only_below_ten(self):
         rc, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 3))
         self.assertEqual(rc, 2)
@@ -106,7 +114,8 @@ class TestBand(unittest.TestCase):
         out = []
         bench.results("s", [bench.arm_row("a", [], 0)], out.append, out.append)
         self.assertNotIn("ci95", out[1])
-        self.assertIn("0/0", out[-2])
+        self.assertIn("0/0", out[-3])
+        self.assertEqual(out[-1], "Client limits: none")
 
     def test_table_row_is_aligned_under_its_header(self):
         rc, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 6 + [[INIT, CALL, RESULT, FAIL_FINAL]] * 4))

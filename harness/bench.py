@@ -580,6 +580,27 @@ def stops(summaries):
     return ",".join("%s:%d" % kv for kv in sorted(t.items())) or "-"
 
 
+def expected_cost(scenario, model, n_cells, max_turns, max_budget, records=None):
+    """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
+    [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
+    rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True) for r in read_jsonl(f)
+            if r.get("scenario_used") == scenario and r.get("model_asserted") == model]
+    costs = sorted(r["cost_usd"] for r in rows if isinstance(r.get("cost_usd"), (int, float)))
+    if not costs:
+        return [(True, "expected cost unknown: no recorded trial of %s on %s" % (scenario, model))]
+    med, p90, top = statistics.median(costs), costs[max(0, math.ceil(0.9 * len(costs)) - 1)], costs[-1]
+    out = [(True, "expected cost about %.2f USD for %d trials (recorded median %.2f, p90 %.2f, max %.2f per trial, cap %g)"
+            % (n_cells * med, n_cells, med, p90, top, max_budget))]
+    if top >= 0.5 * max_budget:
+        out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
+                           "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
+    turns = max([r["num_turns"] for r in rows if isinstance(r.get("num_turns"), (int, float))], default=0)
+    if turns >= 0.8 * max_turns:
+        out.append((False, "a recorded trial reached %d of %d turns; a trial may stop at run.max_turns without a verdict; "
+                           "raise run.max_turns or expect ERROR trials" % (turns, max_turns)))
+    return out
+
+
 def arm_row(arm, scored, n):
     """One arm's numbers from (trial_dir, summary) pairs; n counts every counted cell,
     scored or not (the unscored ones are ERROR)."""
@@ -594,7 +615,8 @@ def arm_row(arm, scored, n):
              rs_att=sum(bool(s.get("read_skill_attempted")) for s in ss),
              rs_ok=sum(bool(s.get("read_skill_succeeded")) for s in ss),
              tools=judge.arm_metrics([dict(s, arm=arm) for s in ss], arm, tool_names)["tool_used"],
-             compacted=[(d, s["compaction_events"]) for d, s in scored if (s.get("compaction_events") or 0) > 0])
+             compacted=[(d, s["compaction_events"]) for d, s in scored if (s.get("compaction_events") or 0) > 0],
+             limits=[(d, s["client_limits"]) for d, s in scored if s.get("client_limits")])
     return r
 
 
@@ -654,6 +676,10 @@ def results(scenario, rows, out, detail=lambda m: None):
                 (["call errors %d" % r["call_errors"]] if r["call_errors"] else [])
         if extra:
             out("    " + paint(DIM, " \u00b7 ".join(extra)))
+    limits = [(r["arm"], d, why) for r in rows for d, why in r.get("limits", [])]
+    out("Client limits: " + ("none" if not limits else "%d trial(s)" % len(limits)))
+    for arm, d, why in limits:
+        out("  %s  %s: %s" % (arm, d, "; ".join(why)))
     if code == 3:
         warn.append("read the logs: 0%/100% usually means a leaky prompt or an unfair assertion")
     for m in warn:
@@ -1133,7 +1159,7 @@ def run(a, cfg):
         if found[1]:
             return die("ABORT - Claude Code CLI %s does not accept %s; nothing was touched" % (found[0], " ".join(found[1])),
                        fix="run `claude update`")
-        log.check(True, "claude accepts the flags the harness passes")
+        log.check(True, "claude CLI %s accepts the flags the harness passes" % found[0])
         if not is_full_model_id(a.model):
             log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
         if a.bill_api_key:
@@ -1195,6 +1221,11 @@ def run(a, cfg):
     if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
         return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
                    fix="install the Claude Code CLI and log in (run `claude` once)")
+    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm * len(prompt_for), a.max_turns, budget):
+        if ok:
+            log.check(True, text)
+        else:
+            log.sub("WARNING: " + text)
     log.stage(2, STAGES, "Scenario", "ready, and its prompts do not name the fault")
     log.detail("== pre-flight: readiness ==")
     pre["readiness"] = "PASS" if readiness(a.scenario, out=log.detail) == 0 else "FAIL"
@@ -1319,7 +1350,7 @@ def run(a, cfg):
     if a.client == "cli":
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
-        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+        env = dict({k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}, **grade.CLIENT_ENV)
         if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
             env.update(api_secrets(a, cfg))
         probe = {"result": "PASS", "tools": {}}
@@ -1769,6 +1800,8 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     write_json(os.path.join(trial, "meta.json"), meta)
     # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+    if a.client == "cli":
+        env.update(grade.CLIENT_ENV)
     if a.client == "api" or a.bill_api_key:
         env.update(secrets or {})  # environment only: never argv, never a record
     stream = os.path.join(trial, "stream.jsonl")
