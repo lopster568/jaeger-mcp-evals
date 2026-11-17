@@ -580,7 +580,7 @@ def stops(summaries):
     return ",".join("%s:%d" % kv for kv in sorted(t.items())) or "-"
 
 
-def expected_cost(scenario, model, n_cells, max_turns, max_budget, records=None):
+def expected_cost(scenario, model, n_cells, max_budget, records=None):
     """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
     rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True) for r in read_jsonl(f)
@@ -594,10 +594,6 @@ def expected_cost(scenario, model, n_cells, max_turns, max_budget, records=None)
     if top >= 0.5 * max_budget:
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
-    turns = max([r["num_turns"] for r in rows if isinstance(r.get("num_turns"), (int, float))], default=0)
-    if turns >= 0.8 * max_turns:
-        out.append((False, "a recorded trial reached %d of %d turns; a trial may stop at run.max_turns without a verdict; "
-                           "raise run.max_turns or expect ERROR trials" % (turns, max_turns)))
     return out
 
 
@@ -1221,7 +1217,7 @@ def run(a, cfg):
     if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
         return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
                    fix="install the Claude Code CLI and log in (run `claude` once)")
-    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm * len(prompt_for), a.max_turns, budget):
+    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm * len(prompt_for), budget):
         if ok:
             log.check(True, text)
         else:

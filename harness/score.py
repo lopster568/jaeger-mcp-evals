@@ -405,10 +405,9 @@ def client_limits(final, meta, compactions, retries):
         out.append("stopped: %s" % (final.get("subtype") or "no_result"))
     if compactions:
         out.append("compacted %d" % compactions)
-    turns, cost = final.get("num_turns"), final.get("total_cost_usd")
-    max_turns, budget = _number(meta.get("max_turns")), _number(meta.get("max_budget_usd"))
-    if isinstance(turns, (int, float)) and max_turns and turns >= 0.8 * max_turns:
-        out.append("near turn limit %d/%d" % (turns, max_turns))
+    # No "near turn limit": the CLI's num_turns is not what --max-turns counts (a trial recorded 40 turns under
+    # --max-turns 30 and ended success), so an actual cut shows only as "stopped: error_max_turns".
+    cost, budget = final.get("total_cost_usd"), _number(meta.get("max_budget_usd"))
     if isinstance(cost, (int, float)) and budget and cost >= 0.8 * budget:
         out.append("near budget %.2f/%g" % (cost, budget))
     if retries:

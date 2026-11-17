@@ -1541,12 +1541,12 @@ class TestSandboxProbe(BenchCase):
         self.assertNotIn("cut off", self.err)
         self.assertNotIn("turns;", self.err)
 
-    def test_warns_before_spending_when_a_recorded_trial_is_near_the_cap_or_the_turn_limit(self):
+    def test_warns_before_spending_when_a_recorded_trial_is_near_the_cap(self):
         self.write_recorded([{"cost_usd": 1.2, "num_turns": 25}, {"cost_usd": 0.4, "num_turns": 9}])
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("WARNING: a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                       "or expect ERROR trials", self.err)
-        self.assertIn("WARNING: a recorded trial reached 25 of 30 turns", self.err)
+        self.assertNotIn("of 30 turns", self.err)
 
     def test_dry_run_probes_too(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
