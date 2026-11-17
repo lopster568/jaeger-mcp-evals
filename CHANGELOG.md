@@ -146,3 +146,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - Tooling: preflight on the agent machine of a remote fixture (`FIXTURE_SSH_USER` set) no longer requires Docker or checks the demo's ports; those belong to the fixture host, whose own `make up` checks them.
 - Harness: the fixture's bootstrap Jaeger pin moves from 2.20.0 to 2.23.0 so one config (`ai.mcp: {}`) serves every image the fixture runs; `jaeger-config-main.yml` and the `JAEGER_CONFIG_FILE` switch are gone, so `fixture_overlay_sha256` changes from here on. No scenario or scoring change; batches before and after are not comparable on fixture hash.
 - Records: measure-recommendationCacheFailure-b6ad85f8, `make measure` end to end on the 2.23.0 bootstrap fixture: Jaeger main b6ad85f8 with and without #10068, 2/10 to 10/10, p 0.0007, EXPERIMENT PASS; results page section added. No scenario or scoring change.
+
+## 2026-11-17
+
+- Tooling: bench.py's pre-flight, fault and restore output is numbered stages (`[1/6] Agent and grader` to `[6/6] Evidence`, `[1/4]` to `[4/4]` on a dry run), each with the reason it exists; check lines are reworded (`host busy: N disk blocks/s read (limit 50000)`, `demo reachable`, `evidence reached in N calls`), the main stops carry a `fix:` line, a failed evidence check is a `WARN` that says it is the harness's own check, and a failed restore prints the restore command. `make up` reads the new wording. batch.log words, preflight.json, records and the `Batch` line are unchanged. No scenario or scoring change.

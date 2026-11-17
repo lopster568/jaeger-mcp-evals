@@ -79,6 +79,7 @@ verbatim except that the long `hypothesis` is elided:
    ```
    > [!TIP]
    > The dry run is free: a read-only pre-flight that prints the plan and seed, never flips the flag or calls a model.
+   The pre-flight prints numbered stages (`[1/4] Agent and grader`, `Scenario`, `Jaeger under test`, `Demo`; a real run adds `[5/6] Fault on` and `[6/6] Evidence`), each with the reason it exists and one `ok`, `FAIL` or `WARN` line per check. A `FAIL` stops the run, comes with a `fix:` line where a first-time runner is likely to land, and is followed by one `bench: ABORT` line. A `WARN` (the scripted evidence check failed) lets the trials go on.
 2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled (a cell still running after 30 minutes is killed and counts as a failed cell), restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json

@@ -59,19 +59,22 @@ for c in ("claude accepts the flags", "fixture reachable", "jaeger image x"): pr
 # Real bench.py run --dry-run output tails (Log.check and die() formats), screen lines on a pipe.
 THRASH = """Pre-flight
   ok    claude accepts the flags the harness passes
-  FAIL  host not thrashing (vmstat bi mean 1525860.5 <= 50000)
+  FAIL  host busy: 1525860.5 disk blocks/s read (limit 50000)
         pre-flight: vmstat bi mean(non-first)=1525860.5 loadavg=17.83 16.74 14.14
-bench: ABORT - host thrashing or vmstat unreadable: bi mean 1525860.5 (limit 50000, non-first samples)"""
+        fix: wait for other jobs on this machine to finish, then run again
+bench: ABORT - stopped before any trial; the fault flag was not touched"""
 TOOLS = """Pre-flight
   ok    jaeger image quay.io/jaegertracing/jaeger:2.20.0 sha256:9ae01775e2b2
         arms here: baseline
         == pre-flight: capture MCP tools/list (http://localhost:16686/jaeger/ui/api/ai/mcp/) ==
 bench: ABORT - could not capture tools/list: transport error talking to MCP server: URLError(ConnectionRefusedError(111, 'Connection refused'))"""
-CONTAINERS = """bench: ABORT - only 7 running containers (need >= 19)"""
-PROBE = """  FAIL  sandbox probe: the CLI sends only its verdict tool and the Jaeger tools
+CONTAINERS = """  FAIL  only 7 containers running (need >= 19)
+        fix: in ~/demo run `docker compose ps -a` to see which container is not up, then run again
+bench: ABORT - stopped before any trial; the fault flag was not touched"""
+PROBE = """  FAIL  agent can call only the Jaeger tools and its verdict tool
         sandbox probe baseline: FAIL - no model request with a JSON body reached the probe within 90s; claude said: Not logged in
 bench: ABORT - the sandbox probe failed (see above); the flag was not touched"""
-FLAGS = """bench: ABORT - Claude Code CLI 2.0.1 does not accept --effort; update with `claude update`; nothing was touched"""
+FLAGS = """bench: ABORT - Claude Code CLI 2.0.1 does not accept --effort; nothing was touched"""
 
 
 class Tty(io.StringIO):
@@ -113,20 +116,21 @@ class Blockers(unittest.TestCase):
 
     def test_anything_else_retries(self):
         self.assertEqual(fc.blocker(TOOLS)[:2], ("could not capture tools/list: transport error talking to MCP server: U...", True))
-        self.assertEqual(fc.blocker(CONTAINERS)[:2], ("only 7 running containers (need >= 19)", True))
+        self.assertEqual(fc.blocker(CONTAINERS)[:2], ("only 7 containers running (need >= 19)", True))
         text, retry, _ = fc.blocker("bench: ABORT - something new and unexpected")
         self.assertEqual((text, retry), ("something new and unexpected", True))
 
     def test_coloured_dry_run_output(self):  # FORCE_COLOR reaches the child; dry_run() strips it before counting
-        with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m host not thrashing (vmstat bi mean 9.0 <= 1)"])):
+        with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m host busy: 9.0 disk blocks/s read (limit 1)"])):
             rc, output = fc.dry_run()
         self.assertEqual((fc.checks_passed(output), fc.blocker(output)[1]), (1, "thrash"))
 
     def test_thrash_is_its_own_kind(self):
         text, retry, report = fc.blocker(THRASH)
         self.assertEqual((text, retry), ("host thrashing, 1.5M blocks/s read (limit 50k)", "thrash"))
-        self.assertEqual([bench.ANSI.sub("", l) for l in report], ["FAIL host not thrashing (vmstat bi mean 1525860.5 <= 50000)",
-                                  "  pre-flight: vmstat bi mean(non-first)=1525860.5 loadavg=17.83 16.74 14.14"])
+        self.assertEqual([bench.ANSI.sub("", l) for l in report], ["FAIL host busy: 1525860.5 disk blocks/s read (limit 50000)",
+                                  "  pre-flight: vmstat bi mean(non-first)=1525860.5 loadavg=17.83 16.74 14.14",
+                                  "  fix: wait for other jobs on this machine to finish, then run again"])
 
     def test_unfixable_by_waiting_stops(self):
         self.assertEqual(fc.blocker(PROBE)[:2], ("claude is not logged in, or its request never arrived", False))

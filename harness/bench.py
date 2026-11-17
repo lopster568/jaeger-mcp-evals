@@ -501,7 +501,10 @@ def oracle(scenario, cfg, out=print):
     return 1
 
 
-def oracle_warning(scenario, version, image, tool_names, message):
+SQL_NOTE = "find_traces takes SQL only on this Jaeger; the script used SQL, the agent is not told"
+
+
+def oracle_warning(scenario, version, image, tool_names, message, sql=False):
     def url(msg):
         body = "scenario: %s (version %s)\njaeger image: %s\nserved tools: %s\noracle: FAIL - %s" % (
             scenario, version, image, ", ".join(sorted(tool_names)), msg)
@@ -510,13 +513,10 @@ def oracle_warning(scenario, version, image, tool_names, message):
     shown, cut = message, message
     while len(url(cut)) > 6000 and cut:  # cut the error text, never the structure
         cut = cut[:len(cut) * 3 // 4 - 1]
-    return ["  WARN  the scripted check that the MCP tools can reach the fault's evidence failed, probably because this "
-            "Jaeger serves different tool names or inputs than the harness expects.",
-            "        Trials continue because the fault was confirmed in Jaeger's store. A baseline and a change that both "
-            "score 0 may be a tool problem: read the trajectories.",
-            "        oracle: FAIL - " + shown[:300],
-            "        Please open an issue:",
-            "        " + url(cut)]
+    return ["  WARN  evidence not reached by the scripted check: " + shown[:300],
+            "        This is the harness's own check, not the agent: the scenario and the agent need no change."]  \
+        + (["        " + SQL_NOTE] if sql else []) \
+        + ["        Trials go on (the fault is in the traces). Report it: " + url(cut)]
 
 
 def fisher_p(a, b, n):
@@ -731,6 +731,10 @@ class Log:
     def section(self, title, tail=""):
         self.step = []
         self("\n" + paint(BOLD_CYAN, title) + tail)
+
+    def stage(self, n, of, title, why):
+        """A numbered pre-flight stage: what it checks and why, so a failure reads as the demo's or the change's."""
+        self.section("[%d/%d] %s" % (n, of, title.ljust(17)), paint(DIM, "  " + why))
 
     def check(self, ok, text, tty_only=False):
         """An ok line, or a FAIL line followed by the step's detail. On a UTF-8 TTY the screen shows
@@ -1051,7 +1055,12 @@ def load_experiment(path):
 def run(a, cfg):
     log = Log()
 
-    def die(msg):
+    NOTOUCH = "ABORT - stopped before any trial; the fault flag was not touched"
+
+    def die(msg, fix=None):
+        log.abort(None)  # the failed step's detail first, then the way out, then the one ABORT line
+        if fix:
+            log.sub("fix: " + fix)
         log.abort("bench: " + msg)
         return 1
 
@@ -1095,11 +1104,12 @@ def run(a, cfg):
         if not os.path.isfile(p):
             return die("arm %r has no prompt file %s" % (arm, p))
 
+    STAGES = 4 if a.dry_run else 6  # a dry run stops after the demo checks: no fault, no evidence
     log.detail("bench: experiment=%s scenario=%s flag=%s activation=defaultVariant:%s client=%s model=%s effort=%s n_per_arm=%d"
                % (a.experiment, a.scenario, flag, act["value"], a.client, a.model, a.effort, a.n_per_arm))
     log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join(filter(None, (a.client, a.provider, a.model, a.effort))),
                                      "%d per arm" % a.n_per_arm))))
-    log.section("Pre-flight")
+    log.stage(1, STAGES, "Agent and grader", "the pinned versions, so two runs compare")
 
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
@@ -1118,19 +1128,21 @@ def run(a, cfg):
         log.detail("== pre-flight: cli client (claude flags) ==")
         found = claude_missing_flags()
         if found is None:
-            return die("claude is not on PATH; install the Claude Code CLI and log in (run `claude` once), or pick another run.client")
+            return die("claude is not on PATH",
+                       fix="install the Claude Code CLI and log in (run `claude` once), or pick another run.client")
         if found[1]:
-            return die("ABORT - Claude Code CLI %s does not accept %s; update with `claude update`; nothing was touched"
-                       % (found[0], " ".join(found[1])))
+            return die("ABORT - Claude Code CLI %s does not accept %s; nothing was touched" % (found[0], " ".join(found[1])),
+                       fix="run `claude update`")
         log.check(True, "claude accepts the flags the harness passes")
         if not is_full_model_id(a.model):
             log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
         if a.bill_api_key:
             if not cfg.get("ANTHROPIC_API_KEY"):
-                return die("run.bill_api_key is true but ANTHROPIC_API_KEY is empty in fixture.env; nothing was touched")
+                return die("run.bill_api_key is true but ANTHROPIC_API_KEY is empty in fixture.env; nothing was touched",
+                           fix="set ANTHROPIC_API_KEY in fixture.env, or set run.bill_api_key to false in the experiment file")
             grade.API_KEY = cfg["ANTHROPIC_API_KEY"]  # environment only: never argv, never a record
             grade.BILLING_FAILED = False
-            log.check(True, "cli and grader bill ANTHROPIC_API_KEY (every trial's stream init must report it)")
+            log.check(True, "agent and grader bill ANTHROPIC_API_KEY")
         elif cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
             log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
@@ -1170,46 +1182,55 @@ def run(a, cfg):
         # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "agent_loop 1": the first token starting with a digit
         got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
         pre["client_version"] = "PASS" if got == want else "FAIL"
-        if not log.check(got == want, "client version %s" % want):
+        if not log.check(got == want, "%s %s" % ("claude CLI" if a.client == "cli" else a.client + " client", want)):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
-                       % (want, a.client, got or client_pre or "no version"))
+                       % (want, a.client, got or client_pre or "no version"),
+                       fix="install version %s, or set run.client_version in the experiment file to the one you run" % want)
     try:
         grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
                                     stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
     except (OSError, subprocess.TimeoutExpired):
         grader_cli = None
-    if not log.check(bool(grader_cli), "mechanism grader %s via %s" % (grade.GRADER_MODEL, grader_cli or "no Claude Code CLI")):
-        return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE)
+    log.detail("pre-flight: grader CLI %s" % grader_cli)
+    if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
+        return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
+                   fix="install the Claude Code CLI and log in (run `claude` once)")
+    log.stage(2, STAGES, "Scenario", "ready, and its prompts do not name the fault")
     log.detail("== pre-flight: readiness ==")
     pre["readiness"] = "PASS" if readiness(a.scenario, out=log.detail) == 0 else "FAIL"
-    log.check(pre["readiness"] == "PASS", "scenario %s ready" % a.scenario)
+    log.check(pre["readiness"] == "PASS", "%s ready" % a.scenario)
     log.detail("== pre-flight: leak scan (system prompt + arm prompts) ==")
     pre["leak"] = "PASS" if leak([SYSTEM_PROMPT] + sorted(set(prompt_file.values())), out=log.detail) == 0 else "FAIL"
-    log.check(pre["leak"] == "PASS", "prompts leak-free")
+    log.check(pre["leak"] == "PASS", "prompts name no fault")
+    if "FAIL" in (pre["readiness"], pre["leak"]):
+        return die(NOTOUCH)
+    log.stage(3, STAGES, "Jaeger under test", "your image, and only its tools reach the agent")
     where = "%s: %s" % (fixture_where(cfg), cfg["FIXTURE_DEMO_DIR"])
     log.detail("== pre-flight: fixture reachable (%s) ==" % where)
     fx_ok = fixture_sh(cfg, "true", timeout=30).returncode == 0
     log.detail("pre-flight: fixture reachable" if fx_ok else "pre-flight: FAIL - fixture unreachable or no demo dir: %s" % where)
-    log.check(fx_ok, "fixture reachable " + paint(DIM, "(%s)" % where))
-    if not (fx_ok and pre["leak"] == "PASS" and pre["readiness"] == "PASS"):
-        return die("ABORT - pre-flight failed (see above), nothing was touched")
+    if not log.check(fx_ok, "demo reachable"):
+        return die(NOTOUCH, fix="check FIXTURE_HOST and FIXTURE_DEMO_DIR in fixture.env, and that the demo host is up (make up)")
 
     # Observed, not typed: what the fixture and this machine are running right now.
     r = fixture_sh(cfg, "docker inspect jaeger --format '{{.Config.Image}} {{.Image}}'")
     parts = r.stdout.split()
     if r.returncode != 0 or len(parts) != 2:
-        return die("ABORT - could not read the running jaeger image (docker inspect jaeger): %s" % r.stderr.strip())
+        return die("ABORT - could not read the running jaeger image (docker inspect jaeger): %s" % r.stderr.strip(),
+                   fix="start the demo (make up), then run again")
     image, image_id = parts
     log.detail("pre-flight: fixture runs jaeger image %s (%s)" % (image, image_id))
     # One batch runs only the arms pinned to the running image; the others need the fixture switched first.
     arms = [n for n in prompt_for if image_for[n] == image]
     if not arms:
         return die("ABORT - the fixture runs %s, which no arm of experiment %s expects (%s); point the fixture at "
-                   "an arm's image first" % (image, a.experiment, ", ".join("%s=%s" % kv for kv in image_for.items())))
+                   "an arm's image first" % (image, a.experiment, ", ".join("%s=%s" % kv for kv in image_for.items())),
+                   fix="swap the demo to an arm's image (fixture/swap-jaeger.sh <tag>), then run again")
     log.detail("pre-flight: experiment arms for this image: %s" % " ".join(arms))
-    log.check(True, "jaeger image %s %s" % (image, paint(DIM, image_id[:19])))
+    log.check(True, "Jaeger runs %s" % image)
     others = ["%s needs %s" % (n, image_for[n]) for n in prompt_for if n not in arms]
-    log.sub("arms here: %s%s" % (" ".join(arms), paint(DIM, "  (%s)" % "; ".join(others)) if others else ""))
+    if others:
+        log.sub("arms here: %s  (%s)" % (" ".join(arms), "; ".join(others)))
     any_tools = any(tools_for[arm] for arm in arms)
     r = fixture_sh(cfg, "git rev-parse HEAD")
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
@@ -1258,11 +1279,12 @@ def run(a, cfg):
             served = {}
             tool_list = tools.list_tools(mcp_url, 20.0, served)
         except MCPError as e:
-            return die("ABORT - could not capture tools/list: %s" % e)
+            return die("ABORT - could not capture tools/list: %s" % e,
+                       fix="check that the Jaeger container is running and serves MCP at %s" % mcp_url)
         tools_text = tools.tools_text(tool_list)
         tools_sha = hashlib.sha256(tools_text.encode("utf-8")).hexdigest()
         log.detail("pre-flight: %d tools captured, sha256 %s" % (len(tool_list), tools_sha))
-        log.check(True, "%d MCP tools served %s" % (len(tool_list), paint(DIM, "(sha256 %s)" % tools_sha[:12])))
+        log.check(True, "%d MCP tools served" % len(tool_list))
         instructions = served["instructions"]
         instructions_sha = hashlib.sha256(instructions.encode("utf-8")).hexdigest() if instructions is not None else None
         log.detail("pre-flight: served instructions sha256 %s" % instructions_sha)
@@ -1291,7 +1313,7 @@ def run(a, cfg):
     if instructions:
         rendered.append(("served instructions", instructions))
     pre["leak_rendered"] = "PASS" if leak_texts(rendered, out=log.detail) == 0 else "FAIL"
-    if not log.check(pre["leak_rendered"] == "PASS", "rendered prompts and served tool descriptions leak-free"):
+    if not log.check(pre["leak_rendered"] == "PASS", "tool descriptions as served name no fault"):
         return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched")
 
     if a.client == "cli":
@@ -1311,19 +1333,20 @@ def run(a, cfg):
                 log.detail("sandbox probe %s: FAIL - %s" % (arm, m))
             probe["result"] = "FAIL" if problems else probe["result"]
         pre["sandbox_probe"] = probe
-        if not log.check(probe["result"] == "PASS", "sandbox probe: the CLI sends only its verdict tool and the Jaeger tools"):
+        if not log.check(probe["result"] == "PASS", "agent can call only the Jaeger tools and its verdict tool"):
             return die("ABORT - the sandbox probe failed (see above); the flag was not touched")
 
+    log.stage(4, STAGES, "Demo", "healthy and quiet, so a failure is your change, not the demo")
     log.detail("== pre-flight: container count (need >= %s) ==" % cfg["MIN_CONTAINERS"])
     r = fixture_sh(cfg, "docker ps -q | wc -l")
     try:
         pre["containers"] = int(r.stdout.strip())
     except ValueError:
-        return die("ABORT - could not read container count")
-    if pre["containers"] < int(cfg["MIN_CONTAINERS"]):
-        return die("ABORT - only %d running containers (need >= %s)" % (pre["containers"], cfg["MIN_CONTAINERS"]))
-    log.detail("pre-flight: container count OK (%d)" % pre["containers"])
-    log.check(True, "%d containers running (need >= %s)" % (pre["containers"], cfg["MIN_CONTAINERS"]))
+        return die("ABORT - could not read container count", fix="check that docker runs on the demo host (docker ps)")
+    log.detail("pre-flight: container count %d, need >= %s" % (pre["containers"], cfg["MIN_CONTAINERS"]))
+    if not log.check(pre["containers"] >= int(cfg["MIN_CONTAINERS"]), "only %d containers running (need >= %s)" % (pre["containers"], cfg["MIN_CONTAINERS"])
+                     if pre["containers"] < int(cfg["MIN_CONTAINERS"]) else "%d containers running" % pre["containers"]):
+        return die(NOTOUCH, fix="in %s run `docker compose ps -a` to see which container is not up, then run again" % cfg["FIXTURE_DEMO_DIR"])
 
     log.detail("== pre-flight: host thrash (vmstat 5 3, cat /proc/loadavg) ==")
     r = fixture_sh(cfg, "vmstat 5 3; echo @@loadavg@@; cat /proc/loadavg", timeout=30)
@@ -1331,8 +1354,10 @@ def run(a, cfg):
     bi_mean = vmstat_bi_mean(vmstat_out)
     pre["thrash"] = {"bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
     log.detail("pre-flight: vmstat bi mean(non-first)=%s loadavg=%s" % (bi_mean, pre["thrash"]["loadavg"]))
-    if not log.check(bi_mean is not None and bi_mean <= 50000, "host not thrashing (vmstat bi mean %s <= 50000)" % bi_mean):
-        return die("ABORT - host thrashing or vmstat unreadable: bi mean %s (limit 50000, non-first samples)" % bi_mean)
+    busy = bi_mean is None or bi_mean > 50000
+    if not log.check(not busy, "host not busy" if not busy else "host busy: %s disk blocks/s read (limit 50000)" % bi_mean
+                     if bi_mean is not None else "host load unreadable (vmstat gave no numbers)"):
+        return die(NOTOUCH, fix="wait for other jobs on this machine to finish, then run again")
 
     pristine, flagfile = shlex.quote(cfg["FIXTURE_PRISTINE_FLAG_FILE"]), shlex.quote(cfg["FIXTURE_FLAG_FILE"])
     log.detail("== pre-flight: flag %r currently at default per OFREP ==" % flag)
@@ -1341,12 +1366,13 @@ def run(a, cfg):
         pristine_doc = json.loads(r.stdout)
         default_variant = pristine_doc["flags"][flag]["defaultVariant"]
     except (ValueError, KeyError, TypeError):
-        return die("ABORT - could not read defaultVariant for %r from the fixture's pristine flag file" % flag)
+        return die("ABORT - could not read defaultVariant for %r from the fixture's pristine flag file" % flag,
+                   fix="check FIXTURE_PRISTINE_FLAG_FILE in fixture.env points at the pristine copy (make up creates it)")
     current = ofrep_variant(cfg, flag)
     if current != default_variant:
         return die("ABORT - OFREP reports %r=%r, default is %r" % (flag, current, default_variant))
     log.detail("pre-flight: flag %r at default (%r) - OK" % (flag, default_variant))
-    log.check(True, "flag %s at default (%s)" % (flag, default_variant))
+    log.check(True, "fault flag at default (%s)" % default_variant)
 
     if scen.get("restart_before_run"):
         log.detail("== pre-flight: restart %s, then jaeger (so jaeger never records the restart) ==" % scen["restart_before_run"])
@@ -1355,7 +1381,7 @@ def run(a, cfg):
                                                              out=lambda i, p: log.detail("  poll %d: waiting on %s" % (i, p)))
         except RuntimeError as e:
             return die("ABORT - %s; nothing was flipped" % e)
-        log.check(True, "restarted %s, then jaeger" % ", ".join(scen["restart_before_run"]))
+        log.check(True, "restarted %s, then Jaeger (trace store now empty)" % ", ".join(scen["restart_before_run"]))
     log.detail("== pre-flight: baseline traffic (service=%s needs >= 3 traces in the last %ds) ==" % (gt_service, BASELINE_LOOKBACK_S))
     # After a restart the store starts empty, so wait for traffic within the TRACE_POLL_MAX budget.
     for i in range(TRACE_POLL_MAX if pre["restarted_before_run"] else 1):
@@ -1372,13 +1398,14 @@ def run(a, cfg):
         return die("ABORT - only %d baseline traces for service=%s; the fixture is up but not completing requests "
                    "through it. Check upstream services before flipping any flag." % (pre["baseline_traces"], gt_service))
     log.detail("pre-flight: baseline traffic OK (%d traces)" % pre["baseline_traces"])
-    log.check(True, "%s traffic: %d traces in the last %d min" % (gt_service, pre["baseline_traces"], BASELINE_LOOKBACK_S // 60))
+    log.check(True, "%s sending traces (%d in the last %d min)" % (gt_service, pre["baseline_traces"], BASELINE_LOOKBACK_S // 60))
 
     log.detail("== pre-flight: fixture leak scan (what the fixture serves must not name a flag) ==")
     rc = fixture_leak.scan_live(list(pristine_doc["flags"]), 300, out=log.detail)
     pre["fixture_leak_baseline"] = "PASS" if rc == 0 else "FAIL"
-    if not log.check(rc == 0, "fixture telemetry names no flag"):
-        return die("ABORT - the fixture serves telemetry that names a flag (or Jaeger was unreadable); apply fixture/apply-deflag.sh first")
+    if not log.check(rc == 0, "demo telemetry names no fault"):
+        return die("ABORT - the demo serves telemetry that names a flag (or Jaeger was unreadable); nothing was touched",
+                   fix="apply fixture/apply-deflag.sh, then run again")
     log.detail("bench: pre-flight PASS")
 
     # ---- manifest ----
@@ -1490,7 +1517,7 @@ def run(a, cfg):
 
     def fault_and_cells():
         """Returns 1 on an abort before any cell ran, else None."""
-        log.section("Fault")
+        log.stage(5, STAGES, "Fault on", "it must show in the traces before the agent looks")
         log.detail("== activating fault: %s.defaultVariant = %s ==" % (flag, act["value"]))
         r = fixture_sh(cfg, flip_cmd, stdin_text=FLIP_SCRIPT)
         if r.returncode != 0:
@@ -1503,7 +1530,7 @@ def run(a, cfg):
         if not fault["ofrep_confirmed"]:
             return die("ABORT - OFREP never showed %r=%r after the flip" % (flag, act["value"]))
         log.detail("bench: OFREP confirms %r=%r" % (flag, act["value"]))
-        log.check(True, "%s -> %s, confirmed by OFREP" % (flag, act["value"]))
+        log.check(True, "%s %s" % (flag, act["value"]))
         t_flip = time.monotonic()
         # Count only traces that started after this flip; an earlier aborted attempt
         # leaves matching traces behind that would satisfy the wait instantly.
@@ -1521,9 +1548,11 @@ def run(a, cfg):
             if i < poll_max:
                 sleep(TRACE_POLL_SLEEP)
         if fault["signal_traces_seen"] < TRACE_MIN_COUNT:
-            return die("ABORT - never saw %d matching traces after %d polls" % (TRACE_MIN_COUNT, poll_max))
+            log.check(False, "fault not in the traces: fewer than %d matching traces after %d polls" % (TRACE_MIN_COUNT, poll_max))
+            return die("ABORT - stopped before any trial; details in %s" % shown(os.path.join(bdir, "batch.log")),
+                       fix="check that %s is running and sending traces (docker ps), then run again" % gt_service)
         log.detail("bench: fault confirmed live")
-        log.check(True, "%d traces match the signal after %s" % (fault["signal_traces_seen"], dur(time.monotonic() - t_flip)))
+        log.check(True, "fault in %d traces after %s" % (fault["signal_traces_seen"], dur(time.monotonic() - t_flip)))
         if signal_after_restart:
             log.detail("== waiting for %s to restart (signal_after_restart) ==" % signal_after_restart)
             snap0 = container_snapshot(cfg).get(signal_after_restart)
@@ -1541,21 +1570,25 @@ def run(a, cfg):
         log.detail("== leak scan under fault ==")
         rc = fixture_leak.scan_live(list(pristine_doc["flags"]), 240, out=log.detail)
         pre["fixture_leak_under_fault"] = "PASS" if rc == 0 else "FAIL"
-        log.check(rc == 0, "telemetry under the fault names no flag")
+        log.check(rc == 0, "telemetry under the fault names no fault")
         if rc == 0 and any_tools:
             # Needs the fault live, so it runs here and not in the read-only pre-flight.
+            log.stage(6, STAGES, "Evidence", "a scripted check, no AI, walks the agent's tools to the evidence")
             log.detail("== oracle under fault (scripted MCP calls must reach the signal) ==")
             said = []
             ok = oracle(a.scenario, cfg, out=lambda m: (said.append(m), log.detail(m))) == 0
             pre["oracle"] = "PASS" if ok else "FAIL"
             pre["oracle_message"] = said[-1].split(": ", 1)[-1] if said else None
+            sql = any(" sql " in m for m in said[:-1])  # the served search tool takes SQL only: the script compiled a statement
             if ok:
-                log.check(ok, "oracle reached the signal " + paint(DIM, "(" + log.step[-1].split(" reached ", 1)[-1] + ")"))
+                log.check(ok, "evidence reached in %s calls" % re.search(r"at call (\d+)", said[-1]).group(1))
+                if sql:
+                    log.sub(SQL_NOTE)
             else:
                 # Not an abort: the signal wait above already proved the fault is in the store.
                 log.step = []
                 for line in oracle_warning(a.scenario, scen.get("version"), image, [t["name"] for t in tool_list],
-                                           (pre["oracle_message"] or "").split("FAIL - ", 1)[-1]):
+                                           (pre["oracle_message"] or "").split("FAIL - ", 1)[-1], sql):
                     log(paint(YELLOW, line))
         write_json(os.path.join(bdir, "preflight.json"), pre)
         write_json(os.path.join(bdir, "manifest.json"), manifest)  # manifest.preflight is the same dict
@@ -1787,7 +1820,7 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
     if cp_ok:
         log.detail("bench: restore cp OK")
     else:
-        log(paint(BOLD_RED, "bench: RESTORE FAILED - cp of the pristine flag file did not succeed - MANUAL INTERVENTION NEEDED"))
+        log.check(False, "restore command failed on the fixture")
     for _ in range(5):  # as long as the flip gets: a slow flagd reload or one failed request is not a failed restore
         sleep(2)
         after = ofrep_variant(cfg, flag)
@@ -1796,9 +1829,10 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
     confirmed = after == default_variant
     if confirmed:
         log.detail("bench: OFREP confirms %r back at default (%r)" % (flag, after))
-        log.check(True, "flag %s back at default (%s)" % (flag, after))
+        log.check(True, "fault flag back at default (%s)" % after)
     else:
-        log(paint(YELLOW, "bench: WARNING - OFREP reports %r=%r, expected default %r - MANUAL CHECK NEEDED" % (flag, after, default_variant)))
+        log.check(False, "fault flag not restored: OFREP reports %s=%s, default is %s" % (flag, after, default_variant))
+        log.sub("fix: on the fixture host run %s; do not start another run until it is off" % restore_cmd)
     write_json(os.path.join(bdir, "restore.json"), {"restored_utc": utc(), "cp_ok": cp_ok, "default_variant": default_variant,
                                                    "variant_after_restore": after, "default_confirmed": confirmed})
     return confirmed

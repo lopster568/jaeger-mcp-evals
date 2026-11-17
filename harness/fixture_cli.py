@@ -314,14 +314,14 @@ def si(x):
 NEVER = [
     (r"not logged in|no model request with a JSON body", "claude is not logged in, or its request never arrived"),
     (r"does not accept", "the Claude Code CLI lacks flags the harness passes"),
-    (r"leak", "a leak check failed"),
+    (r"leak|name no fault", "a leak check failed"),
 ]
-THRASH = r"host not thrashing \(vmstat bi mean ([\d.]+)"
+THRASH = r"host busy: ([\d.]+) disk blocks/s"
 TRIES = {
     r"^claude is": ("claude, then /login", "log the Claude Code CLI in"),
     r"^the Claude Code CLI": ("claude update", "a CLI that accepts the harness flags"),
     r"^host thrashing": ("docker stats --no-stream", "find the container reading the disk"),
-    r"running containers": ("cd %s && docker compose ps -a", "which container is not up"),
+    r"containers running": ("cd %s && docker compose ps -a", "which container is not up"),
 }
 
 

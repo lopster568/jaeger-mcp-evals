@@ -18,6 +18,7 @@ import json
 import urllib.parse
 import os
 import pathlib
+import re
 import platform
 import shutil
 import stat
@@ -467,7 +468,7 @@ class TestBatch(BenchCase):
         self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 LEAK=0 stops=- ", blog)
         # One stream: everything a human reads is on stderr, and batch.log carries every screen line too.
         self.assertEqual(self.out, "")
-        for line in ("ok    scenario paymentFailure ready", "[1/2] ", "tools used: get_trace_errors 1", "Records "):
+        for line in ("ok    paymentFailure ready", "[1/2] ", "tools used: get_trace_errors 1", "Records "):
             self.assertIn(line, self.err)
             self.assertIn(line, blog)
         # The results table: a header, then one row per arm.
@@ -492,7 +493,7 @@ class TestBatch(BenchCase):
     def test_bill_api_key_runs_cli_and_grader_on_the_key(self):
         self.addCleanup(setattr, bench.grade, "API_KEY", None)
         self.assertEqual(self.run_batch(1, run={"bill_api_key": True}, ANTHROPIC_API_KEY="sk-test-secret"), 0, self.err)
-        self.assertIn("cli and grader bill ANTHROPIC_API_KEY", self.err + self.out)
+        self.assertIn("agent and grader bill ANTHROPIC_API_KEY", self.err + self.out)
         self.assertTrue(all(c["api_key"] for c in self.calls()))
         graders = bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))
         self.assertTrue(graders and all(g["api_key"] and "--verbose" in g["argv"] for g in graders))
@@ -807,7 +808,7 @@ class TestBatch(BenchCase):
             rc = bench.main(["run", self.knob()])
         self.assertEqual(rc, 0)
         b = self.assert_restored()
-        self.assertIn("flag paymentFailure back at default", read(os.path.join(b, "batch.log")))
+        self.assertIn("fault flag back at default", read(os.path.join(b, "batch.log")))
 
     def test_interrupt_during_fault_wait_scores_and_exits_6(self):
         calls = {"n": 0}
@@ -892,15 +893,17 @@ class TestBatch(BenchCase):
 
     def test_preflight_failure_exit_1_touches_nothing(self):
         self.assertEqual(self.run_batch(1, FAKE_CONTAINERS="3"), 1)
-        self.assertIn("only 3 running containers", self.err)
+        self.assertIn("only 3 containers running", self.err)
         self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
         self.assertEqual(self.calls(), [])
 
     def test_failed_check_shows_its_detail_on_screen(self):
         self.assertEqual(self.run_batch(1, FIXTURE_DEMO_DIR="no-such-dir"), 1)
-        self.assertIn("FAIL  fixture reachable", self.err)
+        self.assertIn("FAIL  demo reachable", self.err)
         self.assertIn("pre-flight: FAIL - fixture unreachable or no demo dir", self.err)  # a detail line
-        self.assertIn("bench: ABORT - pre-flight failed", self.err)
+        self.assertIn("        fix: check FIXTURE_HOST and FIXTURE_DEMO_DIR", self.err)  # die(fix=) prints the way out
+        self.assertEqual(self.err.count("bench: ABORT"), 1)
+        self.assertTrue(self.err.rstrip().endswith("the fault flag was not touched"))  # one ABORT line, last
         self.assertNotIn("readiness paymentFailure: version", self.err)  # a passed step stays compact
 
     def test_no_colour_off_a_tty_force_colour_on_screen_only(self):
@@ -912,7 +915,7 @@ class TestBatch(BenchCase):
         b = self.batch_dir()
         for f in glob.glob(os.path.join(b, "**", "*.json*"), recursive=True) + [os.path.join(b, "batch.log")]:
             self.assertNotIn("\x1b", read(f), f)
-        self.assertIn("  ok    fixture reachable", read(os.path.join(b, "batch.log")))
+        self.assertIn("  ok    demo reachable", read(os.path.join(b, "batch.log")))
 
     def test_live_line_only_on_a_tty(self):
         class TTY(io.StringIO):
@@ -926,6 +929,19 @@ class TestBatch(BenchCase):
         self.assertIn("\r\x1b[K", err.getvalue())
         self.assertNotIn("\x1b[3", err.getvalue())  # NO_COLOR: no colours even on a TTY
         self.assertNotIn("running...", read(os.path.join(self.batch_dir(), "batch.log")))
+
+
+class TestStageAndFix(unittest.TestCase):
+    def test_stage_header_and_fix_line_on_a_pipe(self):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"FORCE_COLOR": "", "NO_COLOR": "1"}), contextlib.redirect_stderr(err):
+            log = bench.Log()
+            log.stage(4, 6, "Demo", "healthy and quiet")
+            log.check(False, "host busy")
+            log.detail("a detail line")
+            log.abort(None)
+            log.sub("fix: wait")
+        self.assertEqual(err.getvalue(), "\n[4/6] Demo               healthy and quiet\n  FAIL  host busy\n        a detail line\n        fix: wait\n")
 
 
 class TestLogGlyphs(unittest.TestCase):
@@ -1117,6 +1133,12 @@ class TestRecords(BenchCase):
         self.assertFalse(os.path.exists(self.records))
         log.assert_not_called()
 
+    def test_batch_line_is_what_measure_sh_parses(self):
+        """measure.sh reads the batch dir with sed -n 's/^Batch  *\\([^ ]*\\).*/\\1/p' from the screen log."""
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        found = re.findall(r"(?m)^Batch +([^ ]+)", bench.ANSI.sub("", self.err))
+        self.assertEqual(found, [bench.shown(self.batch_dir())])
+
     def test_batch_records_copied_without_trajectories(self):
         self.assertEqual(self.run_batch(1), 0, self.err)
         b, kept = self.batch_dir(), self.kept()
@@ -1285,8 +1307,8 @@ class TestOracle(BenchCase):
         self.assertEqual(pre["oracle"], "FAIL")
         self.assertIn("never matched", pre["oracle_message"])
         self.assertEqual(load(os.path.join(self.batch_dir(), "manifest.json"))["preflight"]["oracle"], "FAIL")
-        self.assertIn("trials continue because the fault was confirmed", self.err.lower().replace("\n", " ").replace("        ", ""))
-        url = next(l.strip() for l in self.err.splitlines() if l.strip().startswith("https://github.com/lopster568/jaeger-mcp-evals/issues/new?"))
+        self.assertIn("trials go on (the fault is in the traces)", self.err.lower().replace("\n", " ").replace("        ", ""))
+        url = next(l.split("Report it: ")[1] for l in self.err.splitlines() if "Report it: https://github.com/lopster568/jaeger-mcp-evals/issues/new?" in l)
         self.assertLess(len(url), 6000)
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         self.assertEqual(q["title"], ["oracle fails on %s: paymentFailure" % STOCK_IMAGE])
@@ -1297,7 +1319,7 @@ class TestOracle(BenchCase):
 
     def test_issue_url_cuts_the_error_text_not_the_structure(self):
         lines = bench.oracle_warning("s", 3, "img:1", ["a", "b"], "x" * 20000)
-        url = lines[-1].strip()
+        url = lines[-1].split("Report it: ")[1]
         self.assertLess(len(url), 6000)
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         self.assertIn("served tools: a, b\noracle: FAIL - x", q["body"][0])
