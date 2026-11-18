@@ -205,9 +205,11 @@ class Fake(http.server.BaseHTTPRequestHandler):
     served_instructions = None
     oracle_signal = True
     oracle_malformed = False
+    store_services = None  # get_services answers this list when set; "error" makes the call fail
     sql_only = False  # tools/list serves find_traces with the jaeger#10083 sql-only schema
     mcp_calls = []
     otlp_posts, otlp_status = [], 200
+    projects = [{"name": "t", "id": "UHJvamVjdDoy"}]  # GET /v1/projects, Phoenix's {"data": [{"name", "id"}]}; None answers 404
 
     def log_message(self, *a):
         pass
@@ -226,6 +228,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
         return load(os.path.join(Fake.home, "otel-demo-3.0.0", "src", "flagd", "demo.flagd.json"))["flags"]
 
     def do_GET(self):
+        if self.path == "/v1/projects" and Fake.projects is not None:
+            return self.reply({"data": Fake.projects})
         if self.path.startswith("/jaeger/ui/api/v3/services"):
             return self.reply({"services": ["payment", "checkout"]})
         if self.path.startswith("/jaeger/ui/api/v3/traces"):
@@ -246,6 +250,11 @@ class Fake(http.server.BaseHTTPRequestHandler):
             return
         msg = json.loads(body)
         Fake.mcp_calls.append((msg.get("method"), (msg.get("params") or {}).get("name"), (msg.get("params") or {}).get("arguments")))
+        if msg.get("method") == "tools/call" and msg["params"]["name"] == "get_services" and Fake.store_services:
+            if Fake.store_services == "error":
+                return self.reply({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32000, "message": "store down"}})
+            return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": {"content": [
+                {"type": "text", "text": json.dumps({"services": Fake.store_services})}]}})
         if msg.get("method") == "tools/call":
             if Fake.oracle_malformed:
                 return self.reply({"jsonrpc": "2.0", "id": msg["id"], "result": "not-a-dict"})
@@ -273,11 +282,15 @@ class BenchCase(unittest.TestCase):
         cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)
         cls.port = str(cls.server.server_address[1])
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.phoenix = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)  # the OTLP receiver, never the demo's port
+        cls.phoenix_port = str(cls.phoenix.server_address[1])
+        threading.Thread(target=cls.phoenix.serve_forever, daemon=True).start()
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+        for srv in (cls.server, cls.phoenix):
+            srv.shutdown()
+            srv.server_close()
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -309,13 +322,14 @@ class BenchCase(unittest.TestCase):
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
         Fake.served_instructions = None
-        Fake.oracle_signal, Fake.oracle_malformed, Fake.sql_only = True, False, False
+        Fake.oracle_signal, Fake.oracle_malformed, Fake.sql_only, Fake.store_services = True, False, False, None
         Fake.otlp_posts, Fake.otlp_status = [], 200
+        Fake.projects = [{"name": "t", "id": "UHJvamVjdDoy"}]
         self.env = {"PATH": binp + os.pathsep + os.environ["PATH"], "FAKE_HOME": self.home, "FAKE_IMAGE": STOCK_IMAGE,
                     "FIXTURE_HOST": "127.0.0.1", "FIXTURE_SSH_USER": "tester", "FIXTURE_DEMO_DIR": "otel-demo-3.0.0",
                     "JAEGER_UI_PORT": self.port, "OFREP_PORT": self.port, "JAEGER_BASE_PATH": "/jaeger/ui",
                     "RUNS_DIR": self.runs, "MIN_CONTAINERS": "19", "KNOWN_COMMITS": "2.20.0=abc123",
-                    "CLAUDECODE": "1", "CODEX_BIN": "codex"}
+                    "CLAUDECODE": "1", "CODEX_BIN": "codex", "PHOENIX_PORT": "1"}  # port 1: no Phoenix unless a test starts one
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -1432,10 +1446,10 @@ class TestExport(BenchCase):
         return resource, [dict(pb(s), attrs=pb_attrs(pb(s).get(9, []))) for s in pb(rs[2][0])[2]]
 
     def test_export_posts_one_trace_per_trial_with_run_attributes(self):
-        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
         b = self.batch_dir()
-        self.assertEqual(self.bench("export", b, PHOENIX_PORT=self.port), 0, self.out)  # default endpoint from fixture.env
-        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s/" % self.port), 0, self.out)
+        self.assertEqual(self.bench("export", b, PHOENIX_PORT=self.phoenix_port), 0, self.out)  # default endpoint from fixture.env
+        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s/" % self.phoenix_port), 0, self.out)
         (ctype, body), (_, again) = Fake.otlp_posts
         self.assertEqual(ctype, "application/x-protobuf")
         self.assertEqual(body, again)  # deterministic: a re-export sends the same trace and span ids
@@ -1464,13 +1478,13 @@ class TestExport(BenchCase):
                 for d, _, names in os.walk(self._tmp.name) for n in names}
 
     def test_export_refuses_a_planted_host(self):
-        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
         stream = glob.glob(os.path.join(self.batch_dir(), "0-*", "stream.jsonl"))[0]
         lines = read(stream).splitlines()
         lines[2] = lines[2].replace("Invalid token.", "Invalid token at fixture.example.test")
         pathlib.Path(stream).write_text("\n".join(lines) + "\n")
         before = self.snapshot()
-        rc = self.bench("export", self.batch_dir(), "--endpoint", "http://127.0.0.1:%s" % self.port,
+        rc = self.bench("export", self.batch_dir(), "--endpoint", "http://127.0.0.1:%s" % self.phoenix_port,
                         FIXTURE_HOST="fixture.example.test")
         self.assertEqual(rc, 1, self.out)
         self.assertEqual(Fake.otlp_posts, [])
@@ -1480,12 +1494,87 @@ class TestExport(BenchCase):
         self.assertEqual(self.snapshot(), before)
 
     def test_export_http_error_is_nonzero_and_writes_nothing(self):
-        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
         before = self.snapshot()
         Fake.otlp_status = 415
-        self.assertEqual(self.bench("export", self.batch_dir(), PHOENIX_PORT=self.port), 1, self.out)
-        self.assertIn("export: FAILED - Phoenix at http://127.0.0.1:%s/v1/traces: HTTP Error 415" % self.port, self.out)
+        self.assertEqual(self.bench("export", self.batch_dir(), PHOENIX_PORT=self.phoenix_port), 1, self.out)
+        self.assertIn("export: FAILED - Phoenix at http://127.0.0.1:%s/v1/traces: HTTP Error 415" % self.phoenix_port, self.out)
         self.assertEqual(self.snapshot(), before)
+
+    def test_guard_refuses_the_demo_ports_and_accepts_phoenix(self):
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        b = self.batch_dir()
+        for port in (self.port, "4317", "4318"):
+            self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s" % port), 1, self.out)
+            self.assertIn("export: REFUSED - endpoint port %s is" % port, self.out)
+        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:9999", JAEGER_UI_PORT="1234", OFREP_PORT="9999"), 1)
+        self.assertIn("the demo's OFREP port; trajectories must never reach the store the agent reads. Point --endpoint at Phoenix", self.out)
+        self.assertNotIn("of the demo", self.out)
+        self.assertEqual(Fake.otlp_posts, [])
+        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s" % self.phoenix_port), 0, self.out)
+        self.assertEqual(len(Fake.otlp_posts), 1)
+
+    def test_run_exports_at_the_end_and_names_the_project(self):
+        self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
+        self.assertEqual(len(Fake.otlp_posts), 1)
+        lines = self.err.splitlines()
+        self.assertEqual(lines[-1], "Phoenix http://127.0.0.1:%s/projects/UHJvamVjdDoy   project t: one trace per trial" % self.phoenix_port)
+        self.assertTrue(lines[-2].startswith("Records"), lines[-2])
+
+    def test_phoenix_line_falls_back_to_the_base_url_when_the_lookup_fails(self):
+        for projects in (None, [{"name": "other", "id": "x"}]):  # 404, then a project list without this one
+            Fake.projects = projects
+            self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
+            self.assertEqual(self.err.splitlines()[-1],
+                             "Phoenix http://127.0.0.1:%s   project t: open the project, one trace per trial" % self.phoenix_port)
+
+    def test_no_export_dry_run_and_aborted_run_send_nothing(self):
+        self.assertEqual(self.run_batch(1, "--no-export", PHOENIX_PORT=self.phoenix_port), 0, self.err)
+        self.assertNotIn("Phoenix", self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", PHOENIX_PORT=self.phoenix_port), 0, self.err)
+        self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port, FAKE_IMAGE="other:1"), 1)  # pre-flight abort
+        self.assertEqual(Fake.otlp_posts, [])
+
+    def test_export_failure_leaves_the_exit_code_and_batch_line_alone(self):
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        plain = [l.split("batch-")[0] for l in self.err.splitlines() if l.startswith("Batch")]
+        shutil.rmtree(self.runs)
+        Fake.otlp_status = 415
+        self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
+        lines = self.err.splitlines()
+        self.assertEqual([l.split("batch-")[0] for l in lines if l.startswith("Batch")], plain)
+        self.assertIn("  WARN  not exported to Phoenix: Phoenix at http://127.0.0.1:%s/v1/traces: HTTP Error 415" % self.phoenix_port, self.err)
+        self.assertIn("the trials are on disk in", self.err)
+        self.assertIn("once fixed: python3 harness/bench.py export", self.err)
+        self.assertLess(next(i for i, l in enumerate(lines) if l.startswith("Batch")), next(i for i, l in enumerate(lines) if "WARN  not exported" in l))
+
+    def test_phoenix_down_is_one_warn_line(self):
+        self.assertEqual(self.run_batch(1), 0, self.err)  # PHOENIX_PORT=1: nothing listens
+        warn = [l for l in self.err.splitlines() if "Phoenix" in l]
+        self.assertEqual(len(warn), 1, warn)
+        self.assertRegex(warn[0], r"^  WARN  Phoenix not running; start it with `make phoenix`, then: python3 harness/bench.py export \S+batch-")
+
+
+class TestStoreCheck(BenchCase):
+    def test_store_holding_exported_trajectories_aborts_before_the_flag(self):
+        Fake.store_services = ["payment", "jaeger-mcp-evals"]
+        self.assertEqual(self.run_batch(1), 1, self.err)
+        self.assertIn("FAIL  no harness trajectories in Jaeger's store", self.err)
+        self.assertIn("fix: Jaeger's store holds exported trajectories: restart the jaeger container on the fixture host to empty it, "
+                      "and check bench.py export --endpoint points at Phoenix", self.err)
+        self.assertIn("ABORT - stopped before any trial", self.err)
+        self.assertEqual(self.flag_file(), self.pristine())
+
+    def test_clean_store_passes_and_is_recorded(self):
+        Fake.store_services = ["payment", "checkout"]
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["store_clean"], "PASS")
+
+    def test_unreadable_store_is_a_warn_and_the_run_goes_on(self):
+        Fake.store_services = "error"
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        self.assertIn("  WARN  could not list the services in Jaeger's store", self.err)
+        self.assertIsNone(load(os.path.join(self.batch_dir(), "preflight.json"))["store_clean"])
 
 
 class TestSoak(BenchCase):

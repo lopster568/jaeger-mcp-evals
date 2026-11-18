@@ -45,6 +45,15 @@ class Measure(unittest.TestCase):
         self.assertFalse(self.pair.exists())  # dry run writes no pair file
         self.assertEqual(subprocess.run(["git", "-C", self.repo, "worktree", "list"], capture_output=True, text=True).stdout.count("\n"), 1)
 
+    def test_dry_run_runs_without_export_then_exports_both_batches_after_judge(self):
+        out = self.measure("--dry-run").stdout.splitlines()
+        runs = [l for l in out if "bench.py run" in l]
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(all(l.endswith("--no-export") for l in runs), runs)
+        tail = [l for l in out if "judge.py" in l or "bench.py export" in l]
+        self.assertIn("judge.py", tail[0])
+        self.assertEqual([l.split("bench.py ")[-1] for l in tail[1:]], ["export <baseline batch dir>", "export <variant batch dir>"])
+
     def planned_pair(self):
         out = self.measure("--dry-run").stdout
         text = out.split("would write %s:\n" % self.pair, 1)[1]

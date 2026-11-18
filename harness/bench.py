@@ -515,6 +515,22 @@ def oracle_warning(scenario, version, image, tool_names, message):
         + ["        Trials go on (the fault is in the traces). Report it: " + url(cut)]
 
 
+EXPORT_SERVICE = "jaeger-mcp-evals"  # export()'s service.name
+
+
+def store_has_harness(mcp_url, tool_list):
+    """Whether Jaeger's service list holds the export's service; None when it cannot be read (older image, error)."""
+    if "get_services" not in [t["name"] for t in tool_list]:
+        return None
+    try:
+        c = MCPClient(mcp_url, timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
+        c.initialize()
+        r = c.call_tool("get_services", {})
+    except Exception:  # a transport failure or a reply that is not MCP: the check is skipped, never the run
+        return None
+    return None if r["is_error"] else EXPORT_SERVICE in r["text"]
+
+
 def fisher_p(a, b, n):
     """Two-sided Fisher's exact p-value for two arms of n trials each,
     a PASS in baseline and b PASS in variant (2x2 table, row margins n/n)."""
@@ -1130,7 +1146,7 @@ def run(a, cfg):
     log.stage(1, STAGES, "Agent and grader", "the versions in use, recorded so two runs compare")
 
     # ---- pre-flight (read-only) ----
-    pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
+    pre = {"store_clean": None, "leak": None, "readiness": None, "containers": None, "baseline_traces": None,
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
@@ -1308,6 +1324,17 @@ def run(a, cfg):
         tools_sha = hashlib.sha256(tools_text.encode("utf-8")).hexdigest()
         log.detail("pre-flight: %d tools captured, sha256 %s" % (len(tool_list), tools_sha))
         log.check(True, "%d MCP tools served" % len(tool_list))
+        # Old trajectories must never reach the agent: its one route is an export that landed in Jaeger's store.
+        store = store_has_harness(mcp_url, tool_list)
+        if store is None:
+            log(paint(YELLOW, "  WARN  could not list the services in Jaeger's store (no get_services, or it failed); "
+                              "the check that no exported trajectories are in it was skipped"))
+        else:
+            pre["store_clean"] = "FAIL" if store else "PASS"
+            log.detail("pre-flight: get_services %s %s" % ("lists" if store else "does not list", EXPORT_SERVICE))
+            if not log.check(not store, "no harness trajectories in Jaeger's store"):
+                return die(NOTOUCH, fix="Jaeger's store holds exported trajectories: restart the jaeger container on the fixture "
+                                        "host to empty it, and check bench.py export --endpoint points at Phoenix")
         instructions = served["instructions"]
         instructions_sha = hashlib.sha256(instructions.encode("utf-8")).hexdigest() if instructions is not None else None
         log.detail("pre-flight: served instructions sha256 %s" % instructions_sha)
@@ -1752,7 +1779,29 @@ def run(a, cfg):
                   % (failed, len(rows), shown(os.path.join(bdir, "scores.jsonl")))))
         return 7
     log.detail("bench: batch complete: %s" % bdir)
+    if not a.no_export:
+        export_batch(bdir, a.experiment, cfg, log)
     return 0
+
+
+def export_batch(bdir, experiment, cfg, log):
+    """Send a finished batch to Phoenix. Never changes the run's result: a problem is one WARN."""
+    said = []
+    if export(bdir, None, cfg, out=said.append) == 0:
+        log.detail(said[-1])
+        base = phoenix_base(None, cfg)
+        pid = phoenix_project_id(base, experiment)
+        log(paint(BOLD_CYAN, "Phoenix") + " " + (base + "/projects/" + pid if pid else base) + "   " + paint(DIM, "project %s: %s" % (
+            experiment, "one trace per trial" if pid else "open the project, one trace per trial")))
+        return
+    manual = "python3 harness/bench.py export %s" % shown(bdir)
+    for m in said:
+        log.detail(m)
+    if "not reachable" in said[-1]:
+        log(paint(YELLOW, "  WARN  Phoenix not running; start it with `make phoenix`, then: " + manual))
+    else:
+        log(paint(YELLOW, "  WARN  not exported to Phoenix: %s" % said[-1].split(" - ", 1)[-1]))
+        log(paint(YELLOW, "        the trials are on disk in %s; once fixed: %s" % (shown(bdir), manual)))
 
 
 META_KEYS = (
@@ -2184,9 +2233,34 @@ def pack(experiment, cfg):
 
 # ---- export ----------------------------------------------------------------------
 
-def export(batch_dir, endpoint, cfg):
+def phoenix_project_id(base, name):
+    """The id of Phoenix project `name` (GET <base>/v1/projects), or None when the lookup fails for any reason."""
+    try:
+        with urllib.request.urlopen(base + "/v1/projects", timeout=10) as r:
+            return next((p["id"] for p in json.load(r)["data"] if p["name"] == name), None)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def phoenix_base(endpoint, cfg):
+    return (endpoint or "http://%s:%s" % (cfg.get("FIXTURE_HOST") or "localhost", cfg.get("PHOENIX_PORT") or "16006")).rstrip("/")
+
+
+def export(batch_dir, endpoint, cfg, out=print):
     """POST every scored trial of a RUNS_DIR batch to Phoenix as one OTLP request (harness/otlp.py).
-    Reads the batch, writes nothing; refuses when a span would carry what pack refuses."""
+    Reads the batch, writes nothing; refuses when a span would carry what pack refuses, or when the endpoint
+    is a port of the demo itself (Jaeger's store is the one place the agent could read old trajectories)."""
+    print = out
+    try:
+        port = str(urllib.parse.urlsplit(phoenix_base(endpoint, cfg)).port)
+    except ValueError:
+        port = None
+    demo = {cfg.get("JAEGER_UI_PORT"): "the demo's Jaeger UI and MCP port", cfg.get("OFREP_PORT"): "the demo's OFREP port",
+            "4317": "the demo collector's OTLP gRPC port", "4318": "the demo collector's OTLP HTTP port"}
+    if port in demo:
+        print("export: REFUSED - endpoint port %s is %s; trajectories must never reach the store the agent reads. "
+              "Point --endpoint at Phoenix (default port %s)" % (port, demo[port], cfg.get("PHOENIX_PORT") or "16006"))
+        return 1
     rx, spans, found = leak_rx(cfg), [], []
     try:
         m = load_json(os.path.join(batch_dir, "manifest.json"))
@@ -2218,18 +2292,18 @@ def export(batch_dir, endpoint, cfg):
             print("export: FOUND " + line)
         print("export: REFUSED - %d trial(s) would send the above; nothing sent" % len(found))
         return 1
-    request = {"resourceSpans": [{"resource": {"attributes": [otlp.kv("service.name", "jaeger-mcp-evals"),
+    request = {"resourceSpans": [{"resource": {"attributes": [otlp.kv("service.name", EXPORT_SERVICE),
                                                                otlp.kv("openinference.project.name", exp)]},
                                   "scopeSpans": [{"scope": {"name": "bench.py export"}, "spans": spans}]}]}
-    url = (endpoint or "http://%s:%s" % (cfg.get("FIXTURE_HOST") or "localhost", cfg.get("PHOENIX_PORT") or "16006"))
-    url = url.rstrip("/") + "/v1/traces"
+    url = phoenix_base(endpoint, cfg) + "/v1/traces"
     req = urllib.request.Request(url, data=otlp.encode(request), method="POST",
                                  headers={"Content-Type": "application/x-protobuf"})
     try:
         with urllib.request.urlopen(req, timeout=30):
             pass
     except OSError as e:  # HTTPError and URLError included
-        print("export: FAILED - Phoenix at %s: %s" % (url, e))
+        down = isinstance(e, urllib.error.URLError) and not isinstance(e, urllib.error.HTTPError)
+        print("export: FAILED - Phoenix %sat %s: %s" % ("not reachable " if down else "", url, e))
         return 1
     print("export: sent %d trial(s), %d spans, to project %s at %s" % (len(rows), len(spans), exp, url))
     return 0
@@ -2242,6 +2316,7 @@ def main(argv=None):
     r.add_argument("experiment_file")
     r.add_argument("--dry-run", action="store_true")
     r.add_argument("--first-only", action="store_true")
+    r.add_argument("--no-export", action="store_true", help="do not send the batch to Phoenix at the end")
     r.set_defaults(func=run)
     sub.add_parser("verify").set_defaults(func=lambda a, cfg: verify(cfg))
     bd = sub.add_parser("band")

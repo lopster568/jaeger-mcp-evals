@@ -116,9 +116,9 @@ echo "measure: fixture runs $ORIG now; it is restored at the end"
 arm_run() {  # arm tag: swap, wait, run; sets BATCH
   run bash "$HERE/../fixture/swap-jaeger.sh" "$2" || die "swap to $2 failed"
   [ "$DRY" -eq 1 ] && echo "+ sleep $SETTLE" || sleep "$SETTLE"
-  if [ "$DRY" -eq 1 ]; then echo "+ python3 harness/bench.py run $EXP_FILE"; BATCH="<$1 batch dir>"; return; fi
+  if [ "$DRY" -eq 1 ]; then echo "+ python3 harness/bench.py run $EXP_FILE --no-export"; BATCH="<$1 batch dir>"; return; fi
   local out; out=$(mktemp)
-  python3 harness/bench.py run "$EXP_FILE" 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr
+  python3 harness/bench.py run "$EXP_FILE" --no-export 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr
   [ "${PIPESTATUS[0]}" -eq 0 ] || die "bench.py run failed for the $1 arm; the pair is discarded (see docs/USAGE.md, Protocol)"
   BATCH=$(sed 's/\x1b\[[0-9;]*m//g' "$out" | sed -n 's/^Batch  *\([^ ]*\).*/\1/p' | tail -1)
   rm -f "$out"
@@ -126,4 +126,9 @@ arm_run() {  # arm tag: swap, wait, run; sets BATCH
 }
 arm_run baseline "$BASE_TAG"; B_DIR=$BATCH
 arm_run variant "$CHANGE_TAG"; V_DIR=$BATCH
-run python3 harness/judge.py "$B_DIR" "$V_DIR"
+run python3 harness/judge.py "$B_DIR" "$V_DIR"; RC=$?
+# Both batches go to Phoenix once the pair is judged; a failure is a warning, never the pair's result.
+for d in "$B_DIR" "$V_DIR"; do
+  run python3 harness/bench.py export "$d" || echo "measure: WARN not exported to Phoenix; the trials are in $d; once fixed: python3 harness/bench.py export $d" >&2
+done
+exit "$RC"

@@ -136,6 +136,10 @@ class Blockers(unittest.TestCase):
         self.assertEqual(fc.blocker(PROBE)[:2], ("claude is not logged in, or its request never arrived", False))
         self.assertEqual(fc.blocker(FLAGS)[:2], ("the Claude Code CLI lacks flags the harness passes", False))
 
+    def test_a_store_holding_trajectories_is_not_retried(self):
+        out = "  FAIL  no harness trajectories in Jaeger's store\n        fix: restart the jaeger container"
+        self.assertEqual(fc.blocker(out)[1], False)
+
     def test_ready_stops_after_three_thrashing_attempts(self):
         with mock.patch.object(fc, "dry_run", return_value=(1, THRASH)) as dr, mock.patch.object(fc, "READY_SLEEP_S", 0), \
                 contextlib.redirect_stdout(io.StringIO()):

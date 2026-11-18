@@ -321,6 +321,7 @@ NEVER = [
     (r"not logged in|no model request with a JSON body", "claude is not logged in, or its request never arrived"),
     (r"does not accept", "the Claude Code CLI lacks flags the harness passes"),
     (r"leak|name no fault", "a leak check failed"),
+    (r"harness trajectories in Jaeger's store", "Jaeger's store holds exported trajectories; restart the jaeger container"),
 ]
 THRASH = r"host busy: ([\d.]+) disk blocks/s"
 TRIES = {

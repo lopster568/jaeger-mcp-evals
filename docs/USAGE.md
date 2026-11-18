@@ -188,10 +188,11 @@ Results published in this repo come from one protocol:
 
 ## Export to Phoenix
 
-1. Send each trial in the batch's `scores.jsonl` to Phoenix as one OTLP trace. Default endpoint `http://<FIXTURE_HOST>:<PHOENIX_PORT>`, project named after the experiment.
+1. `bench.py run` does this itself after the batch is scored and restored: it sends each trial in the batch's `scores.jsonl` to Phoenix as one OTLP trace and prints `Phoenix <url>/projects/<id>   project <experiment>: one trace per trial` (the id from Phoenix's `/v1/projects`; if that lookup fails, the base URL and `open the project, one trace per trial`) under the `Batch` line. Default endpoint `http://<FIXTURE_HOST>:<PHOENIX_PORT>`, project named after the experiment. Skip it with `run --no-export`. A dry run or an aborted run never exports. If Phoenix is not running (`make phoenix`) or the export is refused, the run prints one WARN with the batch directory and the command below; the exit code and the `Batch` line are unchanged. `make measure` runs both arms with `--no-export` and exports both batches after the judge, a failure only a warning.
    ```bash
    python3 harness/bench.py export <RUNS_DIR>/<scenario>/<batch-id> [--endpoint URL]
    ```
+2. Old trajectories never reach the agent: its only route is trajectories landing in the demo's Jaeger. `export` refuses an endpoint on the demo's Jaeger UI port, its OFREP port, 4317 or 4318 (the demo collector), and the pre-flight (stage 3) lists Jaeger's services through the MCP tool `get_services` and stops with a `fix:` line if `jaeger-mcp-evals` is in the store; restart the jaeger container on the fixture host to empty it. If the list cannot be read (an older image without `get_services`) that is a WARN and the run goes on. `preflight.json` records `store_clean`.
 
 > [!IMPORTANT]
 > A `records/` copy is refused. Span timestamps are synthetic; only a trial's total duration is measured.
