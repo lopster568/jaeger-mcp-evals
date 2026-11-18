@@ -1131,7 +1131,7 @@ def run(a, cfg):
                % (a.experiment, a.scenario, flag, act["value"], a.client, a.model, a.effort, a.n_per_arm))
     log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join(filter(None, (a.client, a.provider, a.model, a.effort))),
                                      "%d per arm" % a.n_per_arm))))
-    log.stage(1, STAGES, "Agent and grader", "the pinned versions, so two runs compare")
+    log.stage(1, STAGES, "Agent and grader", "the versions in use, recorded so two runs compare")
 
     # ---- pre-flight (read-only) ----
     pre = {"leak": None, "readiness": None, "containers": None, "baseline_traces": None,
