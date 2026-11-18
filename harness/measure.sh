@@ -93,7 +93,7 @@ PRE=("harness/experiments/$EXP.json" "harness/experiments/images/$BASE_NAME.json
 if [ "$DRY" -eq 1 ]; then echo "+ git commit ${PRE[*]}"
 else
   git -C "$ROOT" add -- "${PRE[@]}" || die "git add failed for the pair file or image records"
-  git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
+  git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -s -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
 fi
 
 echo "measure: model claude-sonnet-5-5, $N trials per arm, 2 arms, PAID"
