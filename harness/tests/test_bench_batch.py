@@ -95,7 +95,7 @@ if sys.argv[1:] == ["--help"]:
 if "claude-fable-5-1" in sys.argv:  # the mechanism grader
     with open(os.path.join(os.environ["FAKE_HOME"], "grader-calls.jsonl"), "a") as f:
         f.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "claudecode": "CLAUDECODE" in os.environ,
-                            "api_key": "ANTHROPIC_API_KEY" in os.environ, "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
+                            "api_key": "ANTHROPIC_API_KEY" in os.environ, "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")], "plugin_dirs": os.environ.get("CLAUDE_CODE_PLUGIN_DIRS")}) + "\\n")
     res = {"type": "result", "subtype": "success", "result": "",
            "structured_output": {"label": os.environ.get("FAKE_GRADE", "correct"), "reason": "fake"}}
     src = os.environ.get("FAKE_KEY_SOURCE", "ANTHROPIC_API_KEY" if "ANTHROPIC_API_KEY" in os.environ else "none")
@@ -115,7 +115,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     if mode == "memory":
         system.append({"type": "text", "text": "Contents of /x/CLAUDE.md (project instructions)"})
     with open(os.path.join(os.environ["FAKE_HOME"], "probe-calls.jsonl"), "a") as f:
-        f.write(json.dumps({"argv": sys.argv, "mcp": mcp, "cwd": os.getcwd(), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
+        f.write(json.dumps({"argv": sys.argv, "mcp": mcp, "cwd": os.getcwd(), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")], "plugin_dirs": os.environ.get("CLAUDE_CODE_PLUGIN_DIRS")}) + "\\n")
     body = {"model": "m", "system": system, "tools": tools,
             "messages": [{"role": "user", "content": "userEmail probe-secret@example.com"}]}
     if mode != "silent":
@@ -128,7 +128,7 @@ if os.environ.get("ANTHROPIC_BASE_URL"):  # bench.py's sandbox probe: POST one c
     sys.exit(0)
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-calls.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv, "claudecode": "CLAUDECODE" in os.environ,
-                        "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir("."), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")]}) + "\\n")
+                        "api_key": any(k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")), "cwd_listing": os.listdir("."), "client_env": [os.environ.get("ENABLE_TOOL_SEARCH"), os.environ.get("DISABLE_AUTOUPDATER")], "plugin_dirs": os.environ.get("CLAUDE_CODE_PLUGIN_DIRS")}) + "\\n")
 verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [{"service": "checkout"}], "confidence": "high",
            "evidence_span_ids": [], "abstain": False}
 if os.environ.get("FAKE_JUNK"):
@@ -1530,6 +1530,13 @@ class TestSandboxProbe(BenchCase):
             self.assertTrue(seen)
             self.assertEqual({tuple(c["client_env"]) for c in seen}, {tuple(want)})
         self.assertNotIn("ENABLE_TOOL_SEARCH", json.dumps(load(glob.glob(os.path.join(self.batch_dir(), "0-*", "meta.json"))[0])["client_argv"]))
+
+    def test_user_plugin_dirs_never_reach_the_trial_probe_or_grader(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_DIRS": "/somewhere/my-plugin"}):
+            self.assertEqual(self.run_batch(1), 0, self.err)
+        for seen in (self.calls(), self.probes(), bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))):
+            self.assertTrue(seen)
+            self.assertEqual({c["plugin_dirs"] for c in seen}, {None})
 
     def test_failure_names_the_unexpected_tool_and_the_cli_version_in_the_fix(self):
         self.assertEqual(self.run_batch(1, FAKE_PROBE="extra_tool"), 1, self.err)

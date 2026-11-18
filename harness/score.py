@@ -381,7 +381,8 @@ def score(out_dir, call_grader=False, scenario=None):
         "effort": meta.get("effort"),
         "compaction_events": compaction_events,
         "client_version": (init or {}).get("claude_code_version") or (init or {}).get("loop_version") or (init or {}).get("client_version"),
-        "client_limits": client_limits(final, meta, compaction_events, retries),
+        "client_limits": client_limits(final, meta, compaction_events, retries) + [
+            "plugin loaded: %s" % p.get("name") for p in (init or {}).get("plugins") or [] if p.get("path") != "builtin"],
         "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,
         "leak_hits": leak_hits,

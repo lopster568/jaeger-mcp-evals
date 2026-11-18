@@ -20,7 +20,10 @@ CLAUDE = "claude"
 LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
-DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+# The user's own plugins load from this env var even with --setting-sources "" (2026-11-18: a shell rc's
+# gate-band plugin was in the init of 261 of 301 published trials; it only drew UI and hooked Bash, which trials lack).
+USER_ENV = ("CLAUDE_CODE_PLUGIN_DIRS",)
+DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL") + USER_ENV
 # Set on every Claude CLI call the harness makes (trials, sandbox probe, grader): no tool-search placeholder tool, no self-update.
 CLIENT_ENV = {"ENABLE_TOOL_SEARCH": "false", "DISABLE_AUTOUPDATER": "1"}
 # Set by bench.py for an experiment with run.bill_api_key: the grader bills this key instead of the

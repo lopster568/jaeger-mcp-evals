@@ -128,6 +128,10 @@ class TestClientLimits(unittest.TestCase):
         s, _ = quiet_score(make_run(tempfile.mkdtemp(dir=self._tmp.name), events, meta or self.META))
         return s["client_limits"]
 
+    def test_a_non_builtin_plugin_in_init_is_reported(self):
+        init = dict(INIT, plugins=[{"name": "gate-band", "path": "/x/gate-band"}, {"name": "cc-plugin-telemetry", "path": "builtin"}])
+        self.assertEqual(self.limits([init, FINAL]), ["plugin loaded: gate-band"])
+
     def test_clean_trial_has_none_and_the_version_is_read_from_init(self):
         d = make_run(tempfile.mkdtemp(dir=self._tmp.name), [dict(INIT, claude_code_version="2.1.285"), CALL, RESULT, FINAL], self.META)
         s, _ = quiet_score(d)

@@ -1178,7 +1178,7 @@ def run(a, cfg):
         pre["client"] = "PASS"
         log.check(True, "api client (%s) accepts %s at effort %s" % (a.provider, a.model, a.effort))
         log.detail("pre-flight: model pin probe: one call, prompt 'Reply with the word ok.', max_tokens 256, no reasoning")
-        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}
         r = subprocess.run(probe_argv(a), capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300,
                            env=dict(env, **api_secrets(a, cfg)))
         seen = re.search(r"endpoint reports model (\S+)", r.stdout)
@@ -1343,7 +1343,7 @@ def run(a, cfg):
     if a.client == "cli":
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
-        env = dict({k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}, **grade.CLIENT_ENV)
+        env = dict({k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}, **grade.CLIENT_ENV)
         if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
             env.update(api_secrets(a, cfg))
         probe = {"result": "PASS", "tools": {}}
@@ -1797,7 +1797,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     meta = {k: merged[k] for k in META_KEYS}
     write_json(os.path.join(trial, "meta.json"), meta)
     # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}
     if a.client == "cli":
         env.update(grade.CLIENT_ENV)
     if a.client == "api" or a.bill_api_key:
