@@ -592,6 +592,21 @@ def stops(summaries):
     return ",".join("%s:%d" % kv for kv in sorted(t.items())) or "-"
 
 
+def passes_to_read(scored):
+    """(trial_dir, why) for each PASS with a grounding flag (evidence_unseen, tool_result_leak_hits,
+    export_marker_hits: hard) or no signal in any tool result (steps_to_evidence None: read this one)."""
+    rows = []
+    for d, s in scored:
+        if s.get("verdict") != "PASS":
+            continue
+        why = ["%s %s" % (k, ",".join(s[k])) for k in ("evidence_unseen", "tool_result_leak_hits", "export_marker_hits") if s.get(k)]
+        if why:
+            rows.append((d, "hard flag: " + "; ".join(why)))
+        elif s.get("steps_to_evidence") is None:
+            rows.append((d, "read this one: no tool result matched the signal"))
+    return rows
+
+
 def expected_cost(scenario, model, n_per_arm, max_budget, records=None):
     """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
@@ -624,6 +639,7 @@ def arm_row(arm, scored, n):
              rs_ok=sum(bool(s.get("read_skill_succeeded")) for s in ss),
              tools=judge.arm_metrics([dict(s, arm=arm) for s in ss], arm, tool_names)["tool_used"],
              compacted=[(d, s["compaction_events"]) for d, s in scored if (s.get("compaction_events") or 0) > 0],
+             to_read=passes_to_read(scored),
              limits=[(d, s["client_limits"]) for d, s in scored if s.get("client_limits")])
     return r
 
@@ -684,6 +700,10 @@ def results(scenario, rows, out, detail=lambda m: None):
                 (["call errors %d" % r["call_errors"]] if r["call_errors"] else [])
         if extra:
             out("    " + paint(DIM, " \u00b7 ".join(extra)))
+    to_read = [(r["arm"], d, why) for r in rows for d, why in r.get("to_read", [])]
+    out("Passes to read: " + ("none" if not to_read else "%d" % len(to_read)))
+    for arm, d, why in to_read:
+        out("  %s  %s: %s" % (arm, d, why))
     limits = [(r["arm"], d, why) for r in rows for d, why in r.get("limits", [])]
     out("Client limits: " + ("none" if not limits else "%d trial(s)" % len(limits)))
     for arm, d, why in limits:

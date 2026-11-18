@@ -170,7 +170,7 @@ Results published in this repo come from one protocol:
 - Every number comes from `bench.py verify`.
 - `bench.py band <batch_dir> [--arm A]` (a `$RUNS_DIR` directory; cached grades only) prints the Results table: verdict counts, `err`, `invalid`, `leak`, rate, Wilson 95% CI, medians. `err`, `invalid`, `leak` and abnormal stops count in n, never in PASS. Exit 0 certified, 2 when n is under 10, 3 when the rate is 0 or 1.
 - Below it, "Client limits" lists each trial the client may have cut short or squeezed (stopped before a result, compacted, 80% of max_budget_usd used, API retries), or reads "none"; `client_limits` in scores.jsonl, report only.
-- `band` and `verify` flag runs with a compaction event (context numbers not comparable). Scenarios with `deterministic` set to no stay out of the certified pool. `bench.py power <n_per_arm>` gives the smallest significant variant PASS count (Fisher).
+- Under the table, "Passes to read" lists each PASS whose trial shows a grounding flag (a cited span id no tool result returned, a flag name or export marker inside a tool result) or whose tool results never matched the scenario's signal, with the trial directory; it reads "none" when empty. These fields (`evidence_unseen`, `tool_result_leak_hits`, `export_marker_hits`) are report only and never change a verdict. `band` and `verify` flag runs with a compaction event (context numbers not comparable). Scenarios with `deterministic` set to no stay out of the certified pool. `bench.py power <n_per_arm>` gives the smallest significant variant PASS count (Fisher).
 
 ## Scoring
 

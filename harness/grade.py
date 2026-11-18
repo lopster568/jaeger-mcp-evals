@@ -96,14 +96,14 @@ def call_cli(truth, text):
         ans = out["structured_output"]
         if ans["label"] not in LABELS:
             raise ValueError(ans["label"])
-        return {"label": ans["label"], "reason": str(ans["reason"])}
+        return {"label": ans["label"], "reason": str(ans["reason"]), "cost_usd": out.get("total_cost_usd")}
     except (ValueError, KeyError, TypeError, IndexError, StopIteration) as e:
         raise RuntimeError("grader: no valid label (exit %s): %r" % (p.returncode, e))
 
 
 def grade(batch_dir, truth, text, call=True):
     """The cached label for (truth, text), else one call_cli (call=True) appended to the cache, else None.
-    Returns {"label", "reason", "model", "prompt_sha256", "cached"}."""
+    Returns {"label", "reason", "cost_usd", "model", "prompt_sha256", "cached"}; cost_usd is None on rows cached before 2026-11-17."""
     key, path = cache_key(truth, text), os.path.join(batch_dir, "grades.jsonl")
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:

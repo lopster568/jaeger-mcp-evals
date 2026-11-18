@@ -43,6 +43,8 @@ HARNESS_DIR = os.path.dirname(os.path.abspath(__file__))
 STRUCTURED_KEYS = ["root_cause_service", "root_cause_operation", "mechanism", "cascading", "abstain"]
 SCHEMA_VERSION = 5  # record schema; 5 is the free-text mechanism, 4 and older the menu
 LEAK_LITERALS = ["feature_flag", "flagd"]
+EXPORT_MARKERS = ["jaeger-mcp-evals", "openinference", "bench.py export"]
+EXPORT_BATCH = re.compile(r"batch-20\d{6}T\d{6}Z")
 GRADE_TO_MECHANISM = {"correct": "PASS", "incorrect": "FAIL", "unclear": "UNCLEAR"}
 
 
@@ -55,6 +57,12 @@ def answer_leaks(texts, flag_names):
     joined = "\n".join(texts)
     return sorted({t for t in list(flag_names) + LEAK_LITERALS
                    if re.search(r"(?<![a-z0-9])" + re.escape(t), joined, re.I)})
+
+
+def export_markers(texts):
+    """Harness export markers found in texts: the literals, and "batch-<stamp>" for a batch dir name."""
+    joined = "\n".join(texts)
+    return sorted({m for m in EXPORT_MARKERS if m in joined} | ({"batch-<stamp>"} if EXPORT_BATCH.search(joined) else set()))
 
 
 def leak_words(harness_dir=None):
@@ -264,6 +272,7 @@ def score(out_dir, call_grader=False, scenario=None):
     compaction_events = sum(1 for e, l in zip(events, raw_lines) if is_compaction_event(e, l))
     retries = sum(1 for e in events if e.get("type") == "system" and e.get("subtype") == "api_retry")
     all_calls, results_by_id, final, model, tools, init, texts = [], {}, None, None, [], None, []
+    result_texts = []
     for e in events:
         if e.get("type") == "system" and e.get("subtype") == "init":
             init = init or e
@@ -280,6 +289,7 @@ def score(out_dir, call_grader=False, scenario=None):
                 if b.get("type") == "tool_result":
                     c = b.get("content")
                     text = c if isinstance(c, str) else "".join(x.get("text", "") for x in (c or []) if isinstance(x, dict))
+                    result_texts.append(text)
                     results_by_id[b.get("tool_use_id")] = {
                         "is_error": bool(b.get("is_error")),
                         "chars": len(text),
@@ -330,6 +340,12 @@ def score(out_dir, call_grader=False, scenario=None):
     final_text = str((final or {}).get("result", "<none>"))
     leak_hits = answer_leaks(texts + [final_text, json.dumps((final or {}).get("structured_output"))],
                              meta.get("flag_names") or fixture_leak.FLAGS)
+    # Report-only grounding checks over every tool result; never part of the verdict.
+    seen = "\n".join(result_texts)
+    ids = (structured_verdict or {}).get("evidence_span_ids")
+    evidence_unseen = sorted({str(i) for i in ids if str(i) not in seen}) if isinstance(ids, list) else []
+    tool_result_leak_hits = answer_leaks(result_texts, meta.get("flag_names") or fixture_leak.FLAGS)
+    export_marker_hits = export_markers(result_texts)
     # A call the client refused shows the sandbox held; it is recorded, not disqualifying.
     fixture_changes = meta.get("fixture_changes") or []
     fixture_ok = meta.get("fixture_ok", True)
@@ -372,6 +388,7 @@ def score(out_dir, call_grader=False, scenario=None):
         "grader_model": g and g["model"],
         "grader_prompt_sha256": g and g["prompt_sha256"],
         "grader_cached": g and g["cached"],
+        "grader_cost_usd": g and g.get("cost_usd"),
         "cascade": cascade,
         "abstained": abstained,
         "verdict": verdict,
@@ -386,6 +403,9 @@ def score(out_dir, call_grader=False, scenario=None):
         "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,
         "leak_hits": leak_hits,
+        "evidence_unseen": evidence_unseen,
+        "tool_result_leak_hits": tool_result_leak_hits,
+        "export_marker_hits": export_marker_hits,
         "fixture_ok": fixture_ok,
         "fixture_changes": fixture_changes,
     }

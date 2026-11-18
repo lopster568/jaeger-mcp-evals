@@ -114,8 +114,8 @@ class TestBand(unittest.TestCase):
         out = []
         bench.results("s", [bench.arm_row("a", [], 0)], out.append, out.append)
         self.assertNotIn("ci95", out[1])
-        self.assertIn("0/0", out[-3])
-        self.assertEqual(out[-1], "Client limits: none")
+        self.assertIn("0/0", out[-4])
+        self.assertEqual(out[-2:], ["Passes to read: none", "Client limits: none"])
 
     def test_table_row_is_aligned_under_its_header(self):
         rc, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 6 + [[INIT, CALL, RESULT, FAIL_FINAL]] * 4))
@@ -168,3 +168,42 @@ class TestBandCompactionWarning(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def result_with(text):
+    return {"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t1", "is_error": False, "content": text}]}}
+
+
+class TestPassesToRead(unittest.TestCase):
+    """Grounding checks are report only: the verdict stays PASS, the field is set, band lists the trial."""
+
+    def band_of(self, result, cited):
+        final = dict(FINAL, structured_output=dict(VERDICT, evidence_span_ids=cited))
+        with tempfile.TemporaryDirectory() as t:
+            batch = make_batch(t, [[INIT, CALL, result, final]])
+            d = os.path.join(batch, "0-noskill")
+            with graded(), contextlib.redirect_stderr(io.StringIO()):
+                s = bench.score.score(d, call_grader=True)[0]
+            return s, run_band(batch)[1], d
+
+    def test_cited_span_never_returned(self):
+        s, out, d = self.band_of(result_with("span abc111 only"), ["abc111", "zzz999"])
+        self.assertEqual((s["verdict"], s["evidence_unseen"]), ("PASS", ["zzz999"]))
+        self.assertIn("%s: hard flag: evidence_unseen zzz999" % d, out)
+
+    def test_flag_word_in_tool_result(self):
+        s, out, _ = self.band_of(result_with("tags: paymentFailure=on"), [])
+        self.assertEqual((s["verdict"], s["tool_result_leak_hits"]), ("PASS", ["paymentFailure"]))
+        self.assertIn("tool_result_leak_hits paymentFailure", out)
+
+    def test_export_marker_in_tool_result(self):
+        s, out, _ = self.band_of(result_with("service jaeger-mcp-evals batch-20261107T182513Z"), [])
+        self.assertEqual((s["verdict"], s["export_marker_hits"]), ("PASS", ["batch-<stamp>", "jaeger-mcp-evals"]))
+        self.assertIn("export_marker_hits batch-<stamp>,jaeger-mcp-evals", out)
+
+    def test_clean_pass_with_signal_lists_nothing(self):
+        s, out, _ = self.band_of(result_with("span abc111"), ["abc111"])
+        self.assertEqual((s["evidence_unseen"], s["tool_result_leak_hits"], s["export_marker_hits"]), ([], [], []))
+        if s["steps_to_evidence"] is not None:
+            self.assertIn("Passes to read: none", out)

@@ -29,6 +29,8 @@ judge.py:
       - PASS count, using score.py's strict verdict == "PASS"; INVALID rows (sandbox check
         failed) and LEAK rows (the answer names a flag) stay in n, are never a PASS, and
         each arm with any gets a WARNING line
+      - a "grounding:" line when any compared row has score.py's evidence_unseen, tool_result_leak_hits or
+        export_marker_hits fields: how many PASS rows have one non-empty (report only, no verdict change)
       - fisher_p_max: two-sided Fisher p (bench.fisher_p) of the baseline and arm PASS counts,
         n per arm; PASS when p < the value
 
@@ -88,6 +90,24 @@ def arm_metrics(rows, arm, tool_names):
         "invalid_cause": invalid_cause(arm_rows),
         "leak": sum(1 for r in arm_rows if r.get("verdict") == "LEAK"),
     }
+
+
+GROUNDING = ("evidence_unseen", "tool_result_leak_hits", "export_marker_hits")
+
+
+def grounding_line(rows_by_label):
+    """One line on PASS rows carrying a grounding flag, or None when no row has the fields (published records).
+    rows_by_label: [(label, rows)] for the compared arms."""
+    if not any(k in r for _, rows in rows_by_label for r in rows for k in GROUNDING):
+        return None
+    flagged = {label: [r.get("dir") or "?" for r in rows if r.get("verdict") == "PASS" and any(r.get(k) for k in GROUNDING)]
+               for label, rows in rows_by_label}
+    n = sum(len(v) for v in flagged.values())
+    if not n:
+        return "grounding: 0 flagged PASS"
+    return ("grounding: %d flagged PASS (baseline %d, variant %d): read them before trusting this result: " % (
+        n, len(flagged.get("baseline", [])), len(flagged.get("variant", [])))
+        + "; ".join("%s %s" % (label, d) for label, ds in flagged.items() for d in ds))
 
 
 def _load_manifest(batch_dir):
@@ -231,6 +251,8 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
         return f"{label} {arm}: {mm['pass_count']}/{mm['n']} PASS" + (f", {mm['invalid']} INVALID" if mm["invalid"] else "")
 
     lines, results = list(lines0), []
+    grounding = grounding_line([("baseline", [r for r in baseline_rows if r.get("arm") == baseline_arm]),
+                                ("variant", [r for r in variant_rows if r.get("arm") in test_arms])])
     lines.append(count("baseline arm", baseline_arm, baseline_metrics))
     for arm in test_arms:
         m = arm_metrics(variant_rows, arm, tool_names)
@@ -275,6 +297,8 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
                 p = bench.fisher_p(baseline_metrics["pass_count"], m["pass_count"], n)
                 check("fisher_p_max", p < pmax, round(p, 4), "<", pmax)
 
+    if grounding:
+        lines.append(grounding)
     all_pass = all(results)
     lines.append("EXPERIMENT PASS" if all_pass else "EXPERIMENT FAIL")
     return (lines, 0 if all_pass else 1)

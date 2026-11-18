@@ -276,6 +276,35 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual((code, lines[-1]), (0, "EXPERIMENT PASS"))
         self.assertNotIn("judge: client version not recorded", lines)
 
+    def _grounded(self, base_extra, var_extra):
+        write_manifest(self.baseline_dir, arm_pin="baseline")
+        write_scores(self.baseline_dir, [dict(r, dir="%d-baseline" % i, **base_extra(i)) for i, r in enumerate(baseline_rows())])
+        write_manifest(self.variant_dir, arm_pin="descchange")
+        write_scores(self.variant_dir, [dict(r, dir="%d-variant" % i, **var_extra(i))
+                                        for i, r in enumerate(descchange_rows_all_thresholds_met())])
+        return judge_mod.judge(self.baseline_dir, self.variant_dir)
+
+    def test_grounding_fields_absent_prints_nothing(self):
+        lines, code = self._grounded(lambda i: {}, lambda i: {})
+        self.assertFalse([l for l in lines if l.startswith("grounding:")])
+
+    def test_grounding_clean_says_zero(self):
+        clean = lambda i: {"evidence_unseen": [], "tool_result_leak_hits": [], "export_marker_hits": []}
+        lines, code = self._grounded(clean, clean)
+        self.assertEqual((code, lines[-2], lines[-1]), (0, "grounding: 0 flagged PASS", "EXPERIMENT PASS"))
+
+    def test_grounding_flagged_pass_is_counted_and_listed_verdict_unchanged(self):
+        flag = lambda i: {"evidence_unseen": ["x"] if i == 3 else [], "tool_result_leak_hits": [], "export_marker_hits": []}
+        flag_v = lambda i: {"evidence_unseen": [], "tool_result_leak_hits": [], "export_marker_hits": ["m"] if i < 2 else []}
+        lines, code = self._grounded(flag, flag_v)
+        self.assertEqual((code, lines[-1]), (0, "EXPERIMENT PASS"))
+        self.assertEqual(lines[-2], "grounding: 3 flagged PASS (baseline 1, variant 2): read them before trusting this result: "
+                                    "baseline 3-baseline; variant 0-variant; variant 1-variant")
+
+    def test_grounding_ignores_flagged_rows_that_are_not_pass(self):
+        lines, code = self._grounded(lambda i: {}, lambda i: {"evidence_unseen": ["x"] if i == 0 else [], "verdict": "FAIL"} if i == 0 else {"evidence_unseen": []})
+        self.assertIn("grounding: 0 flagged PASS", lines)
+
     def test_mismatched_experiment_sha256_refuses(self):
         # Same thresholds, different sha256 - as if the experiment file were
         # edited between the baseline run and the variant run.
