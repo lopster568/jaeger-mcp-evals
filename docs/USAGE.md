@@ -195,7 +195,7 @@ Results published in this repo come from one protocol:
 2. Old trajectories never reach the agent: its only route is trajectories landing in the demo's Jaeger. `export` refuses an endpoint on the demo's Jaeger UI port, its OFREP port, 4317 or 4318 (the demo collector), and the pre-flight (stage 3) lists Jaeger's services through the MCP tool `get_services` and stops with a `fix:` line if `jaeger-mcp-evals` is in the store; restart the jaeger container on the fixture host to empty it. If the list cannot be read (an older image without `get_services`) that is a WARN and the run goes on. `preflight.json` records `store_clean`.
 
 > [!IMPORTANT]
-> A `records/` copy is refused. Span timestamps are synthetic; only a trial's total duration is measured.
+> A `records/` copy is refused. Tool spans carry the CLI's own event timestamps; a stream without them (an older CLI) gets an even split of the trial's duration, marked `timestamp.synthetic=true`. Each trace holds one LLM span per model with its token counts, so Phoenix prices it, and the root shows the prompt and the answer.
 
 ## What stays out of git
 

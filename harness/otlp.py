@@ -1,10 +1,13 @@
 """otlp.py: one trial's stream.jsonl as OpenInference spans, encoded as an OTLP protobuf request.
 
 Span layout per trial: one AGENT root span over the whole run, one TOOL child span per
-tool_use/tool_result pair, one LLM child span holding the final answer. stream.jsonl has no
-per-event timestamps, so the root starts at the trial's started_utc and the result event's
-duration_ms is split evenly across the child spans (timestamp.synthetic=true). Tool outputs
-and the answer are cut to MAX_OUTPUT_BYTES. Ids are sha256-derived from the trace key, so the
+tool_use/tool_result pair, one LLM child span per model holding the final answer and the token counts
+Phoenix prices (llm.model_name plus prompt, completion and cache details from the result's modelUsage).
+A tool span runs from the timestamp of the assistant event holding its tool_use to the timestamp of the
+user event holding its tool_result; the root spans the trial start (started_utc) to the later of
+started_utc + duration_ms and the last event. Streams without those timestamps (older CLIs) fall back
+to splitting duration_ms evenly across the child spans (timestamp.synthetic=true). The root carries the
+prompt and the answer, and tool outputs and the answer are cut to MAX_OUTPUT_BYTES. Ids are sha256-derived from the trace key, so the
 same trial always gets the same trace and span ids.
 
 Protobuf, not OTLP/JSON: Phoenix's /v1/traces answers 415 to application/json. The encoder
@@ -13,6 +16,7 @@ covers only the fields built here (opentelemetry-proto trace/v1).
 import hashlib
 import json
 import struct
+from datetime import datetime
 
 MAX_OUTPUT_BYTES = 8 * 1024
 
@@ -27,6 +31,13 @@ def truncate(text, limit=MAX_OUTPUT_BYTES):
     return text if len(b) <= limit else b[:limit].decode("utf-8", errors="ignore") + "...[truncated]"
 
 
+def _ns(ts):
+    try:
+        return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() * 1e9)
+    except (AttributeError, ValueError):
+        return None
+
+
 def extract(events):
     """(tool_calls, final_text, result_event) from stream.jsonl events; calls in result order."""
     uses, calls, text, result = {}, [], None, {}
@@ -34,7 +45,7 @@ def extract(events):
         content = (e.get("message") or {}).get("content") if e.get("type") in ("assistant", "user") else None
         for c in content if isinstance(content, list) else []:
             if c.get("type") == "tool_use":
-                uses[c.get("id")] = c
+                uses[c.get("id")] = dict(c, ns=_ns(e.get("timestamp")))
             elif c.get("type") == "text" and e["type"] == "assistant":
                 text = c.get("text") or text
             elif c.get("type") == "tool_result":
@@ -43,7 +54,8 @@ def extract(events):
                 if isinstance(out, list):
                     out = "".join(b.get("text", "") for b in out if isinstance(b, dict))
                 calls.append({"name": u.get("name", "unknown"), "input": u.get("input", {}),
-                              "output": out if isinstance(out, str) else json.dumps(out), "is_error": bool(c.get("is_error"))})
+                              "output": out if isinstance(out, str) else json.dumps(out), "is_error": bool(c.get("is_error")),
+                              "start": u.get("ns"), "end": _ns(e.get("timestamp"))})
         if e.get("type") == "result":
             result = e
     if result.get("structured_output") is not None:
@@ -51,35 +63,61 @@ def extract(events):
     return calls, text if text is not None else str(result.get("result", "")), result
 
 
-def trace_spans(key, events, t0_ns, root_attrs):
+def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
     """Spans (OTLP/JSON shape) for one trial; trace id = sha256(key)[:32], span i = sha256(key/i)[:16]."""
     calls, final_text, result = extract(events)
     tid = hashlib.sha256(key.encode()).hexdigest()[:32]
     sid = lambda i: hashlib.sha256(("%s/%d" % (key, i)).encode()).hexdigest()[:16]
     u = result.get("usage") or {}
-    prompt = sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    tokens = [kv("llm.token_count.prompt", prompt), kv("llm.token_count.completion", int(u.get("output_tokens") or 0)),
-              kv("llm.token_count.total", prompt + int(u.get("output_tokens") or 0))]
-    dur = int(float(result.get("duration_ms") or 0) * 1_000_000)
-    seg = dur // (len(calls) + 1)
+    # ponytail: Phoenix prices an LLM span from model + counts, so one span per model; no modelUsage, one span from usage
+    model = next((a["value"]["stringValue"] for a in root_attrs if a["key"] == "model"), "")
+    models = result.get("modelUsage") or {model: {"inputTokens": u.get("input_tokens"), "cacheReadInputTokens": u.get("cache_read_input_tokens"),
+                                                  "cacheCreationInputTokens": u.get("cache_creation_input_tokens"),
+                                                  "outputTokens": u.get("output_tokens")}}
+    n = lambda d, k: int(d.get(k) or 0)
 
-    def span(i, name, start, end, attrs, error=False):
-        s = {"traceId": tid, "spanId": sid(i), "name": name, "kind": 1, "startTimeUnixNano": str(start),
-             "endTimeUnixNano": str(end), "attributes": attrs, "status": {"code": 2 if error else 1}}
+    def tokens(m, d):
+        read, write, out = n(d, "cacheReadInputTokens"), n(d, "cacheCreationInputTokens"), n(d, "outputTokens")
+        prompt_n = n(d, "inputTokens") + read + write
+        return ([kv("llm.model_name", m)] if m else []) + [
+            kv("llm.provider", "anthropic"), kv("llm.token_count.prompt", prompt_n), kv("llm.token_count.completion", out),
+            kv("llm.token_count.total", prompt_n + out), kv("llm.token_count.prompt_details.cache_read", read),
+            kv("llm.token_count.prompt_details.cache_write", write)]
+
+    dur = int(float(result.get("duration_ms") or 0) * 1_000_000)
+    real = all(c["start"] and c["end"] for c in calls)
+    if real:
+        start = min([t0_ns] + [c["start"] for c in calls])
+        end = max([t0_ns + dur] + [c["end"] for c in calls])
+        bounds = [(c["start"], c["end"]) for c in calls]
+        answer_start = max([start] + [c["end"] for c in calls])
+    else:
+        start, end, seg = t0_ns, t0_ns + dur, dur // (len(calls) + 1)
+        bounds = [(t0_ns + i * seg, t0_ns + (i + 1) * seg) for i in range(len(calls))]
+        answer_start = t0_ns + len(calls) * seg
+
+    def span(i, name, s0, s1, attrs, error=False):
+        s = {"traceId": tid, "spanId": sid(i), "name": name, "kind": 1, "startTimeUnixNano": str(s0),
+             "endTimeUnixNano": str(s1), "attributes": attrs, "status": {"code": 2 if error else 1}}
         if i:
             s["parentSpanId"] = sid(0)
         return s
 
-    spans = [span(0, "agent-run", t0_ns, t0_ns + dur, [kv("openinference.span.kind", "AGENT")] + root_attrs + tokens
-                  + [kv("timestamp.synthetic", "true")], bool(result.get("is_error")))]
+    total = [kv("llm.token_count.prompt", sum(n(d, "inputTokens") + n(d, "cacheReadInputTokens") + n(d, "cacheCreationInputTokens") for d in models.values())),
+             kv("llm.token_count.completion", sum(n(d, "outputTokens") for d in models.values()))]
+    total.append(kv("llm.token_count.total", int(total[0]["value"]["intValue"]) + int(total[1]["value"]["intValue"])))
+    # root has token counts but no llm.model_name, so Phoenix prices only the LLM spans (no double count)
+    spans = [span(0, "agent-run", start, end, [kv("openinference.span.kind", "AGENT"), kv("input.value", truncate(prompt)),
+                                               kv("output.value", truncate(final_text))] + root_attrs + total
+                  + ([] if real else [kv("timestamp.synthetic", "true")]), bool(result.get("is_error")))]
     for i, c in enumerate(calls, 1):
-        spans.append(span(i, c["name"], t0_ns + (i - 1) * seg, t0_ns + i * seg,
+        spans.append(span(i, c["name"], *bounds[i - 1],
                           [kv("openinference.span.kind", "TOOL"), kv("tool.name", c["name"]),
                            kv("input.value", json.dumps(c["input"])), kv("output.value", truncate(c["output"] or ""))],
                           c["is_error"]))
-    n = len(calls) + 1
-    spans.append(span(n, "final-answer", t0_ns + len(calls) * seg, t0_ns + dur,
-                      [kv("openinference.span.kind", "LLM"), kv("output.value", truncate(final_text))] + tokens))
+    for j, (m, d) in enumerate(models.items()):
+        spans.append(span(len(calls) + 1 + j, "final-answer" if not j else "llm-" + m, answer_start, end,
+                          [kv("openinference.span.kind", "LLM")] + ([kv("output.value", truncate(final_text))] if not j else []) + tokens(m, d)))
     return spans
 
 

@@ -1439,6 +1439,66 @@ def pb_attrs(msgs):
     return attrs
 
 
+class TestOtlpSpans(unittest.TestCase):
+    def events(self, stamped=True, usage=None):
+        ts = lambda n: {"timestamp": "2026-11-13T05:45:%02d.500Z" % n} if stamped else {}
+        use = lambda i, n: dict(type="assistant", message={"content": [{"type": "tool_use", "id": i, "name": "a", "input": {}}]}, **ts(n))
+        res = lambda i, n: dict(type="user", message={"content": [{"type": "tool_result", "tool_use_id": i, "content": "ok"}]}, **ts(n))
+        r = {"type": "result", "duration_ms": 9000, "result": "done",
+             "usage": {"input_tokens": 1, "cache_creation_input_tokens": 2, "cache_read_input_tokens": 3, "output_tokens": 4}}
+        r.update(usage or {"modelUsage": {"m1": {"inputTokens": 10, "cacheReadInputTokens": 20, "cacheCreationInputTokens": 30, "outputTokens": 5}}})
+        return [use("t1", 41), use("t2", 42), res("t1", 43), res("t2", 47), r]
+
+    def attrs(self, span):
+        return {a["key"]: next(iter(a["value"].values())) for a in span["attributes"]}
+
+    def test_cost_attributes_come_from_model_usage_on_the_llm_span_only(self):
+        spans = bench.otlp.trace_spans("k", self.events(), 10**9, [], "the prompt")
+        llm = [s for s in spans if self.attrs(s)["openinference.span.kind"] == "LLM"]
+        self.assertEqual(len(llm), 1)
+        a = self.attrs(llm[0])
+        self.assertEqual((a["llm.model_name"], a["llm.token_count.prompt"], a["llm.token_count.completion"],
+                          a["llm.token_count.prompt_details.cache_read"], a["llm.token_count.prompt_details.cache_write"]),
+                         ("m1", "60", "5", "20", "30"))
+        self.assertNotIn("llm.model_name", self.attrs(spans[0]))
+
+    def test_one_llm_span_per_model_and_usage_fallback(self):
+        two = {"modelUsage": {"m1": {"inputTokens": 1}, "m2": {"inputTokens": 2, "outputTokens": 3}}}
+        llm = [self.attrs(s) for s in bench.otlp.trace_spans("k", self.events(usage=two), 0, [])
+               if self.attrs(s)["openinference.span.kind"] == "LLM"]
+        self.assertEqual([a["llm.model_name"] for a in llm], ["m1", "m2"])
+        self.assertIn("output.value", llm[0])
+        self.assertNotIn("output.value", llm[1])
+        old = self.events(usage={"modelUsage": None})
+        llm = [self.attrs(s) for s in bench.otlp.trace_spans("k", old, 0, [bench.otlp.kv("model", "m9")])
+               if self.attrs(s)["openinference.span.kind"] == "LLM"]
+        self.assertEqual((llm[0]["llm.model_name"], llm[0]["llm.token_count.prompt"]), ("m9", "6"))
+
+    def test_real_timestamps_bound_tool_spans_and_the_root_holds_them(self):
+        t0 = int(1.7e9) * 10**9
+        spans = bench.otlp.trace_spans("k", self.events(), t0, [])
+        root, tools = spans[0], spans[1:3]
+        ms = lambda s, k: int(s[k]) // 10**6 % 100000
+        self.assertEqual([(ms(s, "startTimeUnixNano"), ms(s, "endTimeUnixNano")) for s in tools],
+                         [(ms(tools[0], "startTimeUnixNano"), ms(tools[0], "startTimeUnixNano") + 2000),
+                          (ms(tools[1], "startTimeUnixNano"), ms(tools[1], "startTimeUnixNano") + 5000)])
+        self.assertEqual(int(tools[1]["startTimeUnixNano"]) - int(tools[0]["startTimeUnixNano"]), 10**9)
+        for s in spans[1:]:
+            self.assertGreaterEqual(int(s["startTimeUnixNano"]), int(root["startTimeUnixNano"]))
+            self.assertLessEqual(int(s["endTimeUnixNano"]), int(root["endTimeUnixNano"]))
+        self.assertNotIn("timestamp.synthetic", self.attrs(root))
+
+    def test_missing_timestamps_fall_back_to_an_even_split_marked_synthetic(self):
+        spans = bench.otlp.trace_spans("k", self.events(stamped=False), 10**9, [])
+        self.assertEqual(self.attrs(spans[0])["timestamp.synthetic"], "true")
+        self.assertEqual([int(s["endTimeUnixNano"]) - int(s["startTimeUnixNano"]) for s in spans[1:]], [3 * 10**9] * 3)
+
+    def test_root_carries_prompt_and_answer_truncated(self):
+        a = self.attrs(bench.otlp.trace_spans("k", self.events(), 0, [], "p" * 20000)[0])
+        self.assertTrue(a["input.value"].endswith("...[truncated]"))
+        self.assertEqual(a["output.value"], "done")
+
+
 class TestExport(BenchCase):
     def spans(self, body):
         rs = pb(pb(body)[1][0])
