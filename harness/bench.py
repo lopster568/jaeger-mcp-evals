@@ -1214,9 +1214,8 @@ def run(a, cfg):
         pre["client"] = "PASS"
         log.check(True, "api client (%s) accepts %s at effort %s" % (a.provider, a.model, a.effort))
         log.detail("pre-flight: model pin probe: one call, prompt 'Reply with the word ok.', max_tokens 256, no reasoning")
-        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}
         r = subprocess.run(probe_argv(a), capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300,
-                           env=dict(env, **api_secrets(a, cfg)))
+                           env=dict(grade.child_env(False), **api_secrets(a, cfg)))
         seen = re.search(r"endpoint reports model (\S+)", r.stdout)
         if r.returncode == 3 and seen:
             return die("ABORT - model pin: run.model is %s but the endpoint answered as %s; nothing was touched"
@@ -1390,7 +1389,7 @@ def run(a, cfg):
     if a.client == "cli":
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
-        env = dict({k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}, **grade.CLIENT_ENV)
+        env = grade.child_env()
         if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
             env.update(api_secrets(a, cfg))
         probe = {"result": "PASS", "tools": {}}
@@ -1807,7 +1806,12 @@ def run(a, cfg):
 def export_batch(bdir, experiment, cfg, log):
     """Send a finished batch to Phoenix. Never changes the run's result: a problem is one WARN."""
     said = []
-    if export(bdir, None, cfg, out=said.append) == 0:
+    try:
+        sent = export(bdir, None, cfg, out=said.append) == 0
+    except Exception as e:  # the batch is complete and kept: no export fault may change the exit code
+        sent = False
+        said.append("export: FAILED - %r" % e)
+    if sent:
         log.detail(said[-1])
         base = phoenix_base(None, cfg)
         pid = phoenix_project_id(base, experiment)
@@ -1866,9 +1870,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     meta = {k: merged[k] for k in META_KEYS}
     write_json(os.path.join(trial, "meta.json"), meta)
     # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE",) + SECRET_KEYS + grade.USER_ENV}
-    if a.client == "cli":
-        env.update(grade.CLIENT_ENV)
+    env = grade.child_env(a.client == "cli")
     if a.client == "api" or a.bill_api_key:
         env.update(secrets or {})  # environment only: never argv, never a record
     stream = os.path.join(trial, "stream.jsonl")
@@ -2258,7 +2260,7 @@ def phoenix_project_id(base, name):
     try:
         with urllib.request.urlopen(base + "/v1/projects", timeout=10) as r:
             return next((p["id"] for p in json.load(r)["data"] if p["name"] == name), None)
-    except (OSError, ValueError, KeyError, TypeError):
+    except Exception:  # http.client.BadStatusLine (a non-HTTP listener) is not an OSError
         return None
 
 
@@ -2323,7 +2325,7 @@ def export(batch_dir, endpoint, cfg, out=print):
     try:
         with urllib.request.urlopen(req, timeout=30):
             pass
-    except OSError as e:  # HTTPError and URLError included
+    except Exception as e:  # HTTPError, URLError, and http.client.BadStatusLine (a non-HTTP listener), which is not an OSError
         down = isinstance(e, urllib.error.URLError) and not isinstance(e, urllib.error.HTTPError)
         print("export: FAILED - Phoenix %sat %s: %s" % ("not reachable " if down else "", url, e))
         return 1

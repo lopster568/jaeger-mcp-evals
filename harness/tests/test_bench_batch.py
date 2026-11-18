@@ -1488,6 +1488,20 @@ class TestOtlpSpans(unittest.TestCase):
             self.assertLessEqual(int(s["endTimeUnixNano"]), int(root["endTimeUnixNano"]))
         self.assertNotIn("timestamp.synthetic", self.attrs(root))
 
+    def test_answer_span_has_a_real_interval_and_the_root_reaches_the_last_event(self):
+        at = lambda s: bench.otlp._ns("2026-11-13T05:45:%sZ" % s)
+        ev = self.events()  # tool results end at :47.5; t0 + duration_ms is :49
+        verdict = [dict(type="assistant", timestamp="2026-11-13T05:45:55.500Z",
+                        message={"content": [{"type": "tool_use", "id": "v", "name": "StructuredOutput", "input": {}}]}),
+                   dict(type="user", timestamp="2026-11-13T05:45:56.500Z",
+                        message={"content": [{"type": "tool_result", "tool_use_id": "v", "content": "ok"}]})]
+        spans = bench.otlp.trace_spans("k", ev[:-1] + verdict + ev[-1:], at("40"), [])
+        answer = next(s for s in spans if s["name"] == "final-answer")
+        self.assertEqual((int(answer["startTimeUnixNano"]), int(answer["endTimeUnixNano"])), (at("47.500"), at("56.500")))
+        text = [dict(type="assistant", timestamp="2026-11-13T05:45:58.500Z", message={"content": [{"type": "text", "text": "x"}]})]
+        root = bench.otlp.trace_spans("k", ev[:-1] + text + ev[-1:], at("40"), [])[0]
+        self.assertEqual(int(root["endTimeUnixNano"]), at("58.500"))
+
     def test_missing_timestamps_fall_back_to_an_even_split_marked_synthetic(self):
         spans = bench.otlp.trace_spans("k", self.events(stamped=False), 10**9, [])
         self.assertEqual(self.attrs(spans[0])["timestamp.synthetic"], "true")
@@ -1584,6 +1598,7 @@ class TestExport(BenchCase):
     def test_phoenix_line_falls_back_to_the_base_url_when_the_lookup_fails(self):
         for projects in (None, [{"name": "other", "id": "x"}]):  # 404, then a project list without this one
             Fake.projects = projects
+            shutil.rmtree(self.runs, ignore_errors=True)  # two runs in one UTC second would share a batch directory
             self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
             self.assertEqual(self.err.splitlines()[-1],
                              "Phoenix http://127.0.0.1:%s   project t: open the project, one trace per trial" % self.phoenix_port)
@@ -1607,6 +1622,17 @@ class TestExport(BenchCase):
         self.assertIn("the trials are on disk in", self.err)
         self.assertIn("once fixed: python3 harness/bench.py export", self.err)
         self.assertLess(next(i for i, l in enumerate(lines) if l.startswith("Batch")), next(i for i, l in enumerate(lines) if "WARN  not exported" in l))
+
+    def test_an_export_exception_is_a_warn_and_the_run_still_exits_zero(self):
+        with mock.patch.object(bench, "export", side_effect=TypeError("bad span")):
+            self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertIn("  WARN  not exported to Phoenix: TypeError('bad span')", self.err)
+
+    def test_a_non_http_reply_fails_the_export_with_one_line(self):
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        with mock.patch.object(bench.urllib.request, "urlopen", side_effect=http.client.BadStatusLine("junk")):
+            self.assertEqual(self.bench("export", self.batch_dir(), PHOENIX_PORT=self.phoenix_port), 1, self.out)
+        self.assertIn("export: FAILED - Phoenix at http://127.0.0.1:%s/v1/traces: junk" % self.phoenix_port, self.out)
 
     def test_phoenix_down_is_one_warn_line(self):
         self.assertEqual(self.run_batch(1), 0, self.err)  # PHOENIX_PORT=1: nothing listens

@@ -255,6 +255,10 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(lines, ["judge: refusing to compare: the client version differs (baseline arm ran on 2.1.285; "
                                  "variant arm ran on 2.1.326); keep each pair on one client"])
 
+    def test_row_and_manifest_versions_go_through_one_parse(self):
+        rows = [{}, {"client_version": "codex-cli 0.153.2"}]  # a row without its own version falls back to the manifest
+        self.assertEqual(judge_mod._versions({"client_version_pre": "codex-cli 0.153.2"}, rows), ["0.153.2", "0.153.2"])
+
     def test_client_version_differing_within_an_arm_refuses(self):
         write_manifest(self.baseline_dir, arm_pin="baseline")
         write_scores(self.baseline_dir, [dict(r, client_version="2.1.285" if i else "2.1.326") for i, r in enumerate(baseline_rows())])

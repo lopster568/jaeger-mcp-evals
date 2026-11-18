@@ -207,8 +207,8 @@ def tools(cfg):
         return ".".join(v.split(".")[:2]) if re.match(r"\d+(\.\d+)+", v) else None
     docker, compose = (mm(first_token(a)) for a in (["docker", "version", "--format", "{{.Server.Version}}"],
                                                     ["docker", "compose", "version", "--short"]))
-    if (docker is None or compose is None) and cfg.get("FIXTURE_SSH_USER"):
-        versions = ("docker not installed (remote fixture)",)
+    if docker is None and cfg.get("FIXTURE_SSH_USER"):  # absent, a WSL shim or a stopped daemon: the probe cannot tell which
+        versions = ("local docker not running (remote fixture)",)
     else:
         versions = ("docker " + (docker or "?"), "compose " + (compose or "?"))
     versions += ("python %d.%d" % sys.version_info[:2],) + (

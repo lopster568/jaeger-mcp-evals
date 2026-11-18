@@ -119,10 +119,11 @@ def _load_manifest(batch_dir):
 
 
 def _versions(manifest, rows):
-    """The client version of each row: its own (observed in the stream), else the manifest's client_version_pre
-    ("2.1.285 (Claude Code)" -> "2.1.285"); None where neither was recorded."""
-    pre = next((t for t in str(manifest.get("client_version_pre") or "").split() if t[:1].isdigit()), None)
-    return [r.get("client_version") or pre for r in rows] or [pre]
+    """The client version of each row: its own (observed in the stream), else the manifest's client_version_pre, each
+    cut to its first digit-led token ("2.1.285 (Claude Code)", "codex-cli 0.153.2"); None where neither was recorded."""
+    tok = lambda s: next((t for t in str(s or "").split() if t[:1].isdigit()), None)
+    pre = tok(manifest.get("client_version_pre"))
+    return [tok(r.get("client_version")) or pre for r in rows] or [pre]
 
 
 CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",

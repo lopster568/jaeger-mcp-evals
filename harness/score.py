@@ -388,7 +388,6 @@ def score(out_dir, call_grader=False, scenario=None):
         "grader_model": g and g["model"],
         "grader_prompt_sha256": g and g["prompt_sha256"],
         "grader_cached": g and g["cached"],
-        "grader_cost_usd": g and g.get("cost_usd"),
         "cascade": cascade,
         "abstained": abstained,
         "verdict": verdict,

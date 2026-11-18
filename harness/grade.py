@@ -20,12 +20,17 @@ CLAUDE = "claude"
 LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
-# The user's own plugins load from this env var even with --setting-sources "" (2026-11-18: a shell rc's
-# gate-band plugin was in the init of 261 of 301 published trials; it only drew UI and hooked Bash, which trials lack).
-USER_ENV = ("CLAUDE_CODE_PLUGIN_DIRS",)
-DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL") + USER_ENV
+# CLAUDE_CODE_PLUGIN_DIRS: the user's own plugins load from it even with --setting-sources "".
+DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_PLUGIN_DIRS")
 # Set on every Claude CLI call the harness makes (trials, sandbox probe, grader): no tool-search placeholder tool, no self-update.
 CLIENT_ENV = {"ENABLE_TOOL_SEARCH": "false", "DISABLE_AUTOUPDATER": "1"}
+
+
+def child_env(claude=True):
+    """os.environ for a child process: DROP_ENV removed, CLIENT_ENV added when the child is the Claude CLI."""
+    return dict({k: v for k, v in os.environ.items() if k not in DROP_ENV}, **(CLIENT_ENV if claude else {}))
+
+
 # Set by bench.py for an experiment with run.bill_api_key: the grader bills this key instead of the
 # logged-in plan, and a call whose init event reports another apiKeySource fails. Environment only.
 API_KEY = None
@@ -71,7 +76,7 @@ def call_cli(truth, text):
     """One grader call; {"label", "reason"}. Raises RuntimeError on anything but a valid label."""
     if BILLING_FAILED:
         raise RuntimeError("grader: billing: an earlier call failed the apiKeySource check; no further grader calls")
-    env = dict({k: v for k, v in os.environ.items() if k not in DROP_ENV}, **CLIENT_ENV)
+    env = child_env()
     if API_KEY:
         env["ANTHROPIC_API_KEY"] = API_KEY
     with tempfile.TemporaryDirectory() as work:

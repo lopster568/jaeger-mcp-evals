@@ -4,9 +4,11 @@ Span layout per trial: one AGENT root span over the whole run, one TOOL child sp
 tool_use/tool_result pair, one LLM child span per model holding the final answer and the token counts
 Phoenix prices (llm.model_name plus prompt, completion and cache details from the result's modelUsage).
 A tool span runs from the timestamp of the assistant event holding its tool_use to the timestamp of the
-user event holding its tool_result; the root spans the trial start (started_utc) to the later of
-started_utc + duration_ms and the last event. Streams without those timestamps (older CLIs) fall back
-to splitting duration_ms evenly across the child spans (timestamp.synthetic=true). The root carries the
+user event holding its tool_result. The root runs from the trial start (started_utc) to the latest of
+started_utc + duration_ms and every event's timestamp: the CLI's duration_ms can end before its last event.
+The LLM span runs from the last tool_result before the model's last event to the root's end. Streams
+without those timestamps (older CLIs) fall back to splitting duration_ms evenly across the child spans
+(timestamp.synthetic=true). The root carries the
 prompt and the answer, and tool outputs and the answer are cut to MAX_OUTPUT_BYTES. Ids are sha256-derived from the trace key, so the
 same trial always gets the same trace and span ids.
 
@@ -69,7 +71,6 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
     tid = hashlib.sha256(key.encode()).hexdigest()[:32]
     sid = lambda i: hashlib.sha256(("%s/%d" % (key, i)).encode()).hexdigest()[:16]
     u = result.get("usage") or {}
-    # ponytail: Phoenix prices an LLM span from model + counts, so one span per model; no modelUsage, one span from usage
     model = next((a["value"]["stringValue"] for a in root_attrs if a["key"] == "model"), "")
     models = result.get("modelUsage") or {model: {"inputTokens": u.get("input_tokens"), "cacheReadInputTokens": u.get("cache_read_input_tokens"),
                                                   "cacheCreationInputTokens": u.get("cache_creation_input_tokens"),
@@ -87,10 +88,12 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
     dur = int(float(result.get("duration_ms") or 0) * 1_000_000)
     real = all(c["start"] and c["end"] for c in calls)
     if real:
-        start = min([t0_ns] + [c["start"] for c in calls])
-        end = max([t0_ns + dur] + [c["end"] for c in calls])
+        stamps = [(e.get("type"), t) for e in events for t in [_ns(e.get("timestamp"))] if t]
+        start = min([t0_ns] + [t for _, t in stamps])
+        end = max([t0_ns + dur] + [t for _, t in stamps])
         bounds = [(c["start"], c["end"]) for c in calls]
-        answer_start = max([start] + [c["end"] for c in calls])
+        last = max([t for kind, t in stamps if kind == "assistant"] or [end])  # the model's last event
+        answer_start = max([start] + [c["end"] for c in calls if c["end"] < last])
     else:
         start, end, seg = t0_ns, t0_ns + dur, dur // (len(calls) + 1)
         bounds = [(t0_ns + i * seg, t0_ns + (i + 1) * seg) for i in range(len(calls))]

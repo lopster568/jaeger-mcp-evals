@@ -269,9 +269,11 @@ class Setup(unittest.TestCase):
 
     def test_tools_line_without_docker_prints_no_junk_version(self):
         # on WSL without Docker the shim prints "The command 'docker' could not be found..." and first_token returns "The"
-        for ssh, want in (("me", "ok    Tools        docker not installed (remote fixture), python "), ("", "ok    Tools        docker ?, compose ?, python ")):
+        for ssh, docker, want in (("me", "The", "ok    Tools        local docker not running (remote fixture), python "),
+                                  ("me", "29.8.1", "ok    Tools        docker 29.8, compose ?, python "),
+                                  ("", "The", "ok    Tools        docker ?, compose ?, python ")):
             buf = io.StringIO()
-            with mock.patch.object(fc, "first_token", side_effect=["The", "The", "2.1.300"]), contextlib.redirect_stdout(buf):
+            with mock.patch.object(fc, "first_token", side_effect=[docker, "The", "2.1.300"]), contextlib.redirect_stdout(buf):
                 fc.tools({"FIXTURE_SSH_USER": ssh})
             self.assertTrue(buf.getvalue().startswith(want), buf.getvalue())
             self.assertNotIn("The", buf.getvalue())
