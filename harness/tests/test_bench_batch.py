@@ -868,7 +868,8 @@ class TestBatch(BenchCase):
         with mock.patch.object(bench, "ofrep_variant", stuck), mock.patch.object(bench, "sleep", lambda s: None):
             self.assertEqual(self.run_batch(1), 1, self.err)
         self.assertIn("ABORT - OFREP never showed", self.err)
-        self.assertIn("fix: restore the flag file from lfx/demo.flagd.json.pristine", self.err)
+        self.assertIn("fix: the flag file is restored automatically", self.err)
+        self.assertIn("fault flag back at default", self.err.split("ABORT - OFREP never showed")[1])  # the restore really ran after the abort
 
     def test_slow_restore_is_confirmed_by_polling(self):
         blind, n = self.ofrep_blind_until(2)

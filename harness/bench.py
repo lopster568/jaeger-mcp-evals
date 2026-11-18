@@ -1560,7 +1560,7 @@ def run(a, cfg):
                 break
         if not fault["ofrep_confirmed"]:
             return die("ABORT - OFREP never showed %r=%r after the flip" % (flag, act["value"]),
-                       fix="restore the flag file from lfx/demo.flagd.json.pristine on the fixture (nothing else was changed), check that flagd is up, then run again")
+                       fix="the flag file is restored automatically (see Restore below); check that flagd is up on the demo host, then run again")
         log.detail("bench: OFREP confirms %r=%r" % (flag, act["value"]))
         log.check(True, "%s %s" % (flag, act["value"]))
         t_flip = time.monotonic()
