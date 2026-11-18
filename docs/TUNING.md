@@ -37,7 +37,7 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 ## Mechanism grader
 
 - Labels the agent's mechanism `correct`, `incorrect` or `unclear` against the scenario's `mechanism_truth`.
-- Model `claude-fable-5-1`, pinned in `GRADER_MODEL`; prompt `harness/grader-prompt.txt`, recorded by sha256.
-- Runs through the Claude Code CLI sandboxed like the agent.
+- Model `GRADER_MODEL` (default `claude-fable-5-1`), command `GRADER_BIN` (default `claude`), both in `fixture.env`; prompt `harness/grader-prompt.txt`, recorded by sha256.
+- Runs through the Claude Code CLI (or a `GRADER_BIN` wrapper taking its `-p` arguments) sandboxed like the agent.
 - Every label is cached in the batch's `grades.jsonl`. Only the end of `bench.py run` calls the grader, and `verify` fails on a miss. Changing model, prompt or truth changes the key.
 - Validation: on a blind 94-item set of real and constructed explanations, the grader's labels matched a human labeler on all 21 items the human labeled, and were identical across 3 passes on all 94; human-labeled evidence on near-miss explanations (right place, wrong cause) is still thin. The validation record is kept outside this repository.

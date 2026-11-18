@@ -4,6 +4,7 @@
 Run with: python3 -m unittest discover harness/tests
 Python 3 stdlib only, no network, no LLM.
 """
+import importlib
 import json
 import os
 import stat
@@ -118,6 +119,15 @@ class TestGrade(unittest.TestCase):
         seen = self.run_call("short")
         self.assertIsNone(seen["input"])
         self.assertEqual(seen["argv"][1:3], ["-p", grade.user_prompt("t", "short")])
+
+    def test_grader_model_and_bin_are_settings(self):
+        try:
+            with mock.patch.dict(os.environ, {"GRADER_MODEL": "m-x", "GRADER_BIN": "/w/claude-wrap"}):
+                importlib.reload(grade)
+                self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("m-x", "/w/claude-wrap"))
+        finally:
+            importlib.reload(grade)
+        self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("claude-fable-5-1", "claude"))
 
 
 if __name__ == "__main__":
