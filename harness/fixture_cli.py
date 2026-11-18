@@ -202,11 +202,17 @@ def host_only(cfg):
 
 
 def tools(cfg):
-    mm = lambda v: ".".join(v.lstrip("v").split(".")[:2])
-    versions = ("docker " + mm(first_token(["docker", "version", "--format", "{{.Server.Version}}"])),
-                "compose " + mm(first_token(["docker", "compose", "version", "--short"])),
-                "python %d.%d" % sys.version_info[:2]) + (
-                () if host_only(cfg) else ("claude " + first_token(["claude", "--version"]),))
+    def mm(v):
+        v = v.lstrip("v")
+        return ".".join(v.split(".")[:2]) if re.match(r"\d+(\.\d+)+", v) else None
+    docker, compose = (mm(first_token(a)) for a in (["docker", "version", "--format", "{{.Server.Version}}"],
+                                                    ["docker", "compose", "version", "--short"]))
+    if (docker is None or compose is None) and cfg.get("FIXTURE_SSH_USER"):
+        versions = ("docker not installed (remote fixture)",)
+    else:
+        versions = ("docker " + (docker or "?"), "compose " + (compose or "?"))
+    versions += ("python %d.%d" % sys.version_info[:2],) + (
+        () if host_only(cfg) else ("claude " + first_token(["claude", "--version"]),))
     out(line("ok", "Tools", sep().join(versions) + ("" if host_only(cfg) else ", logged in")))
 
 

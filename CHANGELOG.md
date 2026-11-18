@@ -156,3 +156,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-11-18
 
 - Harness: trials, the sandbox probe and the grader no longer inherit `CLAUDE_CODE_PLUGIN_DIRS`, and a trial whose CLI loaded a non-builtin plugin lists it under Client limits (report only). Why: `--setting-sources ""` does not stop plugins named in that variable; 261 of the 301 published trials loaded an operator UI plugin from it. It added no tool (each init lists only the verdict tool and the Jaeger tools) and hooked only Bash, UI rendering and two slash commands, none of which a trial has, so no published result changes.
+- Tooling: `make setup` prints `docker not installed (remote fixture)` instead of `docker The, compose The` when `docker` prints no version and `FIXTURE_SSH_USER` is set (the parsing dates from 2026-10-19). No scenario or scoring change.

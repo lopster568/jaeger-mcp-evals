@@ -263,6 +263,15 @@ class Setup(unittest.TestCase):
         self.assertRegex(text, r"ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+\n")
         self.assertIn("ok    Ready        3 containers running, Jaeger answers", text)
 
+    def test_tools_line_without_docker_prints_no_junk_version(self):
+        # on WSL without Docker the shim prints "The command 'docker' could not be found..." and first_token returns "The"
+        for ssh, want in (("me", "ok    Tools        docker not installed (remote fixture), python "), ("", "ok    Tools        docker ?, compose ?, python ")):
+            buf = io.StringIO()
+            with mock.patch.object(fc, "first_token", side_effect=["The", "The", "2.1.300"]), contextlib.redirect_stdout(buf):
+                fc.tools({"FIXTURE_SSH_USER": ssh})
+            self.assertTrue(buf.getvalue().startswith(want), buf.getvalue())
+            self.assertNotIn("The", buf.getvalue())
+
     def test_compose_up_failure_shows_log_tail(self):
         rc, text = self.setup_run(FAKE_UP_RC="1")
         self.assertEqual(rc, 1)
