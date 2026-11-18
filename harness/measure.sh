@@ -55,9 +55,6 @@ for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
   else run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"; fi
-  # Both arms serve the checkout's own tool wording; without this key bench.py checks a non-baseline image against desc-change.json.
-  run python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["descriptions"]=None; open(p,"w").write(json.dumps(d,indent=2)+"\n")' \
-    "$ROOT/harness/experiments/images/$1.json" || die "cannot set descriptions: null in the $1 image record"
 done
 
 # Pair file, written before any run (pre-registration). An existing one must match.

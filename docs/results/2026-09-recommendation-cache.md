@@ -117,6 +117,6 @@ Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixt
 ## Reproduce
 
 1. `make setup` brings up the fixture ([fixture/FIXTURE.md](../../fixture/FIXTURE.md)).
-2. Build the variant image: `git am` the [patch](../../harness/experiments/images/skill-callee-down.patch) onto a Jaeger checkout at v2.20.0, build the image as in FIXTURE.md's "Build a variant" (`fixture/build-variant.sh` applies tool descriptions only, not skill text), and tag it as in [skill-callee-down.json](../../harness/experiments/images/skill-callee-down.json).
+2. Build the variant image: `git am` the [patch](../../harness/experiments/images/skill-callee-down.patch) onto a Jaeger checkout at v2.20.0, build the image as in FIXTURE.md's "Build a variant" (`fixture/build-image.sh`), and tag it as in [skill-callee-down.json](../../harness/experiments/images/skill-callee-down.json).
 3. `python3 harness/bench.py run harness/experiments/skill-callee-down-cli55.json`
 4. `python3 harness/judge.py <baseline batch> <variant batch>`; `python3 harness/bench.py verify` re-scores the raw trajectories.
