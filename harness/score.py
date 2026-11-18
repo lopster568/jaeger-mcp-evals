@@ -166,8 +166,8 @@ def check_abstain_structured(verdict):
 
 JAEGER_PREFIX = "mcp__jaeger__"
 VERDICT_TOOL = "StructuredOutput"  # the CLI's own tool for the --json-schema answer
-# tool_result text for a name the client does not have: the CLI's, then agent_loop.py's
-REJECTED = ("No such tool available", "unknown tool: ")
+# tool_result text for a name the client does not have (the CLI's)
+REJECTED = ("No such tool available",)
 
 
 def tools_on(meta):
@@ -192,15 +192,14 @@ def jaeger_names(out_dir, meta, init_tools):
 
 def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_tools):
     """Violations of the trial's sandbox, as strings; empty means sandbox_ok. The init event
-    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (never for
-    api; codex lists no tools), and exactly one MCP server, jaeger (none for an arm with tools
+    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (codex lists
+    no tools), and exactly one MCP server, jaeger (none for an arm with tools
     off). Every tool_use must name an allowed tool; one the client refused (REJECTED) is
     attempted_unknown_tool, any other executed_unknown_tool. codex_client's "error" items are
     not tool calls."""
     if init is None:
         return ["no_init_event"]
-    out, verdict_tool = [], {VERDICT_TOOL} if client != "api" else set()
-    allowed = (allowed_jaeger or set()) | verdict_tool
+    out, allowed = [], (allowed_jaeger or set()) | {VERDICT_TOOL}
     if "tools" in init and allowed_jaeger is not None:
         got = set(init["tools"] or [])
         out += ["init_tool_extra:%s" % t for t in sorted(got - allowed)]
@@ -212,7 +211,7 @@ def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_t
         name = c["name"]
         if client == "codex" and name == "error":
             continue
-        ok = name in allowed if allowed_jaeger is not None else name in verdict_tool or is_jaeger_name(name)
+        ok = name in allowed if allowed_jaeger is not None else name == VERDICT_TOOL or is_jaeger_name(name)
         if not ok:
             r = results_by_id.get(c["id"]) or {}
             kind = "attempted_unknown_tool" if r.get("rejected") else "executed_unknown_tool"
@@ -396,7 +395,7 @@ def score(out_dir, call_grader=False, scenario=None):
         "system_under_test": meta.get("system_under_test"),
         "effort": meta.get("effort"),
         "compaction_events": compaction_events,
-        "client_version": (init or {}).get("claude_code_version") or (init or {}).get("loop_version") or (init or {}).get("client_version"),
+        "client_version": (init or {}).get("claude_code_version") or (init or {}).get("client_version"),
         "client_limits": client_limits(final, meta, compaction_events, retries) + [
             "plugin loaded: %s" % p.get("name") for p in (init or {}).get("plugins") or [] if p.get("path") != "builtin"],
         "sandbox_ok": not breached,

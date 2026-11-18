@@ -8,7 +8,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | File | Where | Holds | Copied to `records/` |
 |---|---|---|---|
 | `meta.json` | trial dir | every setting and source hash of one trial | no |
-| `stream.jsonl`, `prompt.txt`, `system-prompt.txt`, `mcp.json`, `stderr.txt`, `exit.txt`, plus `agent_loop.json`, `reasoning.jsonl`, `mcp.jsonl`, `codex-events.jsonl` by client | trial dir | raw client output and the exact inputs; `mcp.json` has the real host | no |
+| `stream.jsonl`, `prompt.txt`, `system-prompt.txt`, `mcp.json`, `stderr.txt`, `exit.txt`, plus `codex-events.jsonl` for codex | trial dir | raw client output and the exact inputs; `mcp.json` has the real host | no |
 | `tools.json` | batch dir | `tools/list` from pre-flight, descriptions included; absent if no arm has tools | no |
 | `manifest.json` | batch dir | batch-level settings and file hashes | yes |
 | `preflight.json` | batch dir | pre-flight results: leak, readiness, oracle, sandbox probe | yes |
@@ -25,7 +25,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 |---|---|---|
 | Identity and order | `schema_version`, `run_id`, `batch_id`, `order_index`, `trial_index`, `seed`, `arm` | `run_id` is `<batch_id>/<order_index>-<arm>`; `seed` is `run.seed`, else random |
 | Scenario and prompts | `scenario`, `scenario_sha256`, `prompt_name`, `prompt_sha256`, `system_prompt_sha256`, `verdict_schema_sha256` | sha256 of the files under `harness/` |
-| Model and client | `client`, `provider`, `model_requested`, `effort`, `max_turns`, `max_budget_usd`, `client_argv`, `history_policy`, `client_version_pre` | `run.*`; argv has prompts as `sha256:`, paths made relative; version taken at batch start |
+| Model and client | `client`, `provider`, `model_requested`, `effort`, `max_turns`, `max_budget_usd`, `client_argv`, `history_policy`, `client_version_pre` | `run.*` (`provider` is always null); argv has prompts as `sha256:`, paths made relative; version taken at batch start |
 | Tools served | `mcp_endpoint`, `mcp_config_sha256`, `tools_list_sha256`, `tools_count`, `tool_descriptions_file`, `tool_descriptions_sha256`, `tool_descriptions_check` | endpoint is host-free, null with `tools: false`; check is `compared`, `recorded_only` or `no_tools` |
 | System under test | `jaeger_image`, `jaeger_image_id`, `jaeger_commit`, `otel_demo_ref`, `fixture_overlay_sha256`, `system_under_test` | read from the fixture at batch start, not typed; `jaeger_commit` is `unresolved` if unknown; the last key is the block copied into each scores row |
 | Fault | `fault`, `flag_names` | `fault` is flag, activation field and value, plus `flip_utc`, `ofrep_confirmed`, `signal_traces_seen`; `flag_names` feeds the leak tripwire |
@@ -33,7 +33,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | Batch checks | `preflight`, `experiment` | `preflight` repeats `preflight.json`; `experiment` is `{name, file, sha256}` |
 | Harness | `harness_git_sha`, `harness_dirty`, `score_py_sha256` | dirty means uncommitted changes under `harness` or `fixture` |
 | Timing and exit | `started_utc`, `ended_utc`, `wall_time_s`, `exit_code` | `ended_utc` is null until the call returns; 127 if the client could not start |
-| Observed | `observed`, `agent_loop` | `observed` is what the client reported (version, model, tools, skills, agents) plus `compaction_events`; `agent_loop` is the api loop's settings block, null for cli |
+| Observed | `observed`, `agent_loop` | `observed` is what the client reported (version, model, tools, skills, agents) plus `compaction_events`; `agent_loop` is always null |
 
 ## manifest.json
 

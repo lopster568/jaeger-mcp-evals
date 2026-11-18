@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Runs one trial through the OpenAI Codex CLI (`codex exec`) and writes stream.jsonl
-in the loop's shape (init, assistant tool_use, user tool_result, result with
+in the Claude CLI's stream-json shape (init, assistant tool_use, user tool_result, result with
 structured_output), so score.py reads it unchanged. Started by
 `bench.py run` with run.client codex; codex's own events are kept in codex-events.jsonl.
 
@@ -24,18 +24,84 @@ not run or the turn failed.
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from types import SimpleNamespace
 
 import config
-from agent_loop import extract_json, mcp_url
 
 # Features that give the model a tool other than MCP; `--disable unified_exec` is
 # accepted but `codex features list` still shows it enabled, so it is left out.
 DISABLE = ("shell_tool", "apps", "plugins", "multi_agent", "image_generation", "browser_use",
            "computer_use", "in_app_browser", "view_image", "sleep_tool", "goals", "tool_suggest")
+
+
+def mcp_url(config_path, server):
+    with open(config_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    servers = cfg.get("mcpServers") or {}
+    if not servers:
+        return None  # the notools arm: no MCP server, no tools
+    entry = servers.get(server)
+    if not entry or not entry.get("url"):
+        raise ValueError("mcp config %s has no mcpServers.%s.url" % (config_path, server))
+    if entry.get("type") not in (None, "http", "streamable-http"):
+        raise ValueError("mcp server %s has type %r; only streamable HTTP is supported" % (server, entry.get("type")))
+    return entry["url"]
+
+
+_TYPES = {
+    "object": dict, "array": list, "string": str, "boolean": bool,
+    "null": type(None),
+}
+
+
+def validate(instance, schema, path="$"):
+    """The subset of JSON Schema that verdict-schema.json uses."""
+    errors = []
+    t = schema.get("type")
+    if t == "integer":
+        ok = isinstance(instance, int) and not isinstance(instance, bool)
+    elif t == "number":
+        ok = isinstance(instance, (int, float)) and not isinstance(instance, bool)
+    elif t in _TYPES:
+        ok = isinstance(instance, _TYPES[t])
+    else:
+        ok = True
+    if not ok:
+        return ["%s: expected %s, got %s" % (path, t, type(instance).__name__)]
+    if "enum" in schema and instance not in schema["enum"]:
+        errors.append("%s: %r not in enum" % (path, instance))
+    if t == "object":
+        props = schema.get("properties", {})
+        for k in schema.get("required", []):
+            if k not in instance:
+                errors.append("%s: missing required %r" % (path, k))
+        if schema.get("additionalProperties") is False:
+            for k in instance:
+                if k not in props:
+                    errors.append("%s: unexpected property %r" % (path, k))
+        for k, sub in props.items():
+            if k in instance:
+                errors.extend(validate(instance[k], sub, "%s.%s" % (path, k)))
+    if t == "array" and "items" in schema:
+        for i, item in enumerate(instance):
+            errors.extend(validate(item, schema["items"], "%s[%d]" % (path, i)))
+    return errors
+
+
+def extract_json(text, schema):
+    """The final message, code fences stripped, is structured_output if it parses as JSON
+    and validates; otherwise null, with the errors."""
+    text = text.strip()
+    fenced = re.fullmatch(r"```[a-zA-Z]*\s*(.*?)\s*```", text, re.DOTALL)
+    try:
+        obj = json.loads(fenced.group(1) if fenced else text)
+    except ValueError as e:
+        return None, ["final text is not JSON: %s" % e]
+    errs = validate(obj, schema)
+    return (None, errs) if errs else (obj, None)
 
 
 def codex_argv(codex_bin, model, effort, schema_file, url):
@@ -149,7 +215,7 @@ def main(argv=None):
             if subtype is None:
                 subtype = "error_during_execution"
                 err = err or "codex exited %d without turn.completed" % p.returncode
-        structured, errors = extract_json(SimpleNamespace(content=[{"type": "text", "text": text}]), schema)
+        structured, errors = extract_json(text, schema)
         # score.py sums input_tokens and cache_read_input_tokens; codex's input_tokens includes the cached ones.
         u = {"input_tokens": usage.get("input_tokens", 0) - usage.get("cached_input_tokens", 0),
              "cache_read_input_tokens": usage.get("cached_input_tokens", 0), "output_tokens": usage.get("output_tokens", 0)}

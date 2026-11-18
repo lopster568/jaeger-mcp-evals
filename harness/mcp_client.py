@@ -5,12 +5,9 @@ notifications/initialized, tools/list (with cursor pagination) and
 tools/call. A response may come back as application/json or as a
 text/event-stream; both are handled, and in the stream case the message
 whose id matches the request is picked (server notifications interleaved
-before it are skipped). Every raw HTTP exchange is handed to `record`, a
-callable taking one dict, so the run directory keeps the bytes the server
-actually sent.
+before it are skipped).
 """
 import json
-import time
 import urllib.error
 import urllib.request
 
@@ -45,16 +42,13 @@ def parse_sse(text):
 
 
 class MCPClient:
-    def __init__(self, url, record=None, timeout=120.0, client_name="jaeger-mcp-evals-owned-agent-loop", client_version="0"):
+    def __init__(self, url, timeout=120.0, client_name="jaeger-mcp-evals-harness", client_version="0"):
         self.url = url
-        self.record = record or (lambda _entry: None)
         self.timeout = timeout
         self.client_info = {"name": client_name, "version": client_version}
         self.session_id = None
         self.protocol_version = None
-        self.server_info = None
         self.instructions = None
-        self.initialized_notification_error = None
         self._next_id = 0
 
     def _headers(self):
@@ -69,8 +63,6 @@ class MCPClient:
         """POST one JSON-RPC message. Returns (http_status, headers, body_text)."""
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.url, data=data, headers=self._headers(), method="POST")
-        t0 = time.time()
-        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "request": payload}
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 status, headers = resp.status, resp.headers
@@ -78,17 +70,9 @@ class MCPClient:
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace") if e.fp else ""
             e.close()
-            entry.update({"http_status": e.code, "content_type": e.headers.get("Content-Type", "") if e.headers else "",
-                          "body": body, "elapsed_ms": int((time.time() - t0) * 1000)})
-            self.record(entry)
             raise MCPError("HTTP %d from MCP server: %s" % (e.code, body[:500]))
         except (urllib.error.URLError, OSError) as e:
-            entry.update({"transport_error": repr(e), "elapsed_ms": int((time.time() - t0) * 1000)})
-            self.record(entry)
             raise MCPError("transport error talking to MCP server: %r" % (e,))
-        entry.update({"http_status": status, "content_type": headers.get("Content-Type", ""),
-                      "body": body, "elapsed_ms": int((time.time() - t0) * 1000)})
-        self.record(entry)
         return status, headers, body
 
     def _request(self, method, params=None):
@@ -125,15 +109,12 @@ class MCPClient:
             self.session_id = sid
         result = msg["result"]
         self.protocol_version = result.get("protocolVersion") or PROTOCOL_VERSION
-        self.server_info = result.get("serverInfo")
         self.instructions = result.get("instructions")
-        # A failed notification alone does not end the session: _post has
-        # already logged the raw exchange to mcp.jsonl, keep the error here
-        # for the init event, and carry on to tools/list.
+        # A failed notification alone does not end the session: carry on to tools/list.
         try:
             self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        except MCPError as e:
-            self.initialized_notification_error = str(e)
+        except MCPError:
+            pass
         return result
 
     def list_tools(self):
