@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """harness/measure.sh on a throwaway git repo: --dry-run prints the plan and builds nothing, a dirty
 checkout is refused. No docker, no ssh, no model; syntax of the three fixture scripts is checked too."""
+import json
 import os
 import pathlib
 import subprocess
@@ -43,6 +44,27 @@ class Measure(unittest.TestCase):
             self.assertTrue(any('d["descriptions"]=None' in l and l.endswith(rec) for l in r.stdout.splitlines()), rec)
         self.assertFalse(self.pair.exists())  # dry run writes no pair file
         self.assertEqual(subprocess.run(["git", "-C", self.repo, "worktree", "list"], capture_output=True, text=True).stdout.count("\n"), 1)
+
+    def planned_pair(self):
+        out = self.measure("--dry-run").stdout
+        text = out.split("would write %s:\n" % self.pair, 1)[1]
+        return json.JSONDecoder().raw_decode(text)[0]
+
+    def test_generated_pair_file_is_not_pinned_to_a_client_version(self):
+        self.assertNotIn("client_version", self.planned_pair()["run"])
+
+    def test_existing_pair_file_keeps_its_client_version_pin(self):
+        doc = self.planned_pair()
+        doc["run"]["client_version"] = "2.1.285"
+        self.pair.write_text(json.dumps(doc))
+        r = self.measure("--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("exists and matches, keeping it (a run.client_version in it is kept as the exact re-run pin)", r.stdout)
+        doc["run"]["max_turns"] = 31  # a real difference still refuses
+        self.pair.write_text(json.dumps(doc))
+        r = self.measure("--dry-run")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("exists and differs", r.stderr)
 
     def test_dirty_checkout_refused(self):
         (pathlib.Path(self.repo) / "x").write_text("x")

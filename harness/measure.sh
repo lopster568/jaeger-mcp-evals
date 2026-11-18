@@ -67,7 +67,7 @@ path, name, scenario, n, base, change, bs, hs, dry = sys.argv[1:]
 doc = {
   "name": name, "version": 2, "scenario": scenario,
   "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often claude-sonnet-5-5 reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, n),
-  "run": {"client": "cli", "provider": None, "model": "claude-sonnet-5-5", "effort": "high", "client_version": "2.1.285",
+  "run": {"client": "cli", "provider": None, "model": "claude-sonnet-5-5", "effort": "high",
           "max_turns": 30, "max_budget_usd": 2, "n_per_arm": int(n), "seed": None, "bill_api_key": True},
   "arms": {"baseline": {"prompt": "neutral", "image": base, "tools": True},
            "variant": {"prompt": "neutral", "image": change, "tools": True}},
@@ -76,9 +76,14 @@ doc = {
 }
 if os.path.exists(path):
     old = json.load(open(path))
-    if {k: v for k, v in old.items() if k != "status"} != {k: v for k, v in doc.items() if k != "status"}:
+    # run.client_version in an existing file is the exact-re-run pin; it is not a difference.
+    def norm(d):
+        d = {k: v for k, v in d.items() if k != "status"}
+        d["run"] = {k: v for k, v in d["run"].items() if k != "client_version"}
+        return d
+    if norm(old) != norm(doc):
         sys.exit("measure: %s exists and differs from this request; delete it or change the arguments" % path)
-    print("measure: pair file %s exists and matches, keeping it" % path)
+    print("measure: pair file %s exists and matches, keeping it (a run.client_version in it is kept as the exact re-run pin)" % path)
 elif dry == "1":
     print("+ would write %s:\n%s" % (path, json.dumps(doc, indent=2)))
 else:

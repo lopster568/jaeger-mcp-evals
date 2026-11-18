@@ -852,6 +852,24 @@ class TestBatch(BenchCase):
 
         return blind, n
 
+    def test_no_baseline_traffic_aborts_with_a_fix(self):
+        with mock.patch.object(bench, "traces", return_value=[]):
+            self.assertEqual(self.run_batch(1), 1, self.err)
+        self.assertIn("ABORT - only 0 baseline traces", self.err)
+        self.assertIn("fix: run `docker compose ps -a` on the demo host", self.err)
+
+    def test_ofrep_not_showing_the_flip_aborts_with_a_fix(self):
+        real, first = bench.ofrep_variant, []
+
+        def stuck(cfg, flag):
+            first.append(first[0] if first else real(cfg, flag))
+            return first[0]
+
+        with mock.patch.object(bench, "ofrep_variant", stuck), mock.patch.object(bench, "sleep", lambda s: None):
+            self.assertEqual(self.run_batch(1), 1, self.err)
+        self.assertIn("ABORT - OFREP never showed", self.err)
+        self.assertIn("fix: restore the flag file from lfx/demo.flagd.json.pristine", self.err)
+
     def test_slow_restore_is_confirmed_by_polling(self):
         blind, n = self.ofrep_blind_until(2)
         with mock.patch.object(bench, "ofrep_variant", blind):
@@ -1041,6 +1059,7 @@ class TestExperiment(BenchCase):
         self.assertEqual(self.run_batch(1), 1)
         self.assertIn("served tools/list:9:paymentFailure", self.err)
         self.assertIn("ABORT - a leak word in what the agent would see", self.err)
+        self.assertIn("fix: remove the named word from the prompt", self.err)
         self.assertEqual(self.flag_file(), self.pristine())
         self.assertFalse(os.path.exists(os.path.join(self.home, "claude-calls.jsonl")))
 
@@ -1100,6 +1119,7 @@ class TestKnobFile(BenchCase):
     def test_client_version_mismatch_refuses_before_the_fixture(self):
         self.refused(lambda d: d["run"].update(client_version="2.1.283"),
                      "run.client_version is 2.1.283 but the cli client reports 2.1.282")
+        self.assertIn("fix: remove run.client_version from the experiment file to run on your CLI, or install 2.1.283 for an exact re-run", self.err)
         self.assertEqual(self.calls(), [])
         self.assertEqual(self.flag_file(), self.pristine())
 
@@ -1510,6 +1530,11 @@ class TestSandboxProbe(BenchCase):
             self.assertEqual({tuple(c["client_env"]) for c in seen}, {tuple(want)})
         self.assertNotIn("ENABLE_TOOL_SEARCH", json.dumps(load(glob.glob(os.path.join(self.batch_dir(), "0-*", "meta.json"))[0])["client_argv"]))
 
+    def test_failure_names_the_unexpected_tool_and_the_cli_version_in_the_fix(self):
+        self.assertEqual(self.run_batch(1, FAKE_PROBE="extra_tool"), 1, self.err)
+        self.assertIn("fix: claude CLI 2.1.282 sends a tool the harness does not expect (Bash). If it is new in this CLI version, "
+                      "find the setting that turns it off and add it to grade.CLIENT_ENV, or run a CLI version the probe accepts", self.err)
+
     def test_failures_abort_before_the_flag(self):
         for mode, why in (("extra_tool", "tools sent"), ("server_tool", "server-side tool web_search"),
                           ("memory", "memory marker 'CLAUDE.md'"), ("silent", "no model request")):
@@ -1533,11 +1558,16 @@ class TestSandboxProbe(BenchCase):
         self.assertIn("ok    claude CLI 2.1.282 accepts the flags the harness passes", self.err)
         self.assertIn("ok    expected cost unknown: no recorded trial of paymentFailure on sonnet", self.err)
 
+    def test_expected_cost_is_per_arm_median_times_n(self):
+        self.write_recorded([{"cost_usd": x} for x in (0.1, 0.2, 0.3)])
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
+                         [(True, "expected cost about 2.00 USD per arm of 10 trials (recorded max 0.30 per trial, cap 2)")])
+
     def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
         self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +
                             [{"cost_usd": 9, "num_turns": 30, "scenario_used": "other"}, {"cost_usd": 9, "model_asserted": "m2"}])
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
-        self.assertRegex(self.err, r"ok    expected cost about 0\.\d\d USD for \d+ trials \(recorded median 0\.20, p90 0\.30, max 0\.30 per trial, cap 2\)")
+        self.assertRegex(self.err, r"ok    expected cost about 0\.\d\d USD per arm of \d+ trials \(recorded max 0\.30 per trial, cap 2\)")
         self.assertNotIn("cut off", self.err)
         self.assertNotIn("turns;", self.err)
 

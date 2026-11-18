@@ -501,10 +501,7 @@ def oracle(scenario, cfg, out=print):
     return 1
 
 
-SQL_NOTE = "find_traces takes SQL only on this Jaeger; the script used SQL, the agent is not told"
-
-
-def oracle_warning(scenario, version, image, tool_names, message, sql=False):
+def oracle_warning(scenario, version, image, tool_names, message):
     def url(msg):
         body = "scenario: %s (version %s)\njaeger image: %s\nserved tools: %s\noracle: FAIL - %s" % (
             scenario, version, image, ", ".join(sorted(tool_names)), msg)
@@ -515,7 +512,6 @@ def oracle_warning(scenario, version, image, tool_names, message, sql=False):
         cut = cut[:len(cut) * 3 // 4 - 1]
     return ["  WARN  evidence not reached by the scripted check: " + shown[:300],
             "        This is the harness's own check, not the agent: the scenario and the agent need no change."]  \
-        + (["        " + SQL_NOTE] if sql else []) \
         + ["        Trials go on (the fault is in the traces). Report it: " + url(cut)]
 
 
@@ -580,7 +576,7 @@ def stops(summaries):
     return ",".join("%s:%d" % kv for kv in sorted(t.items())) or "-"
 
 
-def expected_cost(scenario, model, n_cells, max_budget, records=None):
+def expected_cost(scenario, model, n_per_arm, max_budget, records=None):
     """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
     rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True) for r in read_jsonl(f)
@@ -588,9 +584,9 @@ def expected_cost(scenario, model, n_cells, max_budget, records=None):
     costs = sorted(r["cost_usd"] for r in rows if isinstance(r.get("cost_usd"), (int, float)))
     if not costs:
         return [(True, "expected cost unknown: no recorded trial of %s on %s" % (scenario, model))]
-    med, p90, top = statistics.median(costs), costs[max(0, math.ceil(0.9 * len(costs)) - 1)], costs[-1]
-    out = [(True, "expected cost about %.2f USD for %d trials (recorded median %.2f, p90 %.2f, max %.2f per trial, cap %g)"
-            % (n_cells * med, n_cells, med, p90, top, max_budget))]
+    med, top = statistics.median(costs), costs[-1]
+    out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
+            % (n_per_arm * med, n_per_arm, top, max_budget))]
     if top >= 0.5 * max_budget:
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
@@ -1207,7 +1203,7 @@ def run(a, cfg):
         if not log.check(got == want, "%s %s" % ("claude CLI" if a.client == "cli" else a.client + " client", want)):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"),
-                       fix="install version %s, or set run.client_version in the experiment file to the one you run" % want)
+                       fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
     try:
         grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
                                     stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
@@ -1217,7 +1213,7 @@ def run(a, cfg):
     if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
         return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
                    fix="install the Claude Code CLI and log in (run `claude` once)")
-    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm * len(prompt_for), budget):
+    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget):
         if ok:
             log.check(True, text)
         else:
@@ -1341,7 +1337,8 @@ def run(a, cfg):
         rendered.append(("served instructions", instructions))
     pre["leak_rendered"] = "PASS" if leak_texts(rendered, out=log.detail) == 0 else "FAIL"
     if not log.check(pre["leak_rendered"] == "PASS", "tool descriptions as served name no fault"):
-        return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched")
+        return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched",
+                   fix="remove the named word from the prompt, system prompt or tool descriptions the agent is served, then run again")
 
     if a.client == "cli":
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
@@ -1350,18 +1347,24 @@ def run(a, cfg):
         if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
             env.update(api_secrets(a, cfg))
         probe = {"result": "PASS", "tools": {}}
+        unexpected = set()
         for arm in arms:
             expected = [score.VERDICT_TOOL] + ([score.JAEGER_PREFIX + t["name"] for t in tool_list] if tools_for[arm] else [])
             with tempfile.TemporaryDirectory() as tmp:
                 write_mcp_config(os.path.join(tmp, "mcp.json"), mcp_url if tools_for[arm] else None)
                 problems, probe["tools"][arm] = sandbox_probe(claude_argv(a, prompt_file[arm], os.path.join(tmp, "mcp.json")),
                                                               env, expected, need_key=bool(a.bill_api_key))
+            unexpected |= set(probe["tools"][arm]) - set(expected)
             for m in problems:
                 log.detail("sandbox probe %s: FAIL - %s" % (arm, m))
             probe["result"] = "FAIL" if problems else probe["result"]
         pre["sandbox_probe"] = probe
         if not log.check(probe["result"] == "PASS", "agent can call only the Jaeger tools and its verdict tool"):
-            return die("ABORT - the sandbox probe failed (see above); the flag was not touched")
+            return die("ABORT - the sandbox probe failed (see above); the flag was not touched",
+                       fix=("claude CLI %s sends a tool the harness does not expect (%s). If it is new in this CLI version, find the "
+                            "setting that turns it off and add it to grade.CLIENT_ENV, or run a CLI version the probe accepts"
+                            % (found[0], ", ".join(sorted(unexpected))) if unexpected else
+                            "read the sandbox probe lines above; the CLI's request failed the check named there"))
 
     log.stage(4, STAGES, "Demo", "healthy and quiet, so a failure is your change, not the demo")
     log.detail("== pre-flight: container count (need >= %s) ==" % cfg["MIN_CONTAINERS"])
@@ -1423,7 +1426,8 @@ def run(a, cfg):
             sleep(TRACE_POLL_SLEEP)
     if pre["baseline_traces"] < 3:
         return die("ABORT - only %d baseline traces for service=%s; the fixture is up but not completing requests "
-                   "through it. Check upstream services before flipping any flag." % (pre["baseline_traces"], gt_service))
+                   "through it. Check upstream services before flipping any flag." % (pre["baseline_traces"], gt_service),
+                   fix="run `docker compose ps -a` on the demo host and wait until the load generator is sending traffic, then run again")
     log.detail("pre-flight: baseline traffic OK (%d traces)" % pre["baseline_traces"])
     log.check(True, "%s sending traces (%d in the last %d min)" % (gt_service, pre["baseline_traces"], BASELINE_LOOKBACK_S // 60))
 
@@ -1555,7 +1559,8 @@ def run(a, cfg):
                 fault["ofrep_confirmed"] = True
                 break
         if not fault["ofrep_confirmed"]:
-            return die("ABORT - OFREP never showed %r=%r after the flip" % (flag, act["value"]))
+            return die("ABORT - OFREP never showed %r=%r after the flip" % (flag, act["value"]),
+                       fix="restore the flag file from lfx/demo.flagd.json.pristine on the fixture (nothing else was changed), check that flagd is up, then run again")
         log.detail("bench: OFREP confirms %r=%r" % (flag, act["value"]))
         log.check(True, "%s %s" % (flag, act["value"]))
         t_flip = time.monotonic()
@@ -1606,16 +1611,13 @@ def run(a, cfg):
             ok = oracle(a.scenario, cfg, out=lambda m: (said.append(m), log.detail(m))) == 0
             pre["oracle"] = "PASS" if ok else "FAIL"
             pre["oracle_message"] = said[-1].split(": ", 1)[-1] if said else None
-            sql = any(" sql " in m for m in said[:-1])  # the served search tool takes SQL only: the script compiled a statement
             if ok:
                 log.check(ok, "evidence reached in %s calls" % re.search(r"at call (\d+)", said[-1]).group(1))
-                if sql:
-                    log.sub(SQL_NOTE)
             else:
                 # Not an abort: the signal wait above already proved the fault is in the store.
                 log.step = []
                 for line in oracle_warning(a.scenario, scen.get("version"), image, [t["name"] for t in tool_list],
-                                           (pre["oracle_message"] or "").split("FAIL - ", 1)[-1], sql):
+                                           (pre["oracle_message"] or "").split("FAIL - ", 1)[-1]):
                     log(paint(YELLOW, line))
         write_json(os.path.join(bdir, "preflight.json"), pre)
         write_json(os.path.join(bdir, "manifest.json"), manifest)  # manifest.preflight is the same dict

@@ -32,7 +32,7 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 - Temperature cannot be set, so n of at least 10 shows the variance. Arms on different images run as separate consecutive batches, not shuffled across arms.
 - `num_turns` and cost do not compare across clients. The cli client on a claude.ai login adds the account email to the model's context, in every arm; API-key auth avoids it.
 - The CLI's autocompact cannot be switched off; compaction is flagged by `band` and `verify`.
-- The client can self-update between batches unless `run.client_version` pins it.
+- The client can self-update between batches unless `run.client_version` pins it (optional, for exact re-runs; the harness disables the autoupdater and judge.py refuses mixed versions).
 
 ## Mechanism grader
 
