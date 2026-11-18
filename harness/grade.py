@@ -50,8 +50,9 @@ def user_prompt(truth, text):
     return "True mechanism: %s\n\nAgent's explanation:\n\n%s\n" % (truth, "\n".join("> " + l for l in text.splitlines()))
 
 
-def argv(truth, text, mcp_config):
-    return [CLAUDE, "-p", user_prompt(truth, text), "--output-format", "json",
+def argv(truth, text, mcp_config, piped=False):
+    """piped: the prompt goes on stdin (see call_cli), for prompts too long for one argument."""
+    return [CLAUDE, "-p"] + ([] if piped else [user_prompt(truth, text)]) + ["--output-format", "json",
             "--mcp-config", mcp_config, "--strict-mcp-config", "--setting-sources", "", "--restricted", "--tools", "",
             "--no-session-persistence", "--system-prompt", prompt_text().rstrip("\n"),
             "--json-schema", json.dumps(SCHEMA), "--model", GRADER_MODEL, "--max-turns", "3"] + (["--verbose"] if API_KEY else [])
@@ -61,6 +62,9 @@ def _billing_error(msg):
     global BILLING_FAILED
     BILLING_FAILED = True
     return RuntimeError("grader: billing: " + msg)
+
+
+ARG_MAX_BYTES = 100_000  # below the 131,072-byte per-argument limit
 
 
 def call_cli(truth, text):
@@ -74,7 +78,11 @@ def call_cli(truth, text):
         mcp = os.path.join(work, "mcp.json")
         with open(mcp, "w", encoding="utf-8") as f:
             f.write('{"mcpServers":{}}')
-        p = subprocess.run(argv(truth, text, mcp), cwd=work, env=env, stdin=subprocess.DEVNULL,
+        # Linux caps one argument at 128 KiB (MAX_ARG_STRLEN): a longer prompt goes to claude -p on stdin.
+        user = user_prompt(truth, text)
+        piped = len(user.encode("utf-8")) > ARG_MAX_BYTES
+        p = subprocess.run(argv(truth, text, mcp, piped), cwd=work, env=env,
+                           input=user if piped else None, stdin=None if piped else subprocess.DEVNULL,
                            capture_output=True, text=True, timeout=TIMEOUT_S)
     try:
         out = json.loads(p.stdout)

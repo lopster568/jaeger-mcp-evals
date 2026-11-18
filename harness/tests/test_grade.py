@@ -98,6 +98,27 @@ class TestGrade(unittest.TestCase):
         self.assertIsNone(grade.API_KEY)
         self.assertNotIn("--verbose", grade.argv("t", "x", "m.json"))
 
+    def run_call(self, text):
+        seen = {}
+
+        def fake_run(argv, **kw):
+            seen.update(argv=argv, input=kw.get("input"))
+            return mock.Mock(returncode=0, stdout=json.dumps({"structured_output": {"label": "correct", "reason": "same"}}))
+        with mock.patch.object(grade.subprocess, "run", fake_run):
+            self.assertEqual(grade.call_cli("t", text)["label"], "correct")
+        return seen
+
+    def test_long_prompt_is_piped_not_an_argument(self):
+        seen = self.run_call("y" * 150000)
+        self.assertEqual(seen["input"], grade.user_prompt("t", "y" * 150000))
+        self.assertNotIn(seen["input"], seen["argv"])
+        self.assertEqual(seen["argv"][1:3], ["-p", "--output-format"])
+
+    def test_short_prompt_stays_an_argument(self):
+        seen = self.run_call("short")
+        self.assertIsNone(seen["input"])
+        self.assertEqual(seen["argv"][1:3], ["-p", grade.user_prompt("t", "short")])
+
 
 if __name__ == "__main__":
     unittest.main()
