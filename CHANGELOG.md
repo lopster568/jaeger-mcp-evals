@@ -119,3 +119,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - cartFailure: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - recommendationCacheFailure: version 4 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - Fixture: the overlay's four host ports (16686, 8013, 8016, 16006) bind 127.0.0.1; fixture_overlay_sha256 changes; no change in what the agent sees; comparable: yes. A remote fixture is reached through fixture/forward.sh.
+- Harness: the Claude Code CLI client's code (its argv, flag check, sandbox probe, model pin and billing proof) moves from bench.py to `harness/claude_client.py`, beside goose_client.py and codex_client.py, and bench.py reads each client from one table. New manifests hash `claude_client.py` in `file_hashes_sha256`. No record field, score, grade or verify result changes.

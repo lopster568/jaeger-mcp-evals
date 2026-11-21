@@ -37,7 +37,6 @@ import argparse
 import glob
 import gzip
 import hashlib
-import http.server
 import io
 import json
 import locale
@@ -62,6 +61,7 @@ import urllib.request
 from datetime import datetime, timezone
 from time import sleep
 
+import claude_client
 import config
 import fixture_leak
 import goose_client
@@ -81,8 +81,6 @@ GOOSE_CLIENT = os.path.join(HARNESS, "goose_client.py")
 RECORDS = os.path.join(ROOT, "records")
 IMAGE_RECORDS = os.path.join(HARNESS, "experiments", "images")  # written by fixture/build-image.sh; instructions/ is its sibling
 DIST = os.path.join(ROOT, "dist")
-# cli: the Claude Code CLI; codex: the OpenAI Codex CLI; goose: Goose in the AI Assistant demo's pinned image.
-CLIENTS = ("cli", "codex", "goose")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new"]
 TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
@@ -629,7 +627,7 @@ def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="
     med, top = statistics.median(costs), costs[-1]
     out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
             % (n_per_arm * med, n_per_arm, top, max_budget))]
-    if client == "cli" and top >= 0.5 * max_budget:  # goose and codex get no budget cap
+    if CLIENTS[client]["budget_cap"] and top >= 0.5 * max_budget:
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
     return out
@@ -879,151 +877,104 @@ def write_mcp_config(path, mcp_url):
         f.write(json.dumps({"mcpServers": servers}, separators=(",", ":")))
 
 
-MEMORY_MARKERS = ("CLAUDE.md", "# CLAUDE", "auto-memory", "MEMORY.md")
-PROBE_TIMEOUT_S = 90
-
-
-def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S, need_key=False):
-    """Run a trial's CLI argv against a server on 127.0.0.1 that keeps the first POST body in memory
-    and answers 400, so no model is called. Returns (problems, tool names sent). The body is never
-    written anywhere: with a claude.ai login it carries the account's email. Of the headers only two
-    booleans are kept (x-api-key and authorization present); need_key fails the probe without x-api-key."""
-    first, hdrs = [], {}
-
-    class Probe(http.server.BaseHTTPRequestHandler):
-        def log_message(self, *args):
-            pass
-
-        def do_POST(self):
-            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-            if not first:
-                first.append(body)
-                hdrs.update(key=self.headers.get("x-api-key") is not None, auth=self.headers.get("authorization") is not None)
-            reply = b'{"type":"error","error":{"type":"invalid_request_error","message":"sandbox probe"}}'
-            self.send_response(400)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(reply)))
-            self.end_headers()
-            self.wfile.write(reply)
-
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Probe)
-    threading.Thread(target=srv.serve_forever, args=(0.05,), daemon=True).start()
-    said = ""
-    try:
-        with tempfile.TemporaryDirectory() as work:
-            try:
-                r = subprocess.run(argv + ["--no-session-persistence"], cwd=work, stdin=subprocess.DEVNULL,
-                                   capture_output=True, text=True, errors="replace", timeout=timeout,
-                                   env=dict(env, ANTHROPIC_BASE_URL="http://127.0.0.1:%d" % srv.server_address[1]))
-                lines = [l.strip() for l in (r.stderr + r.stdout).splitlines() if l.strip()]
-                said = lines[-1][:200] if lines else ""  # only the CLI's last line is quoted, never the rest
-            except subprocess.TimeoutExpired:
-                pass  # subprocess.run has killed it; judge whatever request arrived
-            except OSError as e:
-                return ["could not start %s: %s" % (argv[0], e)], []
-    finally:
-        srv.shutdown()
-        srv.server_close()
-    try:
-        req = json.loads(first[0])
-        sent = req.get("tools") or []
-        names = [str(t.get("name")) for t in sent]
-    except (IndexError, ValueError, AttributeError):
-        return ["no model request with a JSON body reached the probe within %ds%s" % (timeout, "; claude said: " + said if said else "")], []
-    problems = [] if sorted(names) == sorted(expected) else ["tools sent %s, expected %s" % (sorted(names), sorted(expected))]
-    problems += ["server-side tool %s (type %s)" % (t.get("name"), t["type"]) for t in sent if "type" in t]
-    text = json.dumps([req.get("system"), req.get("messages")], ensure_ascii=False)
-    if need_key and not hdrs.get("key"):
-        problems.append("billing: no x-api-key header reached the probe (authorization header present: %s)" % hdrs.get("auth"))
-    problems += ["memory marker %r in the request" % m for m in MEMORY_MARKERS if m in text]
-    return problems, names
-
-
 def rendered_texts(prompt_file):
     """The prompt and system prompt texts, trailing newlines stripped as bash's "$(cat f)" does. The leak
     scan reads them for every client; claude_argv passes them."""
     return read_text(prompt_file).rstrip("\n"), read_text(SYSTEM_PROMPT).rstrip("\n")
 
 
-def claude_argv(a, prompt_file, mcp_config):
-    """The Claude Code CLI call, with the texts of rendered_texts()."""
-    prompt, system = rendered_texts(prompt_file)
-    return ["claude", "-p", prompt,
-            "--output-format", "stream-json", "--verbose",
-            "--mcp-config", mcp_config, "--strict-mcp-config",
-            "--setting-sources", "", "--restricted", "--tools", "",
-            "--allowedTools", "mcp__jaeger__*",
-            "--system-prompt", system,
-            "--json-schema", read_text(VERDICT_SCHEMA).rstrip("\n"),
-            "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd]
+def cli_argv(a, prompt_file, mcp_config, trial):
+    return claude_client.claude_argv(a, *rendered_texts(prompt_file), read_text(VERDICT_SCHEMA).rstrip("\n"), mcp_config)
 
 
-# The claude flags the harness passes that `claude --help` lists (--max-turns and --allowedTools are hidden there).
-CLAUDE_FLAGS = ("--restricted", "--setting-sources", "--strict-mcp-config", "--json-schema", "--effort",
-                "--tools", "--mcp-config", "--system-prompt", "--max-budget-usd")
+def goose_argv(a, prompt_file, mcp_config, trial):
+    return [sys.executable, GOOSE_CLIENT, "--provider", a.provider, "--model", a.model, "--effort", a.effort,
+            "--max-turns", str(a.max_turns), "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT,
+            "--schema-file", VERDICT_SCHEMA, "--mcp-config", mcp_config, "--out-dir", trial] + (
+                ["--client-version", a.client_pre] if a.client_pre else [])
 
 
-def claude_missing_flags():
-    """(version, flags the installed claude does not list), or None when claude cannot be run."""
-    try:
-        h = subprocess.run(["claude", "--help"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
-        v = subprocess.run(["claude", "--version"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return ((v.split() or ["unknown version"])[0], [f for f in CLAUDE_FLAGS if f not in h])
-
-
-def client_argv(a, prompt_file, mcp_config, trial):
-    if a.client == "cli":
-        return claude_argv(a, prompt_file, mcp_config)
-    if a.client == "goose":
-        return [sys.executable, GOOSE_CLIENT, "--provider", a.provider, "--model", a.model, "--effort", a.effort,
-                "--max-turns", str(a.max_turns), "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT,
-                "--schema-file", VERDICT_SCHEMA, "--mcp-config", mcp_config, "--out-dir", trial] + (
-                    ["--client-version", a.client_pre] if a.client_pre else [])
+def codex_argv(a, prompt_file, mcp_config, trial):
     return [sys.executable, CODEX_CLIENT, "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns),
             "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT, "--schema-file", VERDICT_SCHEMA,
             "--mcp-config", mcp_config, "--out-dir", trial, "--codex-bin", a.codex_bin]
 
 
-def api_secrets(cfg):
-    return {"ANTHROPIC_API_KEY": cfg.get("ANTHROPIC_API_KEY", "")}
-
-
-def is_full_model_id(m):
-    return bool(re.fullmatch(r"claude-[a-z]+(?:-[a-z0-9]+)*", m) and re.search(r"\d", m))
-
-
-def observe(stream_path):
-    init, compactions = {}, 0
-    for line in read_text(stream_path).splitlines(keepends=True) if os.path.isfile(stream_path) else []:
-        if not line.strip():
-            continue
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(e, dict):
-            continue
-        if not init and e.get("type") == "system" and e.get("subtype") == "init":
-            init = e
-        compactions += score.is_compaction_event(e, line)
-    return {"client_version": init.get("claude_code_version") or init.get("client_version"),
-            "model": init.get("model"),
-            "tools": init.get("tools"), "skills": init.get("skills"), "agents": init.get("agents"),
-            "compaction_events": compactions}
-
-
-def api_key_source(stream_path):
-    """The stream init event's apiKeySource ("ANTHROPIC_API_KEY" when the key billed the trial), else None."""
-    for line in read_text(stream_path).splitlines() if os.path.isfile(stream_path) else []:
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(e, dict) and e.get("type") == "system" and e.get("subtype") == "init":
-            return e.get("apiKeySource")
+def goose_docker(log):
+    """docker and the pinned Goose image, for the goose client and the goose grader: None, or (message, fix)."""
+    log.detail("== pre-flight: goose (docker, %s) ==" % goose_client.IMAGE)
+    docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+    if not shutil.which("docker"):
+        return ("docker is not on PATH; the goose client and the goose grader run Goose in a container",
+                "install Docker, or pick another run.client and set GRADER_CLIENT=cli")
+    try:
+        r = docker("info", "--format", "{{.OperatingSystem}}")
+    except subprocess.TimeoutExpired:
+        r = subprocess.CompletedProcess([], 1, "", "no answer in 60 s")
+    if r.returncode != 0:
+        return "docker info failed: %s" % r.stderr.strip(), "start the Docker daemon (or Docker Desktop), then run again"
+    log.check(True, "docker on %s" % r.stdout.strip())
+    if docker("image", "inspect", goose_client.IMAGE).returncode != 0:
+        return "the pinned Goose image is not on this machine; nothing was touched", "docker pull " + goose_client.IMAGE
+    log.check(True, "Goose image %s" % goose_client.IMAGE.split("@")[0])
     return None
+
+
+def goose_preflight(a, cfg, log):
+    bad = goose_docker(log)
+    if bad:
+        return bad
+    key = goose_client.KEYS[a.provider]
+    if not cfg.get(key):
+        return "run.provider is %s but %s is empty in fixture.env; nothing was touched" % (a.provider, key), "set %s in fixture.env" % key
+    log.check(True, "provider %s, %s set" % (a.provider, key))
+    return None
+
+
+def goose_env(a, cfg):
+    """The provider's key only, read by `docker run -e NAME`; never argv, never a record."""
+    env, key = grade.child_env(False), goose_client.KEYS[a.provider]
+    env[key] = cfg.get(key, "")
+    return env
+
+
+def codex_preflight(a, cfg, log):
+    log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
+    if not shutil.which(a.codex_bin):
+        return ("%s is not on PATH; install the OpenAI Codex CLI (or the wrapper named by CODEX_BIN) and "
+                "log in, or pick another run.client" % a.codex_bin), None
+    log.check(True, "%s on PATH" % a.codex_bin)
+    return None
+
+
+# What run() and its pre-flight read from each agent client, so neither names one. Goose is the reference path;
+# the Claude Code CLI (claude_client.py) and Codex are adapters.
+#   argv(a, prompt_file, mcp_config, trial); preflight(a, cfg, log) -> None or (message, fix); version_cmd(a);
+#   no_version: (message, fix) when a client that reports no version must stop the run; env(a, cfg);
+#   events_on: "stdout" (claude's stdout is stream.jsonl) or "out_dir" (the client writes it); graceful_stop: SIGTERM
+#   and 30 s first, so goose_client removes its container; redact_argv: for an argv that inlines the texts;
+#   docker: its pre-flight already checked docker and the Goose image; manifest: extra manifest keys;
+#   providers: the allowed run.provider values, or None for null.
+# Guards (None or False where the client has none): sandbox_probe and probe_fix; model_pin, the run.model ids the
+# stream must report back; budget_cap, run.max_budget_usd is enforced per trial; billing, run.bill_api_key is allowed
+# and reads its proof from the stream.
+NO_GUARDS = {"sandbox_probe": None, "probe_fix": None, "model_pin": None, "budget_cap": False, "billing": None}
+CLIENTS = {
+    "goose": dict(NO_GUARDS, argv=goose_argv, preflight=goose_preflight, label="goose client",
+                  version_cmd=lambda a: ["docker", "run", "--rm", "--entrypoint", "goose", goose_client.IMAGE, "--version"],
+                  no_version=("the Goose image reported no version (docker run --entrypoint goose ... --version); nothing was touched",
+                              "docker run --rm --entrypoint goose %s --version" % goose_client.IMAGE),
+                  env=goose_env, events_on="out_dir", graceful_stop=True, redact_argv=None, docker=True,
+                  manifest={"goose_image": goose_client.IMAGE}, providers=goose_client.KEYS),
+    "cli": dict(argv=cli_argv, preflight=claude_client.preflight, label="claude CLI",
+                version_cmd=lambda a: ["claude", "--version"], no_version=None, env=claude_client.env,
+                events_on="stdout", graceful_stop=False, redact_argv=claude_client.redact_argv, docker=False,
+                manifest={}, providers=None, sandbox_probe=claude_client.sandbox_probe, probe_fix=claude_client.probe_fix,
+                model_pin=claude_client.is_full_model_id, budget_cap=True, billing=claude_client.api_key_source),
+    "codex": dict(NO_GUARDS, argv=codex_argv, preflight=codex_preflight, label="codex client",
+                  version_cmd=lambda a: [a.codex_bin, "--version"], no_version=None, env=lambda a, cfg: grade.child_env(False),
+                  events_on="out_dir", graceful_stop=False, redact_argv=None, docker=False, manifest={}, providers=None),
+}
 
 
 def jaeger_commit(cfg, image):
@@ -1087,8 +1038,9 @@ def load_experiment(path):
     r = exp["run"]
     keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
-    if r["client"] == "goose":
-        check(r["provider"] in goose_client.KEYS, "run.provider must be one of %s for client goose" % ", ".join(goose_client.KEYS))
+    providers = CLIENTS[r["client"]]["providers"]
+    if providers:
+        check(r["provider"] in providers, "run.provider must be one of %s for client %s" % (", ".join(providers), r["client"]))
     else:
         check(r["provider"] is None, "run.provider must be null for client %s" % r["client"])
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
@@ -1100,8 +1052,8 @@ def load_experiment(path):
     if "client_version" in r:
         check(isinstance(r["client_version"], str) and r["client_version"], "run.client_version must be a non-empty string")
     if "bill_api_key" in r:
-        check(type(r["bill_api_key"]) is bool and (r["client"] == "cli" or not r["bill_api_key"]),
-              "run.bill_api_key must be true or false, and true only for client cli")
+        check(type(r["bill_api_key"]) is bool and (CLIENTS[r["client"]]["billing"] or not r["bill_api_key"]),
+              "run.bill_api_key must be true or false, and true only for client %s" % ", ".join(n for n, c in CLIENTS.items() if c["billing"]))
     check(isinstance(exp["arms"], dict) and exp["arms"], "arms must be a non-empty object")
     for name, arm in exp["arms"].items():
         keys(arm, "arms.%s" % name, ARM_KEYS)
@@ -1177,78 +1129,25 @@ def run(a, cfg):
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
-    def goose_docker():
-        """docker and the pinned Goose image, for the goose client and the goose grader; None or die()'s result."""
-        log.detail("== pre-flight: goose (docker, %s) ==" % goose_client.IMAGE)
-        docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
-        if not shutil.which("docker"):
-            return die("docker is not on PATH; the goose client and the goose grader run Goose in a container",
-                       fix="install Docker, or pick another run.client and set GRADER_CLIENT=cli")
-        try:
-            r = docker("info", "--format", "{{.OperatingSystem}}")
-        except subprocess.TimeoutExpired:
-            r = subprocess.CompletedProcess([], 1, "", "no answer in 60 s")
-        if r.returncode != 0:
-            return die("docker info failed: %s" % r.stderr.strip(), fix="start the Docker daemon (or Docker Desktop), then run again")
-        log.check(True, "docker on %s" % r.stdout.strip())
-        if docker("image", "inspect", goose_client.IMAGE).returncode != 0:
-            return die("the pinned Goose image is not on this machine; nothing was touched", fix="docker pull " + goose_client.IMAGE)
-        log.check(True, "Goose image %s" % goose_client.IMAGE.split("@")[0])
-
-    if a.client == "cli":
-        log.detail("== pre-flight: cli client (claude flags) ==")
-        found = claude_missing_flags()
-        if found is None:
-            return die("claude is not on PATH",
-                       fix="install the Claude Code CLI and log in (run `claude` once), or pick another run.client")
-        if found[1]:
-            return die("ABORT - Claude Code CLI %s does not accept %s; nothing was touched" % (found[0], " ".join(found[1])),
-                       fix="run `claude update`")
-        log.check(True, "claude CLI %s accepts the flags the harness passes" % found[0])
-        if not is_full_model_id(a.model):
-            log.sub("WARNING: run.model %r is an alias; the model the stream reports is recorded per trial, not pinned" % a.model)
-        if a.bill_api_key:
-            if not cfg.get("ANTHROPIC_API_KEY"):
-                return die("run.bill_api_key is true but ANTHROPIC_API_KEY is empty in fixture.env; nothing was touched",
-                           fix="set ANTHROPIC_API_KEY in fixture.env, or set run.bill_api_key to false in the experiment file")
-            grade.API_KEY = cfg["ANTHROPIC_API_KEY"]  # environment only: never argv, never a record
-            grade.BILLING_FAILED = False
-            log.check(True, "agent and grader bill ANTHROPIC_API_KEY" if grade.CLIENT == "cli" else
-                      "agent bills ANTHROPIC_API_KEY (the %s grader bills its provider's key)" % grade.CLIENT)
-        elif cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
-            log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
-    elif a.client == "codex":
-        log.detail("== pre-flight: codex client (%s on PATH) ==" % a.codex_bin)
-        if not shutil.which(a.codex_bin):
-            return die("%s is not on PATH; install the OpenAI Codex CLI (or the wrapper named by CODEX_BIN) and "
-                       "log in, or pick another run.client" % a.codex_bin)
-        log.check(True, "%s on PATH" % a.codex_bin)
-    elif a.client == "goose":
-        bad = goose_docker()
-        if bad:
-            return bad
-        key = goose_client.KEYS[a.provider]
-        if not cfg.get(key):
-            return die("run.provider is %s but %s is empty in fixture.env; nothing was touched" % (a.provider, key),
-                       fix="set %s in fixture.env" % key)
-        log.check(True, "provider %s, %s set" % (a.provider, key))
-    version_cmd = {"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"],
-                   "goose": ["docker", "run", "--rm", "--entrypoint", "goose", goose_client.IMAGE, "--version"]}[a.client]
+    client = CLIENTS[a.client]
+    bad = client["preflight"](a, cfg, log)
+    if bad:
+        return die(*bad)
+    version_cmd = client["version_cmd"](a)
     try:
         client_pre = subprocess.run(version_cmd, capture_output=True, text=True,
                                     stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
     except (OSError, subprocess.TimeoutExpired):
         client_pre = None
     a.client_pre = client_pre  # goose_client records it in the stream: the image is pinned, so it holds per trial
-    if a.client == "goose" and not client_pre:  # the one container start before the paid trials
-        return die("the Goose image reported no version (docker run --entrypoint goose ... --version); nothing was touched",
-                   fix="docker run --rm --entrypoint goose %s --version" % goose_client.IMAGE)
+    if client["no_version"] and not client_pre:  # goose: the one container start before the paid trials
+        return die(*client["no_version"])
     want = exp["run"].get("client_version")
     if want:
         # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "1.57.0" (goose): the first token starting with a digit
         got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
         pre["client_version"] = "PASS" if got == want else "FAIL"
-        if not log.check(got == want, "%s %s" % ("claude CLI" if a.client == "cli" else a.client + " client", want)):
+        if not log.check(got == want, "%s %s" % (client["label"], want)):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"),
                        fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
@@ -1266,9 +1165,9 @@ def run(a, cfg):
             return die("ABORT - the cli mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
                        fix="install the Claude Code CLI and log in (run `claude` once), or unset GRADER_CLIENT to grade through Goose")
     else:
-        bad = goose_docker() if a.client != "goose" else None
+        bad = None if client["docker"] else goose_docker(log)
         if bad:
-            return bad
+            return die(*bad)
         if grade.PROVIDER not in goose_client.KEYS:
             return die("the grader provider is %r, not %s; nothing was touched" % (grade.PROVIDER, " or ".join(goose_client.KEYS)),
                        fix="set GRADER_PROVIDER (or GOOSE_PROVIDER) in fixture.env, or GRADER_CLIENT=cli")
@@ -1411,20 +1310,18 @@ def run(a, cfg):
         return die("ABORT - a leak word in what the agent would see (see above); the flag was not touched",
                    fix="remove the named word from the prompt, system prompt or tool descriptions the agent is served, then run again")
 
-    if a.client == "cli":
+    if client["sandbox_probe"]:
         # Free and read-only, so a dry run does it too: the exact trial argv, answered by a local 400.
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
-        env = grade.child_env()
-        if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
-            env.update(api_secrets(cfg))
+        env = client["env"](a, cfg)  # same env as the trials; the probe server keeps the request in memory only
         probe = {"result": "PASS", "tools": {}}
         unexpected = set()
         for arm in arms:
             expected = [score.VERDICT_TOOL] + ([score.JAEGER_PREFIX + t["name"] for t in tool_list] if tools_for[arm] else [])
             with tempfile.TemporaryDirectory() as tmp:
                 write_mcp_config(os.path.join(tmp, "mcp.json"), mcp_url if tools_for[arm] else None)
-                problems, probe["tools"][arm] = sandbox_probe(claude_argv(a, prompt_file[arm], os.path.join(tmp, "mcp.json")),
-                                                              env, expected, need_key=bool(a.bill_api_key))
+                problems, probe["tools"][arm] = client["sandbox_probe"](client["argv"](a, prompt_file[arm], os.path.join(tmp, "mcp.json"), tmp),
+                                                                        env, expected, need_key=bool(a.bill_api_key))
             unexpected |= set(probe["tools"][arm]) - set(expected)
             for m in problems:
                 log.detail("sandbox probe %s: FAIL - %s" % (arm, m))
@@ -1432,10 +1329,7 @@ def run(a, cfg):
         pre["sandbox_probe"] = probe
         if not log.check(probe["result"] == "PASS", "agent can call only the Jaeger tools and its verdict tool"):
             return die("ABORT - the sandbox probe failed (see above); the flag was not touched",
-                       fix=("claude CLI %s sends a tool the harness does not expect (%s). If it is new in this CLI version, find the "
-                            "setting that turns it off and add it to grade.CLIENT_ENV, or run a CLI version the probe accepts"
-                            % (found[0], ", ".join(sorted(unexpected))) if unexpected else
-                            "read the sandbox probe lines above; the CLI's request failed the check named there"))
+                       fix=client["probe_fix"](client_pre, unexpected))
 
     log.stage(4, STAGES, "Demo", "healthy and quiet, so a failure is your change, not the demo")
     log.detail("== pre-flight: container count (need >= %s) ==" % cfg["MIN_CONTAINERS"])
@@ -1530,7 +1424,7 @@ def run(a, cfg):
         c["order_index"] = i
     hashes = {name: sha256_file(os.path.join(HARNESS, name)) for name in
               ("bench.py", "tools.py", "fixture_leak.py", "score.py", "system-prompt.txt", "verdict-schema.json",
-               "mcp_client.py", "codex_client.py", "goose_client.py", "goose/goose-without-extensions.sh", "leak-words.txt",
+               "mcp_client.py", "claude_client.py", "codex_client.py", "goose_client.py", "goose/goose-without-extensions.sh", "leak-words.txt",
                "judge.py", "grade.py", "grader-prompt.txt")}
     hashes["scenario_file"] = sha256_file(sf)
     for arm in arms:
@@ -1570,8 +1464,7 @@ def run(a, cfg):
     manifest.update(common)
     if a.bill_api_key:
         manifest["billing"] = "ANTHROPIC_API_KEY"
-    if a.client == "goose":  # a constant in goose_client.py, so both arms of a pair run the same image by construction
-        manifest["goose_image"] = goose_client.IMAGE
+    manifest.update(client["manifest"])  # goose_image: a constant in goose_client.py, so both arms of a pair run one image
     manifest["experiment"] = dict(common["experiment"], content=exp)
     if not a.dry_run:
         write_json(os.path.join(bdir, "manifest.json"), manifest)
@@ -1590,11 +1483,9 @@ def run(a, cfg):
         for c in plan:
             log("  order_index=%d arm=%s trial_index=%d prompt=%s %s" % (c["order_index"], c["arm"], c["trial_index"],
                 prompt_for[c["arm"]], paint(DIM, "-> %d-%s" % (c["order_index"], c["arm"]))))
-        argv = client_argv(a, prompt_file[plan[0]["arm"]], "<trial>/mcp.json", "<trial>")
-        if a.client == "cli":  # the texts themselves would fill the screen
-            argv[2] = "<%s>" % os.path.basename(prompt_file[plan[0]["arm"]])
-            for k, f in (("--system-prompt", SYSTEM_PROMPT), ("--json-schema", VERDICT_SCHEMA)):
-                argv[argv.index(k) + 1] = "<%s>" % os.path.basename(f)
+        argv = client["argv"](a, prompt_file[plan[0]["arm"]], "<trial>/mcp.json", "<trial>")
+        if client["redact_argv"]:  # the texts themselves would fill the screen
+            client["redact_argv"](argv, *("<%s>" % os.path.basename(f) for f in (prompt_file[plan[0]["arm"]], SYSTEM_PROMPT, VERDICT_SCHEMA)))
         log.section("DRY RUN: fixture commands", paint(DIM, "  (none executed)"))
         for step, text in (
                 ("1", "activate fault: %s: %s  %s" % (fixture_where(cfg), flip_cmd,
@@ -1699,7 +1590,6 @@ def run(a, cfg):
             return die("ABORT - the fixture names a flag while the fault is active; no trials run")
 
         fails = 0
-        secrets = api_secrets(cfg)
         labels = ["[%*d/%d] %s #%d" % (len(str(len(plan))), i + 1, len(plan), c["arm"], c["trial_index"]) for i, c in enumerate(plan)]
         w = max(map(len, labels))
         log.section("Trials".ljust(w + 4), paint(DIM, "verdict  calls    time"))
@@ -1710,7 +1600,7 @@ def run(a, cfg):
             tick()
             try:
                 rec = run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg,
-                               expected_restarts, secrets, tick=tick)
+                               expected_restarts, tick=tick)
             except KeyboardInterrupt:
                 # Every trial dir on disk gets a cells row, so band and INDEX see what verify sees.
                 trial = os.path.join(bdir, "%d-%s" % (c["order_index"], c["arm"]))
@@ -1722,13 +1612,14 @@ def run(a, cfg):
                 raise
             append_line(cells_file, rec)
             st["ran"] += 1
-            seen = a.client == "cli" and is_full_model_id(a.model) and observe(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))["model"]
+            pin = client["model_pin"]
+            seen = pin and pin(a.model) and claude_client.observe(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))["model"]
             if seen and seen != a.model:
                 log(paint(BOLD_RED, "bench: ABORTING remaining cells - model pin: run.model is %s but the stream reports %s"
                           % (a.model, seen)))
                 st["aborted"] = True
                 return None
-            if a.bill_api_key and (src := api_key_source(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))) != "ANTHROPIC_API_KEY":
+            if a.bill_api_key and (src := client["billing"](os.path.join(bdir, rec["out_dir"], "stream.jsonl"))) != "ANTHROPIC_API_KEY":
                 log(paint(BOLD_RED, "bench: ABORTING remaining cells - billing: run.bill_api_key is true but the stream "
                           "init reports apiKeySource %r" % src))
                 st["aborted"] = True
@@ -1871,7 +1762,7 @@ SECRET_KEYS = ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY")
 
 
 def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg, expected_restarts,
-            secrets=None, tick=lambda: None):
+            tick=lambda: None):
     arm, oi = c["arm"], c["order_index"]
     name = "%d-%s" % (oi, arm)
     trial = os.path.join(bdir, name)
@@ -1883,12 +1774,12 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
         mcp_url = None
     mcp_path = os.path.join(trial, "mcp.json")
     write_mcp_config(mcp_path, mcp_url)
-    argv = client_argv(a, prompt_file[arm], mcp_path, trial)
+    client = CLIENTS[a.client]
+    argv = client["argv"](a, prompt_file[arm], mcp_path, trial)
     prompt_sha = sha256_file(prompt_file[arm])
     shown = recorded_argv(argv, bdir, trial)
-    if a.client == "cli":  # the goose and codex argvs carry file paths, not the texts
-        shown[2] = "sha256:" + prompt_sha
-        shown[shown.index("--system-prompt") + 1] = "sha256:" + common["system_prompt_sha256"]
+    if client["redact_argv"]:  # an argv that carries the texts; the goose and codex argvs carry file paths
+        client["redact_argv"](shown, "sha256:" + prompt_sha, "sha256:" + common["system_prompt_sha256"])
     merged = dict(common, run_id="%s/%s" % (common["batch_id"], name), order_index=oi, trial_index=c["trial_index"],
                   arm=arm, prompt_name=prompt_for[arm], prompt_sha256=prompt_sha, client_argv=shown,
                   mcp_config_sha256=sha256_file(mcp_path), tool_descriptions_file=desc[arm]["file"],
@@ -1897,20 +1788,14 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                   observed=None, agent_loop=None, system_under_test=sut, fixture_changes=None, fixture_ok=None)
     meta = {k: merged[k] for k in META_KEYS}
     write_json(os.path.join(trial, "meta.json"), meta)
-    # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
-    env = grade.child_env(a.client == "cli")
-    if a.bill_api_key:
-        env.update(secrets or {})  # environment only: never argv, never a record
-    if a.client == "goose":  # the provider's key only, read by `docker run -e NAME`; never argv, never a record
-        key = goose_client.KEYS[a.provider]
-        env[key] = cfg.get(key, "")
+    env = client["env"](a, cfg)
     stream = os.path.join(trial, "stream.jsonl")
     before = container_snapshot(cfg)
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory() as work, open(stream, "w") as so, open(os.path.join(trial, "stderr.txt"), "w") as se:
         try:
             # codex_client.py and goose_client.py write stream.jsonl themselves (--out-dir), so their stdout goes with stderr.
-            p = subprocess.Popen(argv, cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=so if a.client == "cli" else se,
+            p = subprocess.Popen(argv, cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=so if client["events_on"] == "stdout" else se,
                                  stderr=se)
         except OSError as e:
             se.write("bench: could not start %s: %s\n" % (argv[0], e))
@@ -1923,18 +1808,18 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                         break
                     except subprocess.TimeoutExpired:
                         if time.monotonic() - t0 > CELL_TIMEOUT_S:
-                            stop(p, a.client == "goose")
+                            stop(p, client["graceful_stop"])
                             se.write("bench: cell killed after %d s (CELL_TIMEOUT_S)\n" % CELL_TIMEOUT_S)
                             rc = 124
                             break
                         tick()
             except BaseException:  # an interrupt must not leave the agent running
-                stop(p, a.client == "goose")
+                stop(p, client["graceful_stop"])
                 raise
     with open(os.path.join(trial, "exit.txt"), "w") as f:
         f.write("exit=%d\n" % rc)
     fixture_changes, fixture_ok = fixture_diff(before, container_snapshot(cfg), expected_restarts)
-    meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=observe(stream),
+    meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=claude_client.observe(stream),
                 fixture_changes=fixture_changes, fixture_ok=fixture_ok)
     write_json(os.path.join(trial, "meta.json"), meta)
     return {"order_index": oi, "arm": arm, "trial_index": c["trial_index"], "model": a.model,

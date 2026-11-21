@@ -36,6 +36,7 @@ from unittest import mock
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import bench  # noqa: E402
+import claude_client  # noqa: E402
 import codex_client  # noqa: E402
 import fake_grader  # noqa: E402,F401  (pins the cli grader)
 
@@ -335,7 +336,7 @@ class BenchCase(unittest.TestCase):
         subprocess.run(git + ["commit", "-qm", "demo"], check=True)
         for name, text in (("ssh", SSH), ("docker", DOCKER), ("vmstat", VMSTAT), ("claude", CLAUDE), ("codex", CODEX)):
             p = os.path.join(binp, name)
-            pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(bench.CLAUDE_FLAGS)))
+            pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(claude_client.CLAUDE_FLAGS)))
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         Fake.home, Fake.served_descriptions, Fake.mcp_calls = self.home, {}, []
         Fake.served_instructions = None
@@ -877,7 +878,7 @@ class TestBatch(BenchCase):
         self.assertFalse(load(os.path.join(self.batch_dir(), "restore.json"))["default_confirmed"])
 
     def test_interrupt_inside_a_cell_leaves_a_row(self):
-        real, n = bench.observe, {"calls": 0}
+        real, n = claude_client.observe, {"calls": 0}
 
         def observe(path):
             n["calls"] += 1
@@ -885,7 +886,7 @@ class TestBatch(BenchCase):
                 raise KeyboardInterrupt
             return real(path)
 
-        with mock.patch.object(bench, "observe", observe):
+        with mock.patch.object(claude_client, "observe", observe):
             self.assertEqual(self.run_batch(2), 6, self.err)
         b = self.assert_restored()
         cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
@@ -899,7 +900,7 @@ class TestBatch(BenchCase):
     def test_observe_skips_non_object_lines(self):
         p = os.path.join(self.home, "s.jsonl")
         pathlib.Path(p).write_text('[1, 2]\n"x"\n{"type": "system", "subtype": "init", "model": "m"}\n')
-        self.assertEqual(bench.observe(p)["model"], "m")
+        self.assertEqual(claude_client.observe(p)["model"], "m")
 
     def test_preflight_failure_exit_1_touches_nothing(self):
         self.assertEqual(self.run_batch(1, FAKE_CONTAINERS="3"), 1)
@@ -1837,14 +1838,14 @@ class TestSandboxProbe(BenchCase):
 
     def test_a_hung_cli_is_killed_at_the_timeout(self):
         t0 = bench.time.monotonic()
-        problems, names = bench.sandbox_probe([sys.executable, "-c", "import time; time.sleep(60)"], dict(os.environ), [], timeout=1)
+        problems, names = claude_client.sandbox_probe([sys.executable, "-c", "import time; time.sleep(60)"], dict(os.environ), [], timeout=1)
         self.assertLess(bench.time.monotonic() - t0, 10)
         self.assertEqual((names, len(problems)), ([], 1))
         self.assertIn("no model request", problems[0])
 
     def test_a_logged_out_cli_says_so_in_the_problem(self):
         code = "import sys; sys.stderr.write('Not logged in \\u00b7 Please run /login\\n'); sys.exit(1)"
-        problems, names = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10)
+        problems, names = claude_client.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10)
         self.assertEqual(names, [])
         self.assertIn("claude said: Not logged in \u00b7 Please run /login", problems[0])
 
@@ -1854,14 +1855,14 @@ class TestSandboxProbe(BenchCase):
                 " if os.environ.get('NOKEY') else {'x-api-key': 'SECRETKEY'})\n"
                 "try: u.urlopen(r)\n"
                 "except e.HTTPError: pass\n")
-        ok, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10, need_key=True)
+        ok, _ = claude_client.sandbox_probe([sys.executable, "-c", code], dict(os.environ), [], timeout=10, need_key=True)
         self.assertFalse([p for p in ok if "billing" in p])
-        bad, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10, need_key=True)
+        bad, _ = claude_client.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10, need_key=True)
         msg = [p for p in bad if "billing" in p]
         self.assertEqual(len(msg), 1)
         self.assertIn("authorization header present: True", msg[0])
         self.assertNotIn("SECRET", " ".join(bad))
-        off, _ = bench.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10)
+        off, _ = claude_client.sandbox_probe([sys.executable, "-c", code], dict(os.environ, NOKEY="1"), [], timeout=10)
         self.assertFalse([p for p in off if "billing" in p])
 
 
