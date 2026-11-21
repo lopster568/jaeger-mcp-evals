@@ -20,7 +20,7 @@ flowchart LR
 | Need | Detail |
 |---|---|
 | Tools | Python 3.11 or newer (standard library only), Docker with Compose v2, git, curl; `make preflight` checks them and the ports |
-| Agent client | `run.client`: the published protocol supports only `cli` (Claude Code CLI on your logged-in plan); `codex` is experimental and unsupported. Pinned per experiment file by `run.model` (published: `claude-sonnet-5-5`); `run.client_version` is an optional pin for exact re-runs; the grader is `claude-fable-5-1` through the same CLI, so the login needs access to it |
+| Agent client | `run.client`: the published protocol supports only `cli` (Claude Code CLI on your logged-in plan); `codex` is experimental and unsupported. Pinned per experiment file by `run.model` (published: `claude-sonnet-5-5`); `run.client_version` is an optional pin for exact re-runs; the grader is `GRADER_MODEL` (default `claude-fable-5-1`) run by `GRADER_BIN` (default `claude`), so with the defaults the login needs access to that model |
 | Sandbox | with `cli` the agent starts with its built-in tools off and only `mcp__jaeger__*` allowed; a trial that shows any other tool scores INVALID |
 | Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; boots the pinned release quay.io/jaegertracing/jaeger:2.23.0; `make measure` runs the Jaeger built from your checkout (main lineage); no other release is used or tested |
 | Cost | published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant, plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |

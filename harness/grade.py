@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Grade an agent's free-text mechanism against a scenario's mechanism_truth.
 
-One pinned model (GRADER_MODEL) with one pinned prompt (grader-prompt.txt, by sha256) labels
+One pinned model (setting GRADER_MODEL, default claude-fable-5-1; command GRADER_BIN, default claude) with one pinned prompt (grader-prompt.txt, by sha256) labels
 the pair correct, incorrect or unclear through the Claude Code CLI, sandboxed like the agent:
 no tools, no MCP servers, no settings, no session, a temp cwd, no API keys in the environment.
 Every label is cached in <batch>/grades.jsonl, keyed by sha256 of (model, prompt sha256, truth,
@@ -13,10 +13,13 @@ import os
 import subprocess
 import tempfile
 
+import config
+
 HARNESS = os.path.dirname(os.path.abspath(__file__))
-GRADER_MODEL = "claude-fable-5-1"
+_CFG = config.load()
+GRADER_MODEL = _CFG.get("GRADER_MODEL") or "claude-fable-5-1"  # settings, see fixture.env.example
 PROMPT = os.path.join(HARNESS, "grader-prompt.txt")
-CLAUDE = "claude"
+CLAUDE = _CFG.get("GRADER_BIN") or "claude"
 LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
