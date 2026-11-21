@@ -150,20 +150,21 @@ Either direction empties the trace store: let the load generator refill it (or r
 ## Build a variant
 
 ```
-bash fixture/build-variant.sh <experiment-name>            # local steps only
-bash fixture/build-variant.sh <experiment-name> --remote   # then build in the fixture's Docker
+bash fixture/build-image.sh <jaeger-checkout> <git-ref> <name>            # local steps only
+bash fixture/build-image.sh <jaeger-checkout> <git-ref> <name> --remote   # then build in the fixture's Docker
 ```
 
-Needs Go and a Jaeger checkout at `JAEGER_SRC` with branch `evals/desc-change` cut from a main-lineage commit (a 2.20.0 build no longer boots on this fixture).
-It applies `harness/experiments/descriptions/desc-change.json` via `apply-descriptions.py` (refuses a `status` containing `DRAFT`), commits, and builds a static linux/amd64 binary.
+Needs Go and a Jaeger checkout; the ref should be a main-lineage commit (a 2.20.0 build no longer boots on this fixture).
+It builds a static linux/amd64 binary from the ref in a temporary worktree.
 `--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`.
 It never restarts a running container. Exit codes: 0 built and recorded, 1 refused or a git step failed, 2 local build failed, 3 stopped after the local build, 4 fixture step failed.
+`make measure` runs this for you.
 
 ## Gotchas
 
 - After a Docker restart the stack may stay down despite `restart: unless-stopped`; check the container count and rerun `up -d` (wait a minute if the engine is still starting).
 - flagd can hang at its memory cap (the demo's 75M; the overlay raises it to 200M): OFREP accepts connections but never answers, and `docker stats` shows flagd at high CPU near its limit. Recreate only flagd: `... up -d --no-deps --force-recreate flagd`.
-- Jaeger's Dockerfile needs `--build-arg debug_image=...` even for `--target release`; build-variant.sh passes it.
+- Jaeger's Dockerfile needs `--build-arg debug_image=...` even for `--target release`; build-image.sh passes it.
 - Jaeger's storage is in memory: any restart of Jaeger, Docker or the host empties it until the load generator refills it.
 - Jaeger's HTTP API ignores `lookback=` unless `start` and `end` are also given; always pass explicit microsecond `start` and `end`.
 - Never `pkill -f` over ssh: the pattern matches the remote shell's own command line and kills the session.

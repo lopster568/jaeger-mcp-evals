@@ -1266,14 +1266,13 @@ def run(a, cfg):
         f = ins = None
         base = exp["baseline_arm"]
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
-            # A variant image's record (experiments/images/*.json, matched by tag) may say which
-            # descriptions it serves: a file under descriptions/, or null for the stock wording
-            # (recorded only). Without that key, desc-change.json, what build-variant.sh bakes in.
+            # A variant image's record (experiments/images/*.json, matched by tag) may name the
+            # descriptions it serves: a file under descriptions/. Absent or null is recorded only.
             # Its "instructions" key likewise names a file under instructions/ the served MCP
             # instructions string must equal; absent or null is recorded only.
             rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
                         if r.get("tag") == image_for[arm]), {})
-            name = rec.get("descriptions", "desc-change.json")
+            name = rec.get("descriptions")
             f = os.path.join(HARNESS, "experiments", "descriptions", name) if name else None
             f = f if f and os.path.isfile(f) else None
             ins = rec.get("instructions")

@@ -1,4 +1,4 @@
-# Sourced by apply-deflag.sh and build-variant.sh. Loads fixture.env, then fixture.env.example;
+# Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example;
 # a variable already in the environment wins.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 for f in "$ROOT/fixture.env" "$ROOT/fixture.env.example"; do

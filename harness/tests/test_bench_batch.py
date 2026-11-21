@@ -39,8 +39,8 @@ FLAGS = {"flags": {
     "paymentFailure": {"state": "ENABLED", "variants": {"100%": 1, "off": 0}, "defaultVariant": "off"},
     "adFailure": {"state": "ENABLED", "variants": {"on": True, "off": False}, "defaultVariant": "off"},
 }}
-DESC_CHANGE = json.loads(pathlib.Path(HARNESS_DIR, "experiments", "descriptions", "desc-change.json").read_text())
-VARIANT_IMAGE = "jaeger-mcp-evals/jaeger:desc-change-sep28-4c355981"
+DESC_CHANGE = {"status": "CONFIRMED", "get_trace_errors": "pre-registered wording of get_trace_errors"}
+VARIANT_IMAGE = "jaeger-mcp-evals/jaeger:main-d22c65b9"
 STOCK_IMAGE = "quay.io/jaegertracing/jaeger:2.20.0"
 SYSTEM_NAMES = ("OpenTelemetry Demo", "otel demo", "opentelemetry-demo", "astronomy shop")
 RUN = {"client": "cli", "provider": None, "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2,
@@ -911,45 +911,58 @@ class TestLogGlyphs(unittest.TestCase):
 
 
 class TestExperiment(BenchCase):
-    """The shipped desc-change-sep28.json, cut to one trial per arm."""
+    """The shipped release-v2200-vs-main-paymentFailure.json, cut to one trial per arm. Its variant arm's
+    image record (main-d22c65b9) names no descriptions, so tests that need the description check add the key."""
 
     def shipped(self):
-        doc = load(os.path.join(HARNESS_DIR, "experiments", "desc-change-sep28.json"))
+        doc = load(os.path.join(HARNESS_DIR, "experiments", "release-v2200-vs-main-paymentFailure.json"))
         doc["run"]["n_per_arm"] = 1
-        path = os.path.join(self._tmp.name, "desc-change-sep28.json")
+        for k in ("client_version", "bill_api_key"):  # the CLI and key of the batch's host; the fake has neither
+            doc["run"].pop(k)
+        doc["run"]["model"] = "sonnet"  # the fake CLI's stream reports claude-sonnet-5, which a full id would not match
+        path = os.path.join(self._tmp.name, "release-v2200-vs-main-paymentFailure.json")
         pathlib.Path(path).write_text(json.dumps(doc))
         return path
 
+    def with_record(self, **keys):
+        """Run the shipped experiment on the variant image with extra keys on that image's record (its real
+        instructions key is dropped: the fake serves none). A path in the temp dir stays as is under the joins
+        in experiments/descriptions/ and experiments/instructions/."""
+        real = bench.load_json
+        rec = lambda p: dict(real(p), **{"instructions": None, **keys}) if real(p).get("tag") == VARIANT_IMAGE else real(p)
+        with mock.patch.object(bench, "load_json", rec):
+            return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+
+    def descriptions_file(self):
+        f = os.path.join(self._tmp.name, "descriptions.json")
+        pathlib.Path(f).write_text(json.dumps(DESC_CHANGE))
+        return f
+
     def test_variant_arm_runs_with_matching_descriptions(self):
         Fake.served_descriptions = {k: v for k, v in DESC_CHANGE.items() if k != "status"}
-        rc = self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+        rc = self.with_record(descriptions=self.descriptions_file())
         self.assertEqual(rc, 0, self.err)
         b = self.batch_dir()
         m = load(os.path.join(b, "manifest.json"))
-        self.assertEqual(m["arms"], ["descchange"])
-        self.assertEqual(m["arm_pin"], {"arm": "descchange", "expected_image": VARIANT_IMAGE, "sut_jaeger_image_at_run": VARIANT_IMAGE})
+        self.assertEqual(m["arms"], ["variant"])
+        self.assertEqual(m["arm_pin"], {"arm": "variant", "expected_image": VARIANT_IMAGE, "sut_jaeger_image_at_run": VARIANT_IMAGE})
         self.assertEqual(m["tools_description_check"]["mode"], "compared")
-        self.assertEqual(m["experiment"]["name"], "desc-change-sep28")
-        self.assertEqual(m["jaeger_commit"], "4c355981415835b062d6137573e0ddd2eebe6773")
-        trial = os.path.join(b, "0-descchange")
+        self.assertEqual(m["experiment"]["name"], "release-v2200-vs-main-paymentFailure")
+        self.assertEqual(m["jaeger_commit"], "d22c65b9bcbf7261172d5c31fb3ffa6b393f1d6c")
+        trial = os.path.join(b, "0-variant")
         meta = load(os.path.join(trial, "meta.json"))
-        self.assertEqual((meta["arm"], meta["prompt_name"], meta["model_requested"]), ("descchange", "noskill", "sonnet"))
+        self.assertEqual((meta["arm"], meta["prompt_name"], meta["model_requested"]), ("variant", "neutral", "sonnet"))
         self.assertEqual(meta["tool_descriptions_check"], "compared")
-        self.assertEqual(meta["tool_descriptions_file"], "harness/experiments/descriptions/desc-change.json")
-        self.assertEqual(meta["experiment"]["name"], "desc-change-sep28")
+        self.assertEqual(meta["tool_descriptions_file"], bench.repo_relpath(self.descriptions_file()))
+        self.assertEqual(meta["experiment"]["name"], "release-v2200-vs-main-paymentFailure")
         self.assertEqual(meta["tools_list_sha256"], bench.sha256_file(os.path.join(b, "tools.json")))
-        self.assertEqual(bench.read_jsonl(os.path.join(b, "cells.jsonl"))[0]["arm"], "descchange")
+        self.assertEqual(bench.read_jsonl(os.path.join(b, "cells.jsonl"))[0]["arm"], "variant")
 
     def with_instructions(self, text):
-        """Run the shipped experiment with the variant image record naming an instructions file (an absolute
-        path in the temp dir, which the join under experiments/instructions/ keeps as is)."""
+        """Run the shipped experiment with the variant image record naming an instructions file."""
         f = os.path.join(self._tmp.name, "instructions.md")
         pathlib.Path(f).write_text(text + "\n")
-        real = bench.load_json
-        rec = lambda p: dict(real(p), instructions=f) if real(p).get("tag") == VARIANT_IMAGE else real(p)
-        Fake.served_descriptions = {k: v for k, v in DESC_CHANGE.items() if k != "status"}
-        with mock.patch.object(bench, "load_json", rec):
-            return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+        return self.with_record(instructions=f)
 
     def test_instructions_mismatch_aborts(self):
         Fake.served_instructions = "served wording"
@@ -970,7 +983,7 @@ class TestExperiment(BenchCase):
         self.assertEqual(meta["tool_descriptions_check"], "recorded_only")
 
     def test_description_mismatch_aborts(self):
-        rc = self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+        rc = self.with_record(descriptions=self.descriptions_file())
         self.assertEqual(rc, 1)
         self.assertIn("MISMATCH get_trace_errors", self.err)
         self.assertEqual(self.calls(), [])
@@ -989,7 +1002,7 @@ class TestExperiment(BenchCase):
     def test_image_pin_refuses_a_mismatch(self):
         rc = self.bench("run", self.shipped(), FAKE_IMAGE="other/jaeger:1")
         self.assertEqual(rc, 1)
-        self.assertIn("which no arm of experiment desc-change-sep28 expects", self.err)
+        self.assertIn("which no arm of experiment release-v2200-vs-main-paymentFailure expects", self.err)
         self.assertEqual(self.calls(), [])
         self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
         self.assertFalse(os.path.exists(self.records))
@@ -997,7 +1010,7 @@ class TestExperiment(BenchCase):
 
 class TestSharedImage(BenchCase):
     """Two arms on one image: the non-baseline arm serves the baseline's wording,
-    so the desc-change.json check must not apply."""
+    so no descriptions check applies."""
 
     def test_same_image_without_descriptions_is_recorded_only(self):
         self.assertEqual(self.run_batch(1), 0, self.err)

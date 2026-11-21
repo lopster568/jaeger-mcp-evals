@@ -111,7 +111,7 @@ A batch aborts before the flag flips on:
 | Cause | Detail |
 |---|---|
 | No arm matches | only arms whose `image` equals `docker inspect jaeger` run; run other images as separate batches |
-| Description mismatch | a tools arm on another image must serve every `tools/list` description exactly as `harness/experiments/descriptions/desc-change.json` |
+| Description mismatch | an arm whose image record has a `descriptions` key must serve every `tools/list` description exactly as that file under `harness/experiments/descriptions/`; absent or null is recorded only |
 | Instructions mismatch | an arm whose image record has an `instructions` key must serve the MCP `instructions` string equal (trimmed) to that file under `harness/experiments/instructions/`; absent or null is recorded only (`instructions_sha256` in the manifest) |
 | Failed gate | leak scan, readiness, oracle (docs/SCENARIOS.md) or sandbox probe; `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
 
