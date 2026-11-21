@@ -27,13 +27,13 @@ import sys
 import tarfile
 import tempfile
 import threading
-import types
 import unittest
 from unittest import mock
 
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import bench  # noqa: E402
+import codex_client  # noqa: E402
 
 FLAGS = {"flags": {
     "paymentFailure": {"state": "ENABLED", "variants": {"100%": 1, "off": 0}, "defaultVariant": "off"},
@@ -536,106 +536,6 @@ class TestBatch(BenchCase):
         self.assertFalse(any(g["api_key"] for g in bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))))
         self.assertNotIn("billing", load(os.path.join(self.batch_dir(), "manifest.json")))
 
-    def test_api_client_runs_the_owned_loop(self):
-        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
-        usage = {"input_tokens": 10, "output_tokens": 20}
-        script = os.path.join(self.home, "script.json")
-        pathlib.Path(script).write_text(json.dumps({"turns": [
-            {"content": [{"type": "tool_use", "id": "t1", "name": "mcp__jaeger__get_trace_errors", "input": {}}],
-             "stop_reason": "tool_use", "usage": usage},
-            {"content": [{"type": "text", "text": json.dumps(verdict)}], "stop_reason": "end_turn", "usage": usage}]}))
-        real = bench.client_argv
-        key = "sk-test-9f3a-must-never-reach-a-record"
-        fake_loop = os.path.join(HARNESS_DIR, "tests", "fake_loop.py")
-        # The real api argv, with the loop swapped for the same loop on a scripted provider.
-        self.assertEqual(real(types.SimpleNamespace(client="api", provider="anthropic", scenario="paymentFailure", model="m",
-                                                    effort="high", max_turns=1, max_budget_usd="1"), "a", "p", "c", "t")[:2],
-                         [sys.executable, bench.AGENT_LOOP])
-        real_probe = bench.probe_argv
-        with mock.patch.object(bench, "client_argv", lambda *a: [sys.executable, fake_loop, script] + real(*a)[2:]), \
-                mock.patch.object(bench, "probe_argv", lambda a: [sys.executable, fake_loop, script] + real_probe(a)[2:]):
-            # Without a key the api client (the default) is refused in pre-flight, before any batch directory exists.
-            api = {"client": "api", "provider": "anthropic", "model": "claude-sonnet-5"}
-            self.assertEqual(self.run_batch(1, run=api, ANTHROPIC_API_KEY=""), 1)
-            self.assertIn("bench: set ANTHROPIC_API_KEY in fixture.env (or set run.client to cli to use the Claude Code CLI)\n",
-                          self.err + self.out)
-            self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
-            self.assertEqual(self.run_batch(1, run=api, ANTHROPIC_API_KEY=key), 0, self.err)
-        self.assertEqual(self.calls(), [])  # claude never ran
-
-        leaks = [p for p in glob.glob(os.path.join(self.runs, "**"), recursive=True)
-                 if os.path.isfile(p) and key in read(p)]
-        self.assertEqual(leaks, [])
-        b = self.batch_dir()
-        m = load(os.path.join(b, "manifest.json"))
-        self.assertEqual((m["client"], m["provider"], m["model_requested"], m["schema_version"]),
-                         ("api", "anthropic", "claude-sonnet-5", 5))
-        self.assertIn("providers/anthropic_provider.py", m["file_hashes_sha256"])
-        self.assertEqual(load(os.path.join(b, "preflight.json"))["client"], "PASS")
-        self.assertEqual([s["verdict"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["PASS", "PASS"])
-        for c in bench.read_jsonl(os.path.join(b, "cells.jsonl")):
-            self.assertFalse(c["failed"])
-            meta = load(os.path.join(b, "%d-%s" % (c["order_index"], c["arm"]), "meta.json"))
-            self.assertEqual(list(meta), META_V4_KEYS)
-            self.assertEqual((meta["schema_version"], meta["client"], meta["model_requested"]), (5, "api", "claude-sonnet-5"))
-            # recorded without absolute paths: repo-relative, trial-relative, else the basename
-            self.assertEqual(meta["client_argv"][:3], [os.path.basename(sys.executable), "harness/tests/fake_loop.py", "script.json"])
-            argv = meta["client_argv"]
-            self.assertEqual([argv[argv.index(k) + 1] for k in ("--prompt-file", "--scenario-file", "--mcp-config", "--out-dir")],
-                             ["harness/prompts/%s.txt" % c["arm"], "harness/scenarios/paymentFailure.json", "mcp.json", "."])
-            self.assertEqual(meta["history_policy"], {"harness_truncation": "none", "cli_autocompact": "n/a"})
-            self.assertEqual(meta["client_version_pre"], "agent_loop 0.1.0")
-            self.assertEqual(meta["observed"]["client_version"], "0.1.0")
-            self.assertEqual((meta["agent_loop"]["effort"], meta["agent_loop"]["result_subtype"]), ("xhigh", "success"))
-
-    def test_openai_provider_records_provider_and_base_url_never_the_key(self):
-        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
-        seen, wrong = [], []
-
-        class Chat(http.server.BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def do_POST(self):
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                seen.append((self.path, self.headers["Authorization"]))
-                msg = ({"role": "assistant", "content": json.dumps(verdict)} if body["messages"][-1]["role"] == "tool" else
-                       {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
-                           "name": "mcp__jaeger__get_trace_errors", "arguments": "{}"}}]})
-                out = json.dumps({"id": "x", "model": "other-model" if wrong else body["model"], "usage": {"prompt_tokens": 1, "completion_tokens": 1},
-                                  "choices": [{"message": msg, "finish_reason": "stop" if msg["content"] else "tool_calls"}]}).encode()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(out)))
-                self.end_headers()
-                self.wfile.write(out)
-
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Chat)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        self.addCleanup(srv.server_close)
-        self.addCleanup(srv.shutdown)
-        base, key = "http://127.0.0.1:%d/v1" % srv.server_address[1], "sk-openai-must-never-reach-a-record"
-        openai = {"client": "api", "provider": "openai", "model": "vendor/model-x"}
-        self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY="", OPENAI_BASE_URL=base), 1)
-        self.assertIn("bench: set OPENAI_API_KEY and OPENAI_BASE_URL in fixture.env for provider openai\n", self.err + self.out)
-        wrong.append(1)  # the endpoint answers as another model: refused before any batch directory exists
-        self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY=key, OPENAI_BASE_URL=base), 1)
-        self.assertIn("run.model is vendor/model-x but the endpoint answered as other-model", self.err + self.out)
-        self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
-        wrong.clear()
-        self.assertEqual(self.run_batch(1, run=openai, OPENAI_API_KEY=key, OPENAI_BASE_URL=base, ANTHROPIC_API_KEY=""), 0, self.err)
-        self.assertEqual({s for s in seen}, {("/v1/chat/completions", "Bearer " + key)})
-        leaks = [p for p in glob.glob(os.path.join(self.runs, "**"), recursive=True) if os.path.isfile(p) and key in read(p)]
-        self.assertEqual(leaks, [])
-        b = self.batch_dir()
-        m = load(os.path.join(b, "manifest.json"))
-        self.assertEqual((m["client"], m["provider"], m["model_requested"]), ("api", "openai", "vendor/model-x"))
-        self.assertEqual(list(m).index("provider"), list(m).index("client") + 1)
-        self.assertEqual([s["verdict"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["PASS", "PASS"])
-        for c in bench.read_jsonl(os.path.join(b, "cells.jsonl")):
-            meta = load(os.path.join(b, "%d-%s" % (c["order_index"], c["arm"]), "meta.json"))
-            self.assertEqual(meta["provider"], "openai")
-            self.assertEqual((meta["agent_loop"]["provider"], meta["agent_loop"]["api_base_url"]), ("openai", "set"))
-
     def test_codex_client_scores_through_the_stream(self):
         codex = {"client": "codex", "model": "gpt-t"}
         self.assertEqual(self.run_batch(1, "--dry-run", run=codex), 0, self.err)
@@ -696,6 +596,14 @@ class TestBatch(BenchCase):
         final = bench.read_jsonl(os.path.join(out, "stream.jsonl"))[-1]
         self.assertEqual((final["subtype"], final["num_tool_calls"], final["structured_output"]), ("error_max_turns", 1, None))
         self.assertNotIn("mcp_servers", " ".join(bench.read_jsonl(os.path.join(self.home, "codex-calls.jsonl"))[0]["argv"]))
+
+    def test_codex_answer_must_match_the_verdict_schema(self):
+        verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
+        schema = load(bench.VERDICT_SCHEMA)
+        self.assertEqual(codex_client.extract_json("```json\n%s\n```" % json.dumps(verdict), schema), (verdict, None))
+        obj, errs = codex_client.extract_json(json.dumps(dict(verdict, confidence="certain")), schema)
+        self.assertIsNone(obj)
+        self.assertTrue(errs)
 
     def test_summary_counts_errors_and_stops(self):
         self.assertEqual(self.run_batch(1, FAKE_STOP="error_max_turns"), 0, self.err)
@@ -1118,11 +1026,11 @@ class TestKnobFile(BenchCase):
     def test_missing_model_rejected(self):
         self.refused(lambda d: d["run"].pop("model"), "run: missing key(s): model")
 
-    def test_provider_only_for_api(self):
-        self.refused(lambda d: d["run"].update(provider="openai"), "run.provider applies only to client api")
+    def test_provider_must_be_null(self):
+        self.refused(lambda d: d["run"].update(provider="openai"), "run.provider must be null")
 
     def test_bill_api_key_only_for_cli(self):
-        self.refused(lambda d: d["run"].update(client="api", provider="anthropic", bill_api_key=True),
+        self.refused(lambda d: d["run"].update(client="codex", bill_api_key=True),
                      "run.bill_api_key must be true or false, and true only for client cli")
 
     def test_draft_refused(self):
@@ -1762,7 +1670,7 @@ class TestSandboxProbe(BenchCase):
         self.assertEqual(self.calls(), [])
         self.assertEqual(self.run_batch(1, "--dry-run", FAKE_PROBE="extra_tool"), 1, self.err)
 
-    def test_api_and_codex_are_not_probed(self):
+    def test_codex_is_not_probed(self):
         self.assertEqual(self.run_batch(1, run={"client": "codex", "model": "gpt-t"}), 0, self.err)
         self.assertIsNone(load(os.path.join(self.batch_dir(), "preflight.json"))["sandbox_probe"])
         self.assertEqual(self.probes(), [])

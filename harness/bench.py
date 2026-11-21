@@ -71,13 +71,11 @@ HARNESS = os.path.dirname(os.path.abspath(__file__))
 ROOT = config.ROOT
 SYSTEM_PROMPT = os.path.join(HARNESS, "system-prompt.txt")
 VERDICT_SCHEMA = os.path.join(HARNESS, "verdict-schema.json")
-AGENT_LOOP = os.path.join(HARNESS, "agent_loop.py")
 CODEX_CLIENT = os.path.join(HARNESS, "codex_client.py")
 RECORDS = os.path.join(ROOT, "records")
 DIST = os.path.join(ROOT, "dist")
-# api: the owned loop (harness/agent_loop.py), which refuses aliases; cli: the Claude Code CLI;
-# codex: the OpenAI Codex CLI.
-CLIENTS = ("api", "cli", "codex")
+# cli: the Claude Code CLI; codex: the OpenAI Codex CLI.
+CLIENTS = ("cli", "codex")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new"]
 TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
@@ -87,7 +85,6 @@ TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
 CELL_TIMEOUT_S = 1800
 BASELINE_LOOKBACK_S = 600
 HISTORY_POLICY = {"cli": {"harness_truncation": "none", "cli_autocompact": "default"},
-                  "api": {"harness_truncation": "none", "cli_autocompact": "n/a"},
                   "codex": {"harness_truncation": "none", "cli_autocompact": "unknown"}}
 NOT_RECORDED = "not recorded"
 # Runs on the fixture with the flag file, flag and variant as argv; the script
@@ -957,34 +954,20 @@ def claude_missing_flags():
     return ((v.split() or ["unknown version"])[0], [f for f in CLAUDE_FLAGS if f not in h])
 
 
-def client_argv(a, arm, prompt_file, mcp_config, trial):
+def client_argv(a, prompt_file, mcp_config, trial):
     if a.client == "cli":
         return claude_argv(a, prompt_file, mcp_config)
-    if a.client == "codex":
-        return [sys.executable, CODEX_CLIENT, "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns),
-                "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT, "--schema-file", VERDICT_SCHEMA,
-                "--mcp-config", mcp_config, "--out-dir", trial, "--codex-bin", a.codex_bin]
-    return [sys.executable, AGENT_LOOP, "--scenario", a.scenario, "--arm", arm, "--model", a.model,
+    return [sys.executable, CODEX_CLIENT, "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns),
             "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT, "--schema-file", VERDICT_SCHEMA,
-            "--scenario-file", os.path.join(HARNESS, "scenarios", a.scenario + ".json"), "--mcp-config", mcp_config,
-            "--out-dir", trial, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd
-            ] + loop_provider(a)
+            "--mcp-config", mcp_config, "--out-dir", trial, "--codex-bin", a.codex_bin]
 
 
-def probe_argv(a):
-    return [sys.executable, AGENT_LOOP, "--probe-model", "--model", a.model, "--effort", a.effort] + loop_provider(a)
-
-
-def api_secrets(a, cfg):
-    return {k: cfg.get(k, "") for k in (SECRET_KEYS[1:] if a.provider == "openai" else SECRET_KEYS[:1])}
+def api_secrets(cfg):
+    return {"ANTHROPIC_API_KEY": cfg.get("ANTHROPIC_API_KEY", "")}
 
 
 def is_full_model_id(m):
     return bool(re.fullmatch(r"claude-[a-z]+(?:-[a-z0-9]+)*", m) and re.search(r"\d", m))
-
-
-def loop_provider(a):
-    return ["--provider", "openai"] if a.provider == "openai" else []
 
 
 def observe(stream_path):
@@ -1001,7 +984,7 @@ def observe(stream_path):
         if not init and e.get("type") == "system" and e.get("subtype") == "init":
             init = e
         compactions += score.is_compaction_event(e, line)
-    return {"client_version": init.get("claude_code_version") or init.get("loop_version") or init.get("client_version"),
+    return {"client_version": init.get("claude_code_version") or init.get("client_version"),
             "model": init.get("model"),
             "tools": init.get("tools"), "skills": init.get("skills"), "agents": init.get("agents"),
             "compaction_events": compactions}
@@ -1080,10 +1063,7 @@ def load_experiment(path):
     r = exp["run"]
     keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
-    if r["client"] == "api":
-        check(r["provider"] in ("anthropic", "openai"), "run.provider must be anthropic or openai for client api")
-    else:
-        check(r["provider"] is None, "run.provider applies only to client api; set it to null")
+    check(r["provider"] is None, "run.provider must be null")
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
     check(r["effort"] in EFFORTS, "run.effort must be one of %s" % ", ".join(EFFORTS))
     check(is_int(r["max_turns"]) and r["max_turns"] > 0, "run.max_turns must be a positive integer")
@@ -1161,7 +1141,7 @@ def run(a, cfg):
     STAGES = 4 if a.dry_run else 6  # a dry run stops after the demo checks: no fault, no evidence
     log.detail("bench: experiment=%s scenario=%s flag=%s activation=defaultVariant:%s client=%s model=%s effort=%s n_per_arm=%d"
                % (a.experiment, a.scenario, flag, act["value"], a.client, a.model, a.effort, a.n_per_arm))
-    log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join(filter(None, (a.client, a.provider, a.model, a.effort))),
+    log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join((a.client, a.model, a.effort)),
                                      "%d per arm" % a.n_per_arm))))
     log.stage(1, STAGES, "Agent and grader", "the versions in use, recorded so two runs compare")
 
@@ -1170,15 +1150,7 @@ def run(a, cfg):
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
-    if a.client == "api" and a.provider == "openai":
-        log.detail("== pre-flight: api client, provider openai (OPENAI_API_KEY, OPENAI_BASE_URL, model) ==")
-        if not (cfg.get("OPENAI_API_KEY") and cfg.get("OPENAI_BASE_URL")):
-            return die("set OPENAI_API_KEY and OPENAI_BASE_URL in fixture.env for provider openai")
-    elif a.client == "api":
-        log.detail("== pre-flight: api client (ANTHROPIC_API_KEY, model and effort) ==")
-        if not cfg.get("ANTHROPIC_API_KEY"):
-            return die("set ANTHROPIC_API_KEY in fixture.env (or set run.client to cli to use the Claude Code CLI)")
-    elif a.client == "cli":
+    if a.client == "cli":
         log.detail("== pre-flight: cli client (claude flags) ==")
         found = claude_missing_flags()
         if found is None:
@@ -1205,34 +1177,15 @@ def run(a, cfg):
             return die("%s is not on PATH; install the OpenAI Codex CLI (or the wrapper named by CODEX_BIN) and "
                        "log in, or pick another run.client" % a.codex_bin)
         log.check(True, "%s on PATH" % a.codex_bin)
-    if a.client == "api":
-        r = subprocess.run([sys.executable, AGENT_LOOP, "--validate-only", "--model", a.model, "--effort", a.effort,
-                            "--max-turns", str(a.max_turns)] + loop_provider(a),
-                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
-        if r.returncode != 0:
-            return die("ABORT - the api client refuses these arguments: %s" % r.stderr.strip())
-        pre["client"] = "PASS"
-        log.check(True, "api client (%s) accepts %s at effort %s" % (a.provider, a.model, a.effort))
-        log.detail("pre-flight: model pin probe: one call, prompt 'Reply with the word ok.', max_tokens 256, no reasoning")
-        r = subprocess.run(probe_argv(a), capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300,
-                           env=dict(grade.child_env(False), **api_secrets(a, cfg)))
-        seen = re.search(r"endpoint reports model (\S+)", r.stdout)
-        if r.returncode == 3 and seen:
-            return die("ABORT - model pin: run.model is %s but the endpoint answered as %s; nothing was touched"
-                       % (a.model, seen.group(1)))
-        if r.returncode != 0:
-            return die("ABORT - the model probe failed: %s" % (r.stderr.strip() or r.stdout.strip()))
-        log.check(True, "endpoint answers as %s" % a.model)
     try:
-        client_pre = subprocess.run({"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"]}.get(
-                                        a.client, [sys.executable, AGENT_LOOP, "--version"]),
+        client_pre = subprocess.run(["claude" if a.client == "cli" else a.codex_bin, "--version"],
                                     capture_output=True, text=True,
                                     stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
     except (OSError, subprocess.TimeoutExpired):
         client_pre = None
     want = exp["run"].get("client_version")
     if want:
-        # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "agent_loop 1": the first token starting with a digit
+        # "2.1.283 (Claude Code)", "codex-cli 0.153.2": the first token starting with a digit
         got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
         pre["client_version"] = "PASS" if got == want else "FAIL"
         if not log.check(got == want, "%s %s" % ("claude CLI" if a.client == "cli" else a.client + " client", want)):
@@ -1391,7 +1344,7 @@ def run(a, cfg):
         log.detail("== pre-flight: sandbox probe (each arm's trial argv against a local server; no model call) ==")
         env = grade.child_env()
         if a.bill_api_key:  # same env as the trials; the probe server keeps the request in memory only
-            env.update(api_secrets(a, cfg))
+            env.update(api_secrets(cfg))
         probe = {"result": "PASS", "tools": {}}
         unexpected = set()
         for arm in arms:
@@ -1505,9 +1458,7 @@ def run(a, cfg):
         c["order_index"] = i
     hashes = {name: sha256_file(os.path.join(HARNESS, name)) for name in
               ("bench.py", "tools.py", "fixture_leak.py", "score.py", "system-prompt.txt", "verdict-schema.json",
-               "agent_loop.py", "mcp_client.py", "codex_client.py", "leak-words.txt", "judge.py", "grade.py", "grader-prompt.txt",
-               "providers/__init__.py", "providers/base.py",
-               "providers/anthropic_provider.py", "providers/openai_provider.py")}
+               "mcp_client.py", "codex_client.py", "leak-words.txt", "judge.py", "grade.py", "grader-prompt.txt")}
     hashes["scenario_file"] = sha256_file(sf)
     for arm in arms:
         hashes["prompts/%s.txt" % prompt_for[arm]] = sha256_file(prompt_file[arm])
@@ -1562,7 +1513,7 @@ def run(a, cfg):
         for c in plan:
             log("  order_index=%d arm=%s trial_index=%d prompt=%s %s" % (c["order_index"], c["arm"], c["trial_index"],
                 prompt_for[c["arm"]], paint(DIM, "-> %d-%s" % (c["order_index"], c["arm"]))))
-        argv = client_argv(a, plan[0]["arm"], prompt_file[plan[0]["arm"]], "<trial>/mcp.json", "<trial>")
+        argv = client_argv(a, prompt_file[plan[0]["arm"]], "<trial>/mcp.json", "<trial>")
         if a.client == "cli":  # the texts themselves would fill the screen
             argv[2] = "<%s>" % os.path.basename(prompt_file[plan[0]["arm"]])
             for k, f in (("--system-prompt", SYSTEM_PROMPT), ("--json-schema", VERDICT_SCHEMA)):
@@ -1671,7 +1622,7 @@ def run(a, cfg):
             return die("ABORT - the fixture names a flag while the fault is active; no trials run")
 
         fails = 0
-        secrets = api_secrets(a, cfg)
+        secrets = api_secrets(cfg)
         labels = ["[%*d/%d] %s #%d" % (len(str(len(plan))), i + 1, len(plan), c["arm"], c["trial_index"]) for i, c in enumerate(plan)]
         w = max(map(len, labels))
         log.section("Trials".ljust(w + 4), paint(DIM, "verdict  calls    time"))
@@ -1839,7 +1790,7 @@ META_KEYS = (
     "system_under_test", "fixture_changes", "fixture_ok")
 
 
-SECRET_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+SECRET_KEYS = ("ANTHROPIC_API_KEY",)
 
 
 def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg, expected_restarts,
@@ -1855,10 +1806,10 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
         mcp_url = None
     mcp_path = os.path.join(trial, "mcp.json")
     write_mcp_config(mcp_path, mcp_url)
-    argv = client_argv(a, arm, prompt_file[arm], mcp_path, trial)
+    argv = client_argv(a, prompt_file[arm], mcp_path, trial)
     prompt_sha = sha256_file(prompt_file[arm])
     shown = recorded_argv(argv, bdir, trial)
-    if a.client == "cli":  # the api argv carries file paths, not the texts
+    if a.client == "cli":  # the codex argv carries file paths, not the texts
         shown[2] = "sha256:" + prompt_sha
         shown[shown.index("--system-prompt") + 1] = "sha256:" + common["system_prompt_sha256"]
     merged = dict(common, run_id="%s/%s" % (common["batch_id"], name), order_index=oi, trial_index=c["trial_index"],
@@ -1871,14 +1822,14 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     write_json(os.path.join(trial, "meta.json"), meta)
     # cli: no API key in the environment, so claude bills the logged-in plan (unless run.bill_api_key).
     env = grade.child_env(a.client == "cli")
-    if a.client == "api" or a.bill_api_key:
+    if a.bill_api_key:
         env.update(secrets or {})  # environment only: never argv, never a record
     stream = os.path.join(trial, "stream.jsonl")
     before = container_snapshot(cfg)
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory() as work, open(stream, "w") as so, open(os.path.join(trial, "stderr.txt"), "w") as se:
         try:
-            # The loop writes stream.jsonl itself (--out-dir), so its stdout goes with stderr.
+            # codex_client.py writes stream.jsonl itself (--out-dir), so its stdout goes with stderr.
             p = subprocess.Popen(argv, cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=so if a.client == "cli" else se,
                                  stderr=se)
         except OSError as e:
@@ -1904,10 +1855,8 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                 raise
     with open(os.path.join(trial, "exit.txt"), "w") as f:
         f.write("exit=%d\n" % rc)
-    loop_meta = os.path.join(trial, "agent_loop.json")
     fixture_changes, fixture_ok = fixture_diff(before, container_snapshot(cfg), expected_restarts)
     meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=observe(stream),
-                agent_loop=load_json(loop_meta).get("agent_loop") if os.path.isfile(loop_meta) else None,
                 fixture_changes=fixture_changes, fixture_ok=fixture_ok)
     write_json(os.path.join(trial, "meta.json"), meta)
     return {"order_index": oi, "arm": arm, "trial_index": c["trial_index"], "model": a.model,

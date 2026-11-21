@@ -5,10 +5,10 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 
 | Factor | Where it is set | Recorded as |
 |---|---|---|
-| Client and provider | `run.client`, `run.provider` | `client`, `provider`, `client_argv` |
+| Client | `run.client` | `client`, `client_argv` |
 | Model | `run.model` | `model_requested`, `observed.model`, `model_asserted` |
 | Effort | `run.effort` | `effort` |
-| Thinking | fixed per client | `agent_loop.thinking`, `reasoning.jsonl` |
+| Thinking | fixed per client | thinking blocks in `stream.jsonl` (cli) |
 | Temperature | not settable | nothing |
 | Prompt | `arms.<arm>.prompt` | `prompt_name`, `prompt_sha256` |
 | System prompt | `harness/system-prompt.txt` | `system_prompt_sha256` |

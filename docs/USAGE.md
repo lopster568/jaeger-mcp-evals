@@ -55,9 +55,9 @@ verbatim except that the long `hypothesis` is elided:
 | Key | Values | Meaning |
 |---|---|---|
 | `name`, `version`, `scenario`, `hypothesis` | string, `2`, a `harness/scenarios/` name, text | records land in `records/<name>/`; the hypothesis states what the thresholds test |
-| `run.client`, `run.provider` | `api` `cli` `codex`; `anthropic` `openai` `null` | Clients below; provider is api only |
-| `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged, the api client refuses aliases |
-| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | API calls (api), CLI turns (cli), tool calls (codex); budget has no effect with openai or codex |
+| `run.client`, `run.provider` | `cli` `codex`; `null` | Clients below; provider must be null |
+| `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged; an alias is warned, not pinned |
+| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), tool calls (codex); budget has no effect with codex |
 | `run.n_per_arm`, `run.seed`, `run.client_version` | integer, integer or `null`, optional string | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only) |
 | `arms.<arm>` | `prompt`, `image`, `tools` | a `harness/prompts/<prompt>.txt` name; the Jaeger image it needs; `false` removes the MCP server |
 | `baseline_arm`, `thresholds`, `status` | arm or `null`; object; text | what `judge.py` compares against; see Thresholds; a batch refuses while `status` contains `DRAFT` |
@@ -69,7 +69,6 @@ verbatim except that the long `hypothesis` is elided:
 
 - `cli`: the logged-in `claude`, no API key in its environment.
 - `codex`: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
-- `api`: `harness/agent_loop.py` over the Messages API. Experimental, no batch in `records/`; key and base URL (fixture.env) bill that account and are never recorded.
 
 ## Run a batch
 
