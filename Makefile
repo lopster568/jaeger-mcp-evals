@@ -3,7 +3,7 @@
 
 # Shortcuts for fixture/FIXTURE.md, which stays the manual. Local mode only: the demo runs
 # on this machine. With a remote fixture host, run these targets on that host.
-# On a fixture host with no agent set FIXTURE_HOST_ONLY=1 in fixture.env: preflight skips its claude check and setup skips the Goose image pull (FIXTURE.md, Remote host).
+# On a fixture host with no agent set FIXTURE_HOST_ONLY=1 in fixture.env: preflight skips its agent client check and setup skips the Goose image pull (FIXTURE.md, Remote host).
 # Settings come from fixture.env, then fixture.env.example; an environment variable wins.
 # The steps live in harness/fixture_cli.py; fixture/preflight.sh runs first, before any Python.
 

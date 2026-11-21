@@ -7,7 +7,7 @@
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OVERLAY="${OVERLAY:-$ROOT/fixture/compose.overlay.yaml}"
 # shellcheck source=lib.sh  # sourced by a computed path
-. "$ROOT/fixture/lib.sh"  # FIXTURE_HOST_ONLY=1 (fixture.env or environment): a fixture host with no agent, so no claude check
+. "$ROOT/fixture/lib.sh"  # FIXTURE_HOST_ONLY=1 (fixture.env or environment): a fixture host with no agent, so no agent client check
 fail() { echo "preflight: $1"; exit 1; }
 
 # FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Docker and the demo's

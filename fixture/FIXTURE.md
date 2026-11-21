@@ -175,7 +175,7 @@ in the health checks becomes `FIXTURE_HOST`.
 
 ### Remote layout
 
-On the fixture host (clone this repo there too), set `FIXTURE_HOST_ONLY=1` and leave `FIXTURE_SSH_USER` empty in fixture.env, then run `make fixture`, `make up` and optionally `make phoenix`. `FIXTURE_HOST_ONLY=1` skips the claude check in preflight and the Goose image pull, since no agent runs there; `make up` waits on the fixture alone (`MIN_CONTAINERS` running, Jaeger answering) everywhere.
+On the fixture host (clone this repo there too), set `FIXTURE_HOST_ONLY=1` and leave `FIXTURE_SSH_USER` empty in fixture.env, then run `make fixture`, `make up` and optionally `make phoenix`. `FIXTURE_HOST_ONLY=1` skips the agent client check in preflight and the Goose image pull, since no agent runs there; `make up` waits on the fixture alone (`MIN_CONTAINERS` running, Jaeger answering) everywhere.
 On the machine that runs the agent client (Goose in Docker with a provider key, or the logged-in Claude Code CLI), set `FIXTURE_HOST` to a loopback alias such as `127.0.0.3`, `FIXTURE_SSH_USER` to the ssh user, and `FIXTURE_HOST_ONLY=0`. The harness runs ssh to `FIXTURE_SSH_USER@FIXTURE_HOST`, so give the alias a `Host 127.0.0.3` entry with the host's real `HostName` in `~/.ssh/config`. `bench.py run` and `make smoke` enforce the client checks there; `bench.py run ... --dry-run` is the readiness check for the whole chain.
 Both machines need the same `JAEGER_UI_PORT`, `OFREP_PORT` and `PHOENIX_PORT`.
 
