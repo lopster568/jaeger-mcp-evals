@@ -2,23 +2,26 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-# usage: measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--yes] [--dry-run]
+# usage: measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|cli] [--yes] [--dry-run]
 #
 # Measures a Jaeger change: builds the checkout's HEAD and its base, writes a pre-registered pair
 # file, runs the scenario on each image in turn, and judges the pair (Fisher p < 0.05 on PASS).
 # PAID: 2 x n agent trials plus a grader call each. --dry-run builds, swaps and runs nothing.
+# The agent is Goose (GOOSE_PROVIDER and GOOSE_MODEL in fixture.env), or with --client cli the
+# Claude Code CLI on claude-sonnet-5-5 billing ANTHROPIC_API_KEY.
 # Exit codes: 0 judged PASS, 1 judged FAIL, 2 refused or a step failed.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../fixture/lib.sh"
 
 die() { echo "measure: $*" >&2; exit 2; }
-USAGE="usage: $0 <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--yes] [--dry-run]"
-BASE_REF="" N=10 YES=0 DRY=0 POS=()
+USAGE="usage: $0 <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|cli] [--yes] [--dry-run]"
+BASE_REF="" N=10 YES=0 DRY=0 CLIENT=goose POS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) BASE_REF="${2:-}"; shift ;;
     --n) N="${2:-}"; shift ;;
+    --client) CLIENT="${2:-}"; shift ;;
     --yes) YES=1 ;;
     --dry-run) DRY=1 ;;
     -*) die "unknown flag: $1 ($USAGE)" ;;
@@ -30,6 +33,13 @@ done
 REPO="$(cd "${POS[0]}" 2>/dev/null && pwd)" || die "no such directory: ${POS[0]}"
 SCENARIO="${POS[1]}"
 case "$N" in ''|*[!0-9]*|0) die "--n must be a positive integer" ;; esac
+case "$CLIENT" in
+  goose) case "${GOOSE_PROVIDER:-}" in anthropic|openrouter) ;; *) die "GOOSE_PROVIDER must be anthropic or openrouter; fix: set GOOSE_PROVIDER and GOOSE_MODEL in fixture.env, or pass --client cli" ;; esac
+         [ -n "${GOOSE_MODEL:-}" ] || die "GOOSE_MODEL is empty; fix: set it in fixture.env to a full model id of $GOOSE_PROVIDER, or pass --client cli"
+         MODEL=$GOOSE_MODEL ;;
+  cli) MODEL=claude-sonnet-5-5 ;;
+  *) die "--client must be goose or cli" ;;
+esac
 [ -f "$ROOT/harness/scenarios/$SCENARIO.json" ] || die "no such scenario: $SCENARIO"
 git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || die "not a git repo: $REPO"
 [ -z "$(git -C "$REPO" status --porcelain)" ] || die "$REPO has uncommitted changes; commit them first (the build is from HEAD)"
@@ -61,14 +71,17 @@ for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
 done
 
 # Pair file, written before any run (pre-registration). An existing one must match.
-python3 - "$EXP_FILE" "$EXP" "$SCENARIO" "$N" "$BASE_TAG" "$CHANGE_TAG" "$BS" "$HS" "$DRY" <<'PY' || exit 2
+python3 - "$EXP_FILE" "$EXP" "$SCENARIO" "$N" "$BASE_TAG" "$CHANGE_TAG" "$BS" "$HS" "$DRY" "$CLIENT" "${GOOSE_PROVIDER:-}" "$MODEL" <<'PY' || exit 2
 import json, os, sys, datetime
-path, name, scenario, n, base, change, bs, hs, dry = sys.argv[1:]
+path, name, scenario, n, base, change, bs, hs, dry, client, provider, model = sys.argv[1:]
+run = {"client": client, "provider": provider if client == "goose" else None, "model": model, "effort": "high",
+       "max_turns": 30, "max_budget_usd": 2, "n_per_arm": int(n), "seed": None}
+if client == "cli":
+    run["bill_api_key"] = True  # cli only; the goose client bills the provider's key itself
 doc = {
   "name": name, "version": 2, "scenario": scenario,
-  "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often claude-sonnet-5-5 reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, n),
-  "run": {"client": "cli", "provider": None, "model": "claude-sonnet-5-5", "effort": "high",
-          "max_turns": 30, "max_budget_usd": 2, "n_per_arm": int(n), "seed": None, "bill_api_key": True},
+  "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often %s reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, model if client == "cli" else model + " on Goose", n),
+  "run": run,
   "arms": {"baseline": {"prompt": "neutral", "image": base, "tools": True},
            "variant": {"prompt": "neutral", "image": change, "tools": True}},
   "baseline_arm": "baseline", "thresholds": {"fisher_p_max": 0.05},
@@ -99,8 +112,9 @@ else
   git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -s -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
 fi
 
-echo "measure: model claude-sonnet-5-5, $N trials per arm, 2 arms, PAID"
-echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
+echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID"
+if [ "$CLIENT" = cli ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
+else echo "measure: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
 if [ "$DRY" -eq 0 ] && [ "$YES" -eq 0 ]; then
   read -r -p "measure: continue? [y/N] " ans
   [ "$ans" = y ] || [ "$ans" = Y ] || die "not confirmed; images are built and the pair file is written"

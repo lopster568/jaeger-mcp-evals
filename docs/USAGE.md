@@ -7,7 +7,7 @@ See README.md, fixture/FIXTURE.md, docs/RECORD.md (recorded keys) and docs/TUNIN
 Python 3.11+, bash, git, Docker with Compose v2 and one agent client
 (Clients below), here or on a remote host over ssh (clone this repo there, fixture/FIXTURE.md).
 Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.env` (copy of
-`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys and Codex command.
+`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings for `make measure` and the Codex command.
 
 > [!WARNING]
 > Every trial is one paid agent run: 20 for 10 per arm with two arms.
@@ -55,9 +55,9 @@ verbatim except that the long `hypothesis` is elided:
 | Key | Values | Meaning |
 |---|---|---|
 | `name`, `version`, `scenario`, `hypothesis` | string, `2`, a `harness/scenarios/` name, text | records land in `records/<name>/`; the hypothesis states what the thresholds test |
-| `run.client`, `run.provider` | `cli` `codex`; `null` | Clients below; provider must be null |
+| `run.client`, `run.provider` | `goose` `cli` `codex`; `anthropic` `openrouter` or `null` | Clients below; provider is required for goose, null for the others |
 | `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged; an alias is warned, not pinned |
-| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), tool calls (codex); budget has no effect with codex |
+| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), Goose turns (goose), tool calls (codex); budget has no effect with goose or codex |
 | `run.n_per_arm`, `run.seed`, `run.client_version` | integer, integer or `null`, optional string | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only) |
 | `arms.<arm>` | `prompt`, `image`, `tools` | a `harness/prompts/<prompt>.txt` name; the Jaeger image it needs; `false` removes the MCP server |
 | `baseline_arm`, `thresholds`, `status` | arm or `null`; object; text | what `judge.py` compares against; see Thresholds; a batch refuses while `status` contains `DRAFT` |
@@ -67,7 +67,8 @@ verbatim except that the long `hypothesis` is elided:
 
 ### Clients
 
-- `cli`: the logged-in `claude`, no API key in its environment.
+- `goose`, the default for `make measure`: Goose v1.57.0 via `harness/goose_client.py`, in the image the Jaeger AI Assistant demo pins (`IMAGE` in that file, recorded as `goose_image`), started through the demo's `goose-without-extensions.sh` (`harness/goose/`), one container per trial, removed when the trial ends or is stopped. Needs Docker, the image (pre-flight prints the `docker pull` line), `run.provider` `anthropic` or `openrouter` and that provider's key (`ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`) in fixture.env; the key reaches only this client, by name. `make measure` takes provider and model from `GOOSE_PROVIDER` and `GOOSE_MODEL`, and `--client cli` runs it on the Claude Code CLI instead (`bash harness/measure.sh <checkout> <scenario> --client cli`). `run.effort` is sent as `GOOSE_THINKING_EFFORT` (`xhigh` is Goose's alias of `max`). Goose's own `load_skill` tool (two built-in skills, no network) is allowed and each call is listed under Client limits, since on a skill experiment it can stand in for Jaeger's `read_skill`. Goose calls Jaeger's shared MCP endpoint, as the other clients do; the demo's gateway path (a chat turn through `/api/ai/chat` with the UI tools) is not measured. On Docker Desktop (macOS, Windows) the container's host network is the Docker VM's, so the client drops `--network host` and sends a loopback MCP host to `host.docker.internal`; keep `FIXTURE_HOST=localhost` there.
+- `cli`: the logged-in `claude`, no API key in its environment. Every published result ran on it.
 - `codex`: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
 
 ## Run a batch
