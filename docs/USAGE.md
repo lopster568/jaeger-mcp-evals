@@ -24,7 +24,7 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 `harness/experiments/<name>.json` is the complete configuration of a batch; copy one for your
 own runs. `smoke-paymentfailure.json` is the exception: a template without `run.client`, `provider` or `model`,
 which `bench.py run` refuses; `make smoke` fills them in (Goose from `GOOSE_PROVIDER` and `GOOSE_MODEL`, or
-`CLIENT=cli` with `claude-sonnet-5-5`) and runs the git-ignored `smoke-run.json` it writes. Every key is required except `run.client_version` and `run.bill_api_key`; unknown keys are refused. Below is the
+`CLIENT=cli` with `claude-sonnet-5-5`) and runs the git-ignored `smoke-run.json` it writes. Every key is required except `run.client_version`, `run.bill_api_key`, and `run.max_budget_usd` for `goose` and `codex`; unknown keys are refused. Below is the
 `goose` pair file `make measure` writes, with the long `hypothesis` elided and placeholders in angle brackets:
 
 ```json
@@ -60,7 +60,7 @@ The `cli` and `codex` shapes are under Other clients.
 | `name`, `version`, `scenario`, `hypothesis` | string, `2`, a `harness/scenarios/` name, text | records land in `records/<name>/`; the hypothesis states what the thresholds test |
 | `run.client`, `run.provider` | `goose` `cli` `codex`; `anthropic` `openrouter` or `null` | Clients below; provider is required for goose, null for the others |
 | `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged; an alias is warned, not pinned |
-| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), Goose turns (goose), tool calls (codex); budget has no effect with goose or codex |
+| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), Goose turns (goose), tool calls (codex); the budget is the cli's per-trial cap, required for cli, optional and without effect for goose and codex (recorded as null when absent) |
 | `run.n_per_arm`, `run.seed`, `run.client_version` | integer, integer or `null`, optional string | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only) |
 | `arms.<arm>` | `prompt`, `image`, `tools` | a `harness/prompts/<prompt>.txt` name; the Jaeger image it needs; `false` removes the MCP server |
 | `baseline_arm`, `thresholds`, `status` | arm or `null`; object; text | what `judge.py` compares against; see Thresholds; a batch refuses while `status` contains `DRAFT` |

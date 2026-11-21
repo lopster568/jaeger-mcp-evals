@@ -625,8 +625,8 @@ def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="
     if not costs:
         return [(True, "expected cost unknown: no recorded %s trial of %s on %s" % (client, scenario, model))]
     med, top = statistics.median(costs), costs[-1]
-    out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
-            % (n_per_arm * med, n_per_arm, top, max_budget))]
+    out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial%s)"
+            % (n_per_arm * med, n_per_arm, top, "" if max_budget is None else ", cap %g" % max_budget))]
     if CLIENTS[client]["budget_cap"] and top >= 0.5 * max_budget:
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
@@ -1005,7 +1005,7 @@ def append_line(path, rec):
 
 
 EXPERIMENT_KEYS = ("name", "version", "scenario", "hypothesis", "run", "arms", "baseline_arm", "thresholds", "status")
-RUN_KEYS = ("client", "provider", "model", "effort", "max_turns", "max_budget_usd", "n_per_arm", "seed")
+RUN_KEYS = ("client", "provider", "model", "effort", "max_turns", "n_per_arm", "seed")
 ARM_KEYS = ("prompt", "image", "tools")
 
 
@@ -1038,7 +1038,7 @@ def load_experiment(path):
     r = exp["run"]
     check(not (exp["name"] == SMOKE_EXPERIMENT and isinstance(r, dict) and "client" not in r),
           "%s is the make smoke template (no run.client, provider or model); run make smoke, which fills them in" % path)
-    keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
+    keys(r, "run", RUN_KEYS, optional=("max_budget_usd", "client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
     providers = CLIENTS[r["client"]]["providers"]
     if providers:
@@ -1048,7 +1048,8 @@ def load_experiment(path):
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
     check(r["effort"] in EFFORTS, "run.effort must be one of %s" % ", ".join(EFFORTS))
     check(is_int(r["max_turns"]) and r["max_turns"] > 0, "run.max_turns must be a positive integer")
-    check(type(r["max_budget_usd"]) in (int, float) and r["max_budget_usd"] > 0, "run.max_budget_usd must be a positive number")
+    if CLIENTS[r["client"]]["budget_cap"] or "max_budget_usd" in r:  # optional where no client enforces it
+        check(type(r.get("max_budget_usd")) in (int, float) and r["max_budget_usd"] > 0, "run.max_budget_usd must be a positive number")
     check(is_int(r["n_per_arm"]) and r["n_per_arm"] > 0, "run.n_per_arm must be a positive integer")
     check(r["seed"] is None or is_int(r["seed"]), "run.seed must be an integer or null")
     if "client_version" in r:
@@ -1089,8 +1090,9 @@ def run(a, cfg):
     # The file's run block is the only source of these settings.
     vars(a).update(exp["run"], scenario=exp["scenario"], experiment=exp["name"])
     a.bill_api_key = exp["run"].get("bill_api_key", False)  # the cli agent and a cli grader bill ANTHROPIC_API_KEY, not the plan
-    a.max_budget_usd = str(a.max_budget_usd)
-    budget = float(a.max_budget_usd)
+    budget = exp["run"].get("max_budget_usd")  # None: the client enforces no budget (goose, codex)
+    a.max_budget_usd = None if budget is None else str(budget)
+    budget = None if budget is None else float(budget)
     a.codex_bin = cfg.get("CODEX_BIN") or "codex"
     sf = os.path.join(HARNESS, "scenarios", a.scenario + ".json")
     if not os.path.isfile(sf):

@@ -264,6 +264,7 @@ class TestSandboxProbe(CliCase):
     """Pre-flight's sandbox probe: the trial's own claude argv against a local 400 server."""
     SERVED = ["StructuredOutput"] + ["mcp__jaeger__" + n for n in
                                      ("get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")]
+    refused = tbb.TestKnobFile.refused
 
     def probes(self):
         p = os.path.join(self.home, "probe-calls.jsonl")
@@ -342,6 +343,14 @@ class TestSandboxProbe(CliCase):
         os.remove(os.path.join(self.records, "old", "batch-1", "manifest.json"))  # no manifest: no known client, not read
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
                          [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
+
+    def test_max_budget_usd_is_required_for_the_cli(self):
+        self.refused(lambda d: d["run"].pop("max_budget_usd"), "run.max_budget_usd must be a positive number")
+        self.write_recorded([{"cost_usd": 0.3}])
+        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:
+            json.dump({"client": "goose"}, f)
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 1, None, records=self.records, client="goose"),
+                         [(True, "expected cost about 0.30 USD per arm of 1 trials (recorded max 0.30 per trial)")])  # no cap to name
 
     def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
         self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +

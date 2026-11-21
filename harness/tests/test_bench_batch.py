@@ -1011,6 +1011,21 @@ class TestKnobFile(BenchCase):
     def test_goose_needs_a_known_provider(self):
         self.refused(lambda d: d["run"].update(provider=None), "run.provider must be one of anthropic, openrouter for client goose")
 
+    def test_max_budget_usd_is_optional_for_goose_and_codex(self):
+        self.refused(lambda d: d["run"].update(max_budget_usd=0), "run.max_budget_usd must be a positive number")  # checked when present
+        self.knob()
+        doc = load(self.knob_path)
+        del doc["run"]["max_budget_usd"]
+        for client, provider in (("codex", None), ("goose", "anthropic")):
+            pathlib.Path(self.knob_path).write_text(json.dumps(dict(doc, run=dict(doc["run"], client=client, provider=provider))))
+            self.assertEqual(bench.load_experiment(self.knob_path)["run"].get("max_budget_usd"), None)
+        self.assertEqual(self.bench("run", self.knob_path), 0, self.err)
+        b = self.batch_dir()
+        self.assertIsNone(load(os.path.join(b, "manifest.json"))["max_budget_usd"])
+        self.assertEqual([load(m)["max_budget_usd"] for m in glob.glob(os.path.join(b, "*-*", "meta.json"))], [None, None])
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 1, None, records=self.records),
+                         [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
+
     def test_bill_api_key_only_for_cli(self):
         self.refused(lambda d: d["run"].update(bill_api_key=True),
                      "run.bill_api_key must be true or false, and true only for client cli")
