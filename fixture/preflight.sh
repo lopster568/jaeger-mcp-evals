@@ -6,6 +6,7 @@
 # Ports come from the overlay's published ports (OVERLAY overrides the path, for tests).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OVERLAY="${OVERLAY:-$ROOT/fixture/compose.overlay.yaml}"
+# shellcheck source=lib.sh  # sourced by a computed path
 . "$ROOT/fixture/lib.sh"  # FIXTURE_HOST_ONLY=1 (fixture.env or environment): a fixture host with no agent, so no claude check
 fail() { echo "preflight: $1"; exit 1; }
 
@@ -32,6 +33,7 @@ command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 o
 # The stack is ours when a container named jaeger exists (running or stopped): its ports are expected
 # to be taken, so re-running setup works. Otherwise a busy port belongs to something else.
 if [ -z "$REMOTE" ] && [ -z "$(docker ps -aq --filter name=^jaeger$ 2>/dev/null)" ]; then
+  # shellcheck disable=SC2013  # the overlay's host ports, digits only
   for p in $(sed -n 's/^ *- "\([0-9]*\):[0-9]*".*/\1/p' "$OVERLAY"); do
     (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && fail "port $p is in use by another program; stop it (see: ss -ltnp | grep :$p) and re-run"
   done

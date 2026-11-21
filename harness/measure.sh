@@ -12,6 +12,7 @@
 # Exit codes: 0 judged PASS, 1 judged FAIL, 2 refused or a step failed.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../fixture/lib.sh  # sourced by a computed path
 . "$HERE/../fixture/lib.sh"
 
 die() { echo "measure: $*" >&2; exit 2; }
@@ -64,6 +65,7 @@ run() { echo "+ $*"; [ "$DRY" -eq 1 ] || "$@"; }
 
 echo "measure: scenario $SCENARIO, base $BS ($BASE_REF), head $HS, n=$N per arm"
 for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
+  # shellcheck disable=SC2086  # $t is three space-free words, split on purpose
   set -- $t
   if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
@@ -122,14 +124,14 @@ fi
 
 cd "$ROOT" || exit 2
 if [ "$DRY" -eq 0 ]; then
-  ORIG=$(fx "docker inspect -f '{{.Config.Image}}' jaeger") && [ -n "$ORIG" ] || die "cannot read the fixture's running jaeger image"
+  if ! ORIG=$(fx "docker inspect -f '{{.Config.Image}}' jaeger") || [ -z "$ORIG" ]; then die "cannot read the fixture's running jaeger image"; fi
 else ORIG="<current fixture image>"; fi
 echo "measure: fixture runs $ORIG now; it is restored at the end"
 [ "$DRY" -eq 1 ] || trap 'bash "$HERE/../fixture/swap-jaeger.sh" "$ORIG" >/dev/null' EXIT
 
 arm_run() {  # arm tag: swap, wait, run; sets BATCH
   run bash "$HERE/../fixture/swap-jaeger.sh" "$2" || die "swap to $2 failed"
-  [ "$DRY" -eq 1 ] && echo "+ sleep $SETTLE" || sleep "$SETTLE"
+  if [ "$DRY" -eq 1 ]; then echo "+ sleep $SETTLE"; else sleep "$SETTLE"; fi
   if [ "$DRY" -eq 1 ]; then echo "+ python3 harness/bench.py run $EXP_FILE --no-export"; BATCH="<$1 batch dir>"; return; fi
   local out; out=$(mktemp)
   python3 harness/bench.py run "$EXP_FILE" --no-export 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr

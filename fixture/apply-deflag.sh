@@ -12,6 +12,7 @@
 # FIXTURE_SSH_USER empty every step runs on this machine, else over ssh.
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=lib.sh  # sourced by a computed path
 . "$HERE/lib.sh"
 # Must match the running collector's own arguments (docker inspect otel-collector), or
 # validation fails for unrelated reasons: the demo's profiles pipeline needs this gate.

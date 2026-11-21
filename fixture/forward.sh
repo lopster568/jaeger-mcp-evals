@@ -7,6 +7,7 @@
 #   fixture/forward.sh [--phoenix] SSH_TARGET   restart `ssh -N -L ...` until Ctrl-C; each restart is logged to stderr
 #   fixture/forward.sh [--phoenix] --check      probe each port once; exit 1 if any is down (gate a batch on it)
 # SSH_TARGET is anything ssh accepts (user@host, a Host alias) and may differ from FIXTURE_HOST.
+# shellcheck source=lib.sh  # sourced by a computed path
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 die() { echo "forward.sh: $1" >&2; exit 2; }
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) forward.sh: $1" >&2; }
@@ -18,7 +19,7 @@ fwd_args() { local p; for p in $(fwd_ports); do printf -- '-L\n%s:%s:127.0.0.1:%
 loopback() { [[ $1 =~ ^(localhost|127\.[0-9.]+|::1)$ ]]; }
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0  # sourced by the unit test: functions only
-PHOENIX= CHECK= TARGET=
+PHOENIX='' CHECK='' TARGET=''
 for a in "$@"; do
   case $a in --phoenix) PHOENIX=1;; --check) CHECK=1;; -*) die "unknown option $a";; *) TARGET=$a;; esac
 done
@@ -27,16 +28,18 @@ loopback "$FIXTURE_HOST" || die "FIXTURE_HOST is $FIXTURE_HOST; a forward needs 
 if [ -n "$CHECK" ]; then
   rc=0
   for p in $(fwd_ports); do
-    (exec 3<>"/dev/tcp/$FIXTURE_HOST/$p") 2>/dev/null && echo "ok    $FIXTURE_HOST:$p" || { echo "DOWN  $FIXTURE_HOST:$p"; rc=1; }
+    if (exec 3<>"/dev/tcp/$FIXTURE_HOST/$p") 2>/dev/null; then echo "ok    $FIXTURE_HOST:$p"; else echo "DOWN  $FIXTURE_HOST:$p"; rc=1; fi
   done
   exit $rc
 fi
 
 [ -n "$TARGET" ] || die "usage: forward.sh [--phoenix] SSH_TARGET | --check"
+# shellcheck disable=SC2207  # fwd_args prints space-free -L specs, one per word
 L=($(fwd_args))  # no mapfile: macOS bash 3.2
 trap 'kill "$pid" 2>/dev/null; log "stopped"; exit 0' INT TERM
 while :; do
   log "starting ssh -N to $TARGET: $(fwd_ports | tr '\n' ' ')"
+  # shellcheck disable=SC2086  # SSH_OPTS is a list of options, split on purpose
   ssh $SSH_OPTS -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -N "${L[@]}" "$TARGET" &
   pid=$!
   wait "$pid"

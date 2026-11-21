@@ -30,6 +30,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh  # sourced by a computed path
 . "$HERE/lib.sh"
 IMAGES_DIR="$ROOT/harness/experiments/images"
 USAGE="usage: $0 <jaeger-checkout> <git-ref> <name> [--remote]"
