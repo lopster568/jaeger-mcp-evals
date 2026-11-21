@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """otlp.py: one trial's stream.jsonl as OpenInference spans, encoded as an OTLP protobuf request.
 
 Span layout per trial: one AGENT root span over the whole run, one TOOL child span per

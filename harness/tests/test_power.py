@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """bench.py power: Fisher's exact test significance table.
 
 Run with: python3 -m unittest discover harness/tests

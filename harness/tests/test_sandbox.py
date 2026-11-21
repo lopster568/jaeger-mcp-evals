@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """score.py's sandbox check (sandbox_ok, sandbox_violations, verdict INVALID) and how band,
 verify and judge count INVALID.
 

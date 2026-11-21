@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # Overlay for the jaeger-mcp-evals fixture. Layer on top of compose.yaml + compose.full.yaml +
 # compose.observability.yaml (what `make start` uses). Publishes fixed host
 # ports for the harness and swaps in the MCP-enabled Jaeger config.

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # usage: measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--yes] [--dry-run]
 #
 # Measures a Jaeger change: builds the checkout's HEAD and its base, writes a pre-registered pair

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Score one trajectory dir produced by bench.py run. Prints a compact JSON summary.
 
 The final result event carries the agent's answer as a structured_output object

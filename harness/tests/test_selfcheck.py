@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Self-check: the full scoring path on seeded trajectories, with the grader faked by rule.
 
 Each fixture is a trajectory whose right verdict is known in advance; if one of these moves,

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """bench.py: run benchmark batches against the fixture and check their records.
 
   bench.py run <experiment.json> [--dry-run] [--first-only]

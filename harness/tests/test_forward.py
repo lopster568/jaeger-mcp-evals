@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """fixture/forward.sh: port and argument parsing (sourced, no ssh), --check against a listening socket,
 and the restart loop against a PATH shim for ssh that dies at once."""
 import os

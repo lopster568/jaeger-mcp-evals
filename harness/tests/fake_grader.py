@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """A deterministic stand-in for the grader's model call (grade.call_cli), so no test runs a model.
 
 Rule: "unclear" if the answer says "unsure"; else "correct" iff the answer contains the key word of

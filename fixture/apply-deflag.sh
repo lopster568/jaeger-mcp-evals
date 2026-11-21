@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # Apply the de-flagging collector config to the fixture, safely.
 # 1. copy the config  2. VALIDATE it in a throwaway collector with the same image, env and
 # mounts  3. only if valid, recreate the otel-collector container  4. wait, then scan what

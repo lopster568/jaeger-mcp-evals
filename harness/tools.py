@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """tools.py: the MCP tool list an agent sees, and a check of its descriptions.
 
   tools.py capture --out <path> [--timeout <s>]

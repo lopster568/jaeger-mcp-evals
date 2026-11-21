@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # usage: build-image.sh <jaeger-checkout> <git-ref> <name> [--remote]
 #
 # Builds a Jaeger binary and Docker image from <git-ref> of a Jaeger checkout. The ref is built in a

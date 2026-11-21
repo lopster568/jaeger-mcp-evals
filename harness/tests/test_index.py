@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """records/INDEX.md: generated from records/, stable, and checked by verify.
 
 Run with: python3 -m unittest discover -s harness/tests

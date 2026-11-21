@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """judge.py <baseline_batch_dir> <variant_batch_dir> [--overlay-checked "<text>"]
 
 Scores two batches of one experiment against each other, against the thresholds

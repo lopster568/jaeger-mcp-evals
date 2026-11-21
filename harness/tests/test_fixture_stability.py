@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """bench.py's per-trial fixture stability: fixture_diff (undeclared vs declared restarts),
 vmstat_bi_mean (the host-thrash abort threshold parser), and wait_for_restart (the
 signal_after_restart gate).

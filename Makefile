@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # Shortcuts for fixture/FIXTURE.md, which stays the manual. Local mode only: the demo runs
 # on this machine. With a remote fixture host, run these targets on that host.
 # On a fixture host with no claude CLI set FIXTURE_HOST_ONLY=1 in fixture.env (FIXTURE.md, Remote host).

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # make preflight: check the tools and ports the local fixture needs, before anything is cloned or started.
 # Ports come from the overlay's published ports (OVERLAY overrides the path, for tests).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

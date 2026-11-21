@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Scan what the FIXTURE serves, not what the prompt says.
 
 The prompt leak gate only reads prompts. A review found the OTel demo labels its

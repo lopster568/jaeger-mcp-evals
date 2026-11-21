@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Fixture settings: fixture.env.example, then fixture.env, then os.environ win."""
 import os
 import urllib.parse
