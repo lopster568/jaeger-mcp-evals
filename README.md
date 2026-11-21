@@ -28,11 +28,10 @@ flowchart LR
 ## Quick Start
 
 ```bash
-claude         # once: /login, then /exit; only the cli client and GRADER_CLIENT=cli run on this login
-make setup     # free: install the fixture, start it and Phoenix, wait until it passes pre-flight
-# Goose: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env (docs/USAGE.md, Clients)
+cp fixture.env.example fixture.env   # set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key, as for the Jaeger AI Assistant demo (scripts/ai-sidecar/goose)
+make setup     # free: install the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
 make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base, on Goose
-make smoke     # paid: one Claude Code CLI trial end to end, about 50k tokens
+make smoke     # paid: one Goose trial end to end; CLIENT=cli runs it on the Claude Code CLI (log in once: claude)
 python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan
 python3 harness/bench.py run harness/experiments/<name>.json            # paid: runs the trials and scores them
 python3 harness/bench.py verify                                         # free: re-scores every run from its raw files
