@@ -112,3 +112,9 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 ## 2026-11-21
 
 - Harness: Goose is an agent client, `run.client` `goose` (jaegertracing/jaeger-ai-evals#2): Goose v1.57.0 in the image the Jaeger AI Assistant demo pins, started through the demo's `goose-without-extensions.sh`, one Docker container per trial, writing stream.jsonl in the Claude CLI's shape. `run.provider` is required for goose (`anthropic` or `openrouter`) and stays null for `cli` and `codex`, so the shipped experiment files and their sha256 values are unchanged. `make measure` writes its pair file with client goose, provider and model from `GOOSE_PROVIDER` and `GOOSE_MODEL` in fixture.env, and refuses to start without them; `--client cli` keeps the Claude Code CLI. score.py records Goose's refusal "Tool '<name>' is not available." as an attempted unknown tool, as it does the CLI's, and allows Goose's `load_skill` for client goose only, listing each call under Client limits. `OPENROUTER_API_KEY` joins fixture.env.example and the leak scans; trial and grader processes start without it. New manifests hash `goose_client.py` and the wrapper. No recorded trajectory holds Goose's refusal text or a `load_skill` call, so no published score changes. No scenario or scoring change for `cli` or `codex`.
+
+## 2026-11-22
+
+- emailMemoryLeak: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
+- cartFailure: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
+- recommendationCacheFailure: version 4 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
