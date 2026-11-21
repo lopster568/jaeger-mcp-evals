@@ -106,11 +106,12 @@ else:
     print("measure: wrote %s" % path)
 PY
 
-# Commit the pair file and the image records before any trial (docs/USAGE.md, Protocol: the rule is in history first).
-PRE=("harness/experiments/$EXP.json" "harness/experiments/images/$BASE_NAME.json" "harness/experiments/images/$CHANGE_NAME.json")
+# Commit the pair file before any trial (docs/USAGE.md, Protocol: the rule is in history first). The image
+# records stay local (git-ignored): each batch's manifest records the image tag, id and Jaeger commit.
+PRE=("harness/experiments/$EXP.json")
 if [ "$DRY" -eq 1 ]; then echo "+ git commit ${PRE[*]}"
 else
-  git -C "$ROOT" add -- "${PRE[@]}" || die "git add failed for the pair file or image records"
+  git -C "$ROOT" add -- "${PRE[@]}" || die "git add failed for the pair file"
   git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -s -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
 fi
 

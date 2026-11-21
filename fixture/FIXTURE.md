@@ -154,7 +154,7 @@ bash fixture/build-image.sh <jaeger-checkout> <git-ref> <name> --remote   # then
 
 Needs Go and a Jaeger checkout; the ref should be a main-lineage commit (a 2.20.0 build no longer boots on this fixture).
 It builds a static linux/amd64 binary from the ref in a temporary worktree.
-`--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`.
+`--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`, a local build record (the `measure-*` ones are git-ignored; the batch manifest records the image).
 It never restarts a running container. Exit codes: 0 built and recorded, 1 refused or a git step failed, 2 local build failed, 3 stopped after the local build, 4 fixture step failed.
 `make measure` runs this for you.
 
