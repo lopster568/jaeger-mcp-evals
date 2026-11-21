@@ -36,7 +36,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | Observed | `observed`, `agent_loop` | `observed` is what the client reported (version, model, tools, skills, agents) plus `compaction_events`; `agent_loop` is always null |
 
 `experiment.file` is the path at run time; the inputs of the recorded batches are now under `records/inputs/`.
-`harness_git_sha` in records made before the import into jaegertracing/jaeger-ai-evals names a commit of lopster568/jaeger-mcp-evals.
+`harness_git_sha` in records made before the import into jaegertracing/jaeger-ai-evals names a commit of lopster568/jaeger-mcp-evals. Git cannot resolve those shas here, so `verify` scores those batches against the current scenario file and says so once per scenario and sha; a version bump with comparable: no then makes verify fail on their trajectories, which is expected.
 
 ## manifest.json
 

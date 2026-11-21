@@ -2,11 +2,11 @@
 
 On Jaeger main 238c5fa2, claude-sonnet-5-5 did not read the skill on its first message (read_skill 0/20 in the main arm); making `service_name` required on search_traces took it to 12/20, and rewording one sentence in the server instructions took it to 20/20 (n=20 per arm, first message only). This was a one-off probe, not a pre-registered batch. The protocol of the batch pairs is in [docs/USAGE.md](../USAGE.md#protocol).
 
-The per-trial files are not in the tree. They are at [records/root-cause-2026-10-30 at commit 9cf1a61](https://github.com/lopster568/jaeger-mcp-evals/tree/9cf1a613285e88d948eac6d4f255f017c507fc48/records/root-cause-2026-10-30), in the directories named below.
+The per-trial files are not in the tree. They are at [records/root-cause-2026-10-30 at commit 9cf1a61](https://github.com/lopster568/jaeger-mcp-evals/tree/9cf1a613285e88d948eac6d4f255f017c507fc48/records/root-cause-2026-10-30), in the directories named below. Those files live in the source repository and are not part of jaegertracing/jaeger-ai-evals; if the link stops working, this page stands as the summary.
 
 ## Setup
 
-Script rc_probe.py. CLI 2.1.285, claude-sonnet-5-5 pinned, effort high, API key, harness argv, stub MCP server with main's captured handshake, fresh /tmp working dir per trial (as the full runs), arms alternating in shuffled pairs. All 60 split trials checked: model claude-sonnet-5-5, CLI 2.1.285, cwd /tmp/tmp*, rc 1 (the normal --max-turns exit).
+Script rc_probe.py (a one-off script, not in this repository). CLI 2.1.285, claude-sonnet-5-5 pinned, effort high, API key, harness argv, stub MCP server with main's captured handshake, fresh /tmp working dir per trial (as the full runs), arms alternating in shuffled pairs. All 60 split trials checked: model claude-sonnet-5-5, CLI 2.1.285, cwd /tmp/tmp*, rc 1 (the normal --max-turns exit).
 
 ## Step 1, split #9262's two search_traces edits (runs-split/, n=20 per arm, first message)
 

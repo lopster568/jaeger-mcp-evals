@@ -2042,10 +2042,11 @@ def soak(cfg, scenario, samples, interval):
     return 0
 
 
-def scenario_at_batch_sha(d):
+def scenario_at_batch_sha(d, told=None):
     """The scenario JSON as it was at the batch's recorded harness_git_sha (a -dirty suffix is
     stripped: the committed file is the nearest record), so verify scores a batch against the
-    truth it ran. None (score.py loads the current file) if git cannot resolve it; says so."""
+    truth it ran. None (score.py loads the current file) if git cannot resolve it; says so, once
+    per scenario and sha when given a `told` set."""
     mp = os.path.join(d, "meta.json")
     meta = load_json(mp) if os.path.isfile(mp) else {}
     sha, name = str(meta.get("harness_git_sha") or ""), meta.get("scenario")
@@ -2057,7 +2058,10 @@ def scenario_at_batch_sha(d):
     r = subprocess.run(["git", "-C", ROOT, "show", "%s:harness/scenarios/%s.json" % (sha, name)], capture_output=True, text=True)
     if r.returncode == 0:
         return json.loads(r.stdout)
-    print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))
+    told = set() if told is None else told
+    if (name, sha) not in told:
+        told.add((name, sha))
+        print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))
     return None
 
 
@@ -2073,13 +2077,13 @@ def verify(cfg):
             if row.get("dir"):
                 stored[os.path.realpath(os.path.join(b, row["dir"]))] = row.get("verdict")
     cols = ["scenario", "arm", "dir", "verdict", "tool_calls", "call_errors", "steps_to_evidence", "tool_output_chars", "cost", "compaction"]
-    rows, mismatches, invalid, ungraded = [], [], [], []
+    rows, mismatches, invalid, ungraded, told = [], [], [], [], set()
     for p in sorted(glob.glob(os.path.join(runs, "**", "stream.jsonl"), recursive=True)):
         d = os.path.dirname(p)
         mp = os.path.join(d, "meta.json")
         arm = arm_of.get(os.path.realpath(d)) or (load_json(mp).get("arm") if os.path.isfile(mp) else None)
         try:
-            s, _ = score.score(d, scenario=scenario_at_batch_sha(d))
+            s, _ = score.score(d, scenario=scenario_at_batch_sha(d, told))
         except score.Legacy as e:
             rows.append(dict({c: "" for c in cols}, scenario=load_json(mp).get("scenario"), arm=arm,
                              dir=os.path.relpath(d, runs), verdict="%s (%s)" % (stored.get(os.path.realpath(d)) or "no stored score", e)))
