@@ -158,10 +158,9 @@ class TestMapping(Scored):
                  if e["type"] == "assistant"]
         self.assertEqual(texts, ["Looking at traces.", "Done."])
 
-    def test_unparsable_tool_call_is_a_system_event(self):
+    def test_unparsable_tool_call_writes_no_nameless_tool_use(self):
         events = [msg("m1", "assistant", {"type": "toolRequest", "id": "t1", "toolCall": {"status": "error", "error": "bad json"}})]
         stream = goose_client.to_stream(events, "", "m", "1")
-        self.assertIn({"type": "system", "subtype": "goose_tool_call_error", "message": "bad json"}, stream)
         self.assertFalse([e for e in stream if e["type"] == "assistant"])
 
     def test_compaction_notice_is_counted(self):

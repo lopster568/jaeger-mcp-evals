@@ -137,7 +137,6 @@ def to_stream(goose_events, stderr_text, model, client_version, with_tools=True,
             elif kind == "toolRequest":
                 call = b.get("toolCall") or {}
                 if call.get("status") != "success":  # arguments Goose could not parse: no tool name to report
-                    out.append({"type": "system", "subtype": "goose_tool_call_error", "message": str(call.get("error") or "")})
                     continue
                 v = call.get("value") or {}
                 name = str(v.get("name") or "")
@@ -160,8 +159,6 @@ def to_stream(goose_events, stderr_text, model, client_version, with_tools=True,
                                             "is_error": not ok}], stamp))
             elif kind == "systemNotification" and str(b.get("msg") or "").startswith(COMPACTION_NOTICE):
                 out.append({"type": "system", "subtype": "compact_boundary", "message": b.get("msg")})
-            elif kind == "error":
-                out.append({"type": "system", "subtype": "goose_error", "message": str(b.get("message") or "")})
 
     connect_failed = with_tools and CONNECT_FAILED in (stderr_text or "")
     err = None
