@@ -3,8 +3,7 @@
 
 """The Claude Code CLI as an agent client (run.client cli): its argv, its pre-flight and the guards
 only it supports (the sandbox probe, the model pin, the per-trial budget cap, plan-versus-key billing).
-bench.py runs `claude -p` itself and reads its stdout as stream.jsonl; goose_client.py and
-codex_client.py write that same stream-json shape, so observe() reads every client's stream.
+bench.py runs `claude -p` itself and reads its stdout as stream.jsonl, the event shape every client writes.
 """
 import http.server
 import json
@@ -15,7 +14,6 @@ import tempfile
 import threading
 
 import grade
-import score
 
 
 def read_text(path):
@@ -163,27 +161,6 @@ def probe_fix(version, unexpected):
                 "setting that turns it off and add it to grade.CLIENT_ENV, or run a CLI version the probe accepts"
                 % (((version or "").split() or ["unknown version"])[0], ", ".join(sorted(unexpected))))
     return "read the sandbox probe lines above; the CLI's request failed the check named there"
-
-
-def observe(stream_path):
-    """What a trial's stream.jsonl init event reports, and its compaction count; every client writes this shape."""
-    init, compactions = {}, 0
-    for line in read_text(stream_path).splitlines(keepends=True) if os.path.isfile(stream_path) else []:
-        if not line.strip():
-            continue
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(e, dict):
-            continue
-        if not init and e.get("type") == "system" and e.get("subtype") == "init":
-            init = e
-        compactions += score.is_compaction_event(e, line)
-    return {"client_version": init.get("claude_code_version") or init.get("client_version"),
-            "model": init.get("model"),
-            "tools": init.get("tools"), "skills": init.get("skills"), "agents": init.get("agents"),
-            "compaction_events": compactions}
 
 
 def api_key_source(stream_path):

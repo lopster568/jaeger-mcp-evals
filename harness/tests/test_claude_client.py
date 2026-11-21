@@ -233,7 +233,7 @@ class TestClaudeBatch(CliCase):
     def test_observe_skips_non_object_lines(self):
         p = os.path.join(self.home, "s.jsonl")
         pathlib.Path(p).write_text('[1, 2]\n"x"\n{"type": "system", "subtype": "init", "model": "m"}\n')
-        self.assertEqual(claude_client.observe(p)["model"], "m")
+        self.assertEqual(bench.observe(p)["model"], "m")
 
     def test_client_version_mismatch_refuses_before_the_fixture(self):
         self.refused(lambda d: d["run"].update(client_version="2.1.283"),

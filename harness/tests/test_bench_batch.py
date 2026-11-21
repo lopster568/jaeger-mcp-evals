@@ -787,7 +787,7 @@ class TestBatch(BenchCase):
         self.assertFalse(load(os.path.join(self.batch_dir(), "restore.json"))["default_confirmed"])
 
     def test_interrupt_inside_a_cell_leaves_a_row(self):
-        real, n = claude_client.observe, {"calls": 0}
+        real, n = bench.observe, {"calls": 0}
 
         def observe(path):
             n["calls"] += 1
@@ -795,7 +795,7 @@ class TestBatch(BenchCase):
                 raise KeyboardInterrupt
             return real(path)
 
-        with mock.patch.object(claude_client, "observe", observe):
+        with mock.patch.object(bench, "observe", observe):
             self.assertEqual(self.run_batch(2), 6, self.err)
         b = self.assert_restored()
         cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))

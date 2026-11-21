@@ -947,6 +947,27 @@ def codex_preflight(a, cfg, log):
     return None
 
 
+def observe(stream_path):
+    """What a trial's stream.jsonl init event reports, and its compaction count; every client writes this shape."""
+    init, compactions = {}, 0
+    for line in read_text(stream_path).splitlines(keepends=True) if os.path.isfile(stream_path) else []:
+        if not line.strip():
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        if not init and e.get("type") == "system" and e.get("subtype") == "init":
+            init = e
+        compactions += score.is_compaction_event(e, line)
+    return {"client_version": init.get("claude_code_version") or init.get("client_version"),
+            "model": init.get("model"),
+            "tools": init.get("tools"), "skills": init.get("skills"), "agents": init.get("agents"),
+            "compaction_events": compactions}
+
+
 # What run() and its pre-flight read from each agent client, so neither names one. Goose is the reference path;
 # the Claude Code CLI (claude_client.py) and Codex are adapters.
 #   argv(a, prompt_file, mcp_config, trial); preflight(a, cfg, log) -> None or (message, fix); version_cmd(a);
@@ -1617,7 +1638,7 @@ def run(a, cfg):
             append_line(cells_file, rec)
             st["ran"] += 1
             pin = client["model_pin"]
-            seen = pin and pin(a.model) and claude_client.observe(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))["model"]
+            seen = pin and pin(a.model) and observe(os.path.join(bdir, rec["out_dir"], "stream.jsonl"))["model"]
             if seen and seen != a.model:
                 log(paint(BOLD_RED, "bench: ABORTING remaining cells - model pin: run.model is %s but the stream reports %s"
                           % (a.model, seen)))
@@ -1823,7 +1844,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     with open(os.path.join(trial, "exit.txt"), "w") as f:
         f.write("exit=%d\n" % rc)
     fixture_changes, fixture_ok = fixture_diff(before, container_snapshot(cfg), expected_restarts)
-    meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=claude_client.observe(stream),
+    meta.update(ended_utc=utc(), wall_time_s=round(time.monotonic() - t0, 3), exit_code=rc, observed=observe(stream),
                 fixture_changes=fixture_changes, fixture_ok=fixture_ok)
     write_json(os.path.join(trial, "meta.json"), meta)
     return {"order_index": oi, "arm": arm, "trial_index": c["trial_index"], "model": a.model,
