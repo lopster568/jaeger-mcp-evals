@@ -108,7 +108,7 @@ IMAGE_ID=$(fx "docker inspect --format='{{.Id}}' $IMAGE_TAG") \
 echo "build-image: IMAGE TAG: $IMAGE_TAG"
 echo "build-image: IMAGE ID (local docker image ID, never pushed): $IMAGE_ID"
 mkdir -p "$IMAGES_DIR"
-python3 -c "
+"${PYTHON:-python3}" -c "
 import json, sys, datetime
 keys = ['name', 'tag', 'digest', 'branch', 'branch_commit', 'base_image', 'base_image_recipe']
 doc = dict(zip(keys, sys.argv[1:8]))

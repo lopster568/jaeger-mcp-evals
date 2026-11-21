@@ -21,7 +21,7 @@ The ports it publishes must match `JAEGER_UI_PORT` and `OFREP_PORT` in fixture.e
 ## What is switched off
 
 The overlay disables six of the demo's services with the Compose profile `unused`, which is never enabled: opensearch, prometheus, grafana, opamp-server, flagd-ui and telemetry-docs. The benchmark reads traces from Jaeger only, and flags are flipped by editing the flag file and checked through flagd's OFREP, so none of the six is read or written.
-That leaves 22 containers (23 with Phoenix); before this change a batch ran 28. The overlay replaces the `depends_on` lists of frontend-proxy and otel-collector that named them, which needs Docker Compose 2.24 or newer, and the collector config drops their exporters and the opamp extension so it does not retry dead endpoints. frontend-proxy still routes /grafana, /opamp, /telemetry and /feature; those clusters resolve by DNS and have no backend.
+That leaves 22 containers (23 with Phoenix); the demo itself runs 28 without the overlay. The overlay replaces the `depends_on` lists of frontend-proxy and otel-collector that named them, which needs Docker Compose 2.24 or newer, and the collector config drops their exporters and the opamp extension so it does not retry dead endpoints. frontend-proxy still routes /grafana, /opamp, /telemetry and /feature; those clusters resolve by DNS and have no backend.
 
 Upgrading a stack that already runs: `make clean && make setup`. `up -d` alone keeps the six running and does not reload the collector config, which is a bind-mounted file.
 
@@ -135,12 +135,10 @@ productCatalogFailure is the one deliberate exception, because its own error tex
 `<variant-tag>` is the `tag` in `harness/experiments/images/<name>.json`; an experiment arm runs only while the fixture serves its image.
 
 ```
-cd ~/otel-demo-3.0.0
-sed -i "s#^JAEGERTRACING_IMAGE=.*#JAEGERTRACING_IMAGE=<variant-tag>#" .env.override
-docker compose --env-file .env --env-file .env.override \
-  -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml \
-  up -d --no-deps --force-recreate jaeger
+bash fixture/swap-jaeger.sh <variant-tag>
 ```
+
+It sets `JAEGERTRACING_IMAGE` in `.env.override`, recreates only the jaeger container (`--no-deps`), over ssh in remote mode, and prints the image it now runs.
 
 `make fixture` rewrites `.env.override`, so redo the swap after it.
 
@@ -171,9 +169,8 @@ It never restarts a running container. Exit codes: 0 built and recorded, 1 refus
 
 ## Remote host
 
-Set `FIXTURE_SSH_USER` and `FIXTURE_HOST` in fixture.env to run the demo on another machine
-with key-based ssh. Every command in this page then runs over ssh from the harness, with
-`FIXTURE_DEMO_DIR` relative to that user's home, files are copied with scp, and `localhost`
+Two machines: the fixture host runs the demo, the agent machine runs the harness and the client. Set `FIXTURE_SSH_USER` and `FIXTURE_HOST` in fixture.env on the agent machine to reach the host over key-based ssh. The harness then runs the commands in this page over ssh, with
+`FIXTURE_DEMO_DIR` relative to that user's home, copies files with scp, and `localhost`
 in the health checks becomes `FIXTURE_HOST`.
 
 ### Remote layout
