@@ -612,7 +612,7 @@ def passes_to_read(scored):
 
 def batch_client(bdir):
     m = os.path.join(bdir, "manifest.json")
-    return load_json(m).get("client", "cli") if os.path.isfile(m) else "cli"
+    return load_json(m).get("client", "cli") if os.path.isfile(m) else None  # no manifest: no known client
 
 
 def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="cli"):

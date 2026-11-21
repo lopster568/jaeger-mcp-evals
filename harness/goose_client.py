@@ -88,8 +88,9 @@ def container_name(out_dir):
 
 
 def docker_argv(name, desktop, work, provider, model, effort, max_turns):
+    """work is mounted at /work; docker -v reads a relative path as a volume name, so it is made absolute here."""
     return (["docker", "run", "--rm", "--name", name] + ([] if desktop else ["--network", "host"]) +
-            ["-w", "/work", "-v", "%s:/work:ro" % work, "-v", "%s:/goose-without-extensions.sh:ro" % WRAPPER,
+            ["-w", "/work", "-v", "%s:/work:ro" % os.path.abspath(work), "-v", "%s:/goose-without-extensions.sh:ro" % WRAPPER,
              "-e", "GOOSE_PROVIDER=" + provider, "-e", "GOOSE_MODEL=" + model, "-e", "GOOSE_THINKING_EFFORT=" + effort,
              "-e", KEYS[provider], "--entrypoint", "sh", IMAGE, "/goose-without-extensions.sh",
              "run", "--recipe", "/work/recipe.yaml", "--max-turns", str(max_turns), "--no-session", "-q",
@@ -168,15 +169,13 @@ def to_stream(goose_events, stderr_text, model, client_version, with_tools=True,
         subtype, err = "error_during_execution", error
     elif connect_failed:
         subtype, err = "error_during_execution", "Goose could not start the jaeger extension (see stderr.txt)"
-    elif structured is not None:
-        subtype = "success"
-    elif last_text.strip() == MAX_TURNS_MESSAGE:
-        subtype = "error_max_turns"
-    elif complete is not None:
-        subtype = "success"
-    else:
+    elif complete is None or returncode is None:  # stopped or crashed before Goose exited: never a success
         subtype = "error_during_execution"
         err = "goose stopped before it finished" if returncode is None else "goose exited %s without a complete event" % returncode
+    elif structured is None and last_text.strip() == MAX_TURNS_MESSAGE:
+        subtype = "error_max_turns"
+    else:
+        subtype = "success"
     c = complete or {}
     n = lambda k: c.get(k) or 0
     # Goose's input_tokens includes cache reads and writes; score.py and otlp.py add those again.

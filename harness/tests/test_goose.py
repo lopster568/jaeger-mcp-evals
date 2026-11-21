@@ -176,13 +176,26 @@ class TestMapping(Scored):
     def test_accepted_answer_wins_over_the_max_turns_text(self):
         events = [msg("m1", "assistant", request("f1", "recipe__final_output", VERDICT)),
                   msg("u1", "user", response("f1", "Final output successfully collected.")),
-                  msg("m2", "assistant", {"type": "text", "text": goose_client.MAX_TURNS_MESSAGE})]
+                  msg("m2", "assistant", {"type": "text", "text": goose_client.MAX_TURNS_MESSAGE}), {"type": "complete"}]
         r = goose_client.to_stream(events, "", "m", "1")[-1]
         self.assertEqual((r["subtype"], r["structured_output"]), ("success", VERDICT))
 
     def test_no_complete_and_no_error_is_an_execution_error(self):
         r = goose_client.to_stream([], "", "m", "1", returncode=None)[-1]
         self.assertEqual((r["subtype"], r["error"]), ("error_during_execution", "goose stopped before it finished"))
+
+    def test_accepted_answer_without_complete_is_not_a_success(self):
+        """A trial stopped after the answer but before Goose's complete event has no usage: never a success."""
+        events = [msg("a1", "assistant", request("t1", "recipe__final_output", {"x": 1})),
+                  msg("u1", "user", response("t1", "Final output successfully collected."))]
+        r = goose_client.to_stream(events, "", "m", "1", returncode=None)[-1]
+        self.assertEqual((r["subtype"], r["structured_output"]), ("error_during_execution", {"x": 1}))
+        r = goose_client.to_stream(events + [{"type": "complete"}], "", "m", "1", returncode=None)[-1]  # stopped after complete
+        self.assertEqual(r["subtype"], "error_during_execution")
+
+    def test_docker_argv_mounts_work_by_absolute_path(self):
+        argv = goose_client.docker_argv("n", False, os.path.join("runs", "b", "0-a", "goose"), "anthropic", "m", "high", 5)
+        self.assertIn("%s:/work:ro" % os.path.abspath(os.path.join("runs", "b", "0-a", "goose")), argv)
 
     def test_tools_off_arm_lists_no_server(self):
         stream = goose_client.to_stream([{"type": "complete"}], "", "m", "1", with_tools=False)

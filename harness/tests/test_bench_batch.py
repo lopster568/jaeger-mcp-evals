@@ -1719,6 +1719,8 @@ class TestSandboxProbe(BenchCase):
 
     def write_recorded(self, rows):
         os.makedirs(os.path.join(self.records, "old", "batch-1"))
+        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:  # as every record has
+            json.dump({"client": "cli"}, f)
         with open(os.path.join(self.records, "old", "batch-1", "scores.jsonl"), "w") as f:
             f.writelines(json.dumps(dict({"scenario_used": "paymentFailure", "model_asserted": "sonnet"}, **r)) + "\n" for r in rows)
 
@@ -1734,6 +1736,9 @@ class TestSandboxProbe(BenchCase):
         # recorded cli trials say nothing about a goose run on the same model id
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records, client="goose"),
                          [(True, "expected cost unknown: no recorded goose trial of paymentFailure on sonnet")])
+        os.remove(os.path.join(self.records, "old", "batch-1", "manifest.json"))  # no manifest: no known client, not read
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
+                         [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
 
     def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
         self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +
