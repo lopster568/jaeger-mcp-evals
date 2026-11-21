@@ -39,7 +39,7 @@ ROOT = config.ROOT
 LOG = os.path.join(ROOT, ".make.log")
 SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
-# Measured 2026-10-15 for this smoke trial: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
+# Measured for this smoke trial: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
 SMOKE_SIZE = "about 50k tokens"
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",

@@ -70,7 +70,7 @@ VMSTAT_THRASHING = """procs -----------memory---------- ---swap-- -----io---- -s
 
 class TestContainerSnapshotScope(unittest.TestCase):
     def test_lists_only_the_jaeger_containers_compose_project(self):
-        # 2026-09-30: g-mamba-versionspec-algebra-solver-2 appeared and s-mamba-versionspec-algebra-2
+        # g-mamba-versionspec-algebra-solver-2 appeared and s-mamba-versionspec-algebra-2
         # vanished (another project on the shared host) and marked four trials INVALID.
         out = "/jaeger 0 false 2026-09-30T11:49:08Z\n"
         with mock.patch.object(bench, "fixture_sh", return_value=mock.Mock(returncode=0, stdout=out)) as sh:
