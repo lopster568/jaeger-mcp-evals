@@ -980,10 +980,20 @@ class TestLogGlyphs(unittest.TestCase):
 
 
 class TestExperiment(BenchCase):
-    """The shipped release-v2200-vs-main-paymentFailure.json, cut to one trial per arm."""
+    """The recorded release-v2200-vs-main-paymentFailure.json, cut to one trial per arm, with a temp image record."""
+
+    def setUp(self):
+        super().setUp()
+        images = os.path.join(self._tmp.name, "images")
+        os.mkdir(images)
+        patcher = mock.patch.object(bench, "IMAGE_RECORDS", images)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.record = os.path.join(images, "main-d22c65b9.json")
+        pathlib.Path(self.record).write_text(json.dumps({"tag": VARIANT_IMAGE, "branch_commit": "d22c65b9bcbf7261172d5c31fb3ffa6b393f1d6c"}))
 
     def shipped(self):
-        doc = load(os.path.join(HARNESS_DIR, "experiments", "release-v2200-vs-main-paymentFailure.json"))
+        doc = load(os.path.join(HARNESS_DIR, "..", "records", "inputs", "release-v2200-vs-main-paymentFailure.json"))
         doc["run"]["n_per_arm"] = 1
         for k in ("client_version", "bill_api_key"):  # the CLI and key of the batch's host; the fake has neither
             doc["run"].pop(k)
@@ -993,13 +1003,10 @@ class TestExperiment(BenchCase):
         return path
 
     def with_record(self, **keys):
-        """Run the shipped experiment on the variant image with extra keys on that image's record (its real
-        instructions key is dropped: the fake serves none). A path in the temp dir stays as is under the join
-        in experiments/instructions/."""
-        real = bench.load_json
-        rec = lambda p: dict(real(p), **{"instructions": None, **keys}) if real(p).get("tag") == VARIANT_IMAGE else real(p)
-        with mock.patch.object(bench, "load_json", rec):
-            return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
+        """Run the shipped experiment on the variant image with extra keys on that image's record. A path in
+        the temp dir stays as is under the join in instructions/."""
+        pathlib.Path(self.record).write_text(json.dumps(dict(load(self.record), **keys)))
+        return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
 
     def test_variant_arm_runs(self):
         rc = self.with_record()
@@ -1130,7 +1137,8 @@ class TestKnobFile(BenchCase):
         self.assertEqual(m["system_under_test"]["python_version"], platform.python_version())
 
     def test_shipped_experiments_validate(self):
-        for f in glob.glob(os.path.join(HARNESS_DIR, "experiments", "*.json")):
+        inputs = glob.glob(os.path.join(HARNESS_DIR, "..", "records", "inputs", "*.json"))
+        for f in glob.glob(os.path.join(HARNESS_DIR, "experiments", "*.json")) + inputs:
             bench.load_experiment(f)
 
 

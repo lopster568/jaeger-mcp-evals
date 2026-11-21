@@ -34,13 +34,13 @@ The bullet measured on 2.20.0 in [2026-09-recommendation-cache.md](2026-09-recom
 +  such as spans getting slower or attribute values that stand out.
 ```
 
-Patch: [main-d22c65b9-v1.patch](../../harness/experiments/images/main-d22c65b9-v1.patch). Image record: [main-d22c65b9-v1.json](../../harness/experiments/images/main-d22c65b9-v1.json).
+Patch: [main-d22c65b9-v1.patch](../../records/inputs/images/main-d22c65b9-v1.patch). Image record: [main-d22c65b9-v1.json](../../records/inputs/images/main-d22c65b9-v1.json).
 
 The rule is in the root SKILL.md too because on main the agent reads the root skill in every run but does not open error-root-cause/SKILL.md (0/10 in [batch-20261103T102634Z](../../records/skill-callee-down-main-d22c65b9/batch-20261103T102634Z/)), so a bullet only in the sub-skill is not seen. In the twelve batches below the sub-skill was opened in 0 of 60 baseline trials and 4 of 60 change trials, none of them on recommendationCacheFailure.
 
 ## Pre-registration
 
-The rule, two-sided Fisher p < 0.05 on PASS at n=10 per arm, is written in each committed experiment file before its runs (for example [v1-main-d22c65b9-recommendationCacheFailure.json](../../harness/experiments/v1-main-d22c65b9-recommendationCacheFailure.json)). The experiment files were confirmed before judge.py had a Fisher threshold (`fisher_p_max`, added 2026-11-06), so their thresholds block is empty, judge.py refuses them, and these pairs have no RESULT.md. The p values below are `bench.fisher_p`, computed from each batch's scores.jsonl.
+The rule, two-sided Fisher p < 0.05 on PASS at n=10 per arm, is written in each committed experiment file before its runs (for example [v1-main-d22c65b9-recommendationCacheFailure.json](../../records/inputs/v1-main-d22c65b9-recommendationCacheFailure.json)). The experiment files were confirmed before judge.py had a Fisher threshold (`fisher_p_max`, added 2026-11-06), so their thresholds block is empty, judge.py refuses them, and these pairs have no RESULT.md. The p values below are `bench.fisher_p`, computed from each batch's scores.jsonl.
 
 ## Results
 
@@ -71,6 +71,6 @@ Per scenario, both arms share the scenario version, the neutral prompt, the full
 ## Reproduce
 
 1. `make setup` brings up the fixture ([fixture/FIXTURE.md](../../fixture/FIXTURE.md)).
-2. Build both images from a Jaeger checkout at d22c65b9, with and without the patch above, as the two image records describe ([main-d22c65b9.json](../../harness/experiments/images/main-d22c65b9.json), [main-d22c65b9-v1.json](../../harness/experiments/images/main-d22c65b9-v1.json)).
-3. With the fixture on each image in turn: `python3 harness/bench.py run harness/experiments/v1-main-d22c65b9-<scenario>.json`
+2. Build both images from a Jaeger checkout at d22c65b9, with and without the patch above, as the two image records describe ([main-d22c65b9.json](../../records/inputs/images/main-d22c65b9.json), [main-d22c65b9-v1.json](../../records/inputs/images/main-d22c65b9-v1.json)).
+3. With the fixture on each image in turn: `python3 harness/bench.py run records/inputs/v1-main-d22c65b9-<scenario>.json`. build-image.sh writes a fresh image record under `harness/experiments/images/`, the only place bench.py looks; the served-instructions check runs on the re-run only if the `instructions` key and its file under [records/inputs/instructions/](../../records/inputs/instructions/) are copied next to that record.
 4. `python3 harness/bench.py verify` re-scores the raw trajectories; `bench.fisher_p(<stock PASS>, <change PASS>, 10)` gives p.

@@ -35,6 +35,9 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | Timing and exit | `started_utc`, `ended_utc`, `wall_time_s`, `exit_code` | `ended_utc` is null until the call returns; 127 if the client could not start |
 | Observed | `observed`, `agent_loop` | `observed` is what the client reported (version, model, tools, skills, agents) plus `compaction_events`; `agent_loop` is always null |
 
+`experiment.file` is the path at run time; the inputs of the recorded batches are now under `records/inputs/`.
+`harness_git_sha` in records made before the import into jaegertracing/jaeger-ai-evals names a commit of lopster568/jaeger-mcp-evals.
+
 ## manifest.json
 
 Written before the fault flip and rewritten after the leak scan. It repeats the batch-level meta.json keys without the per-trial ones; they are not listed again. Manifest-only keys:

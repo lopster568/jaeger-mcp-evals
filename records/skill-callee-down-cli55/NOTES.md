@@ -5,7 +5,7 @@ connection errors. The service crashed and restarted, so the failed call has no 
 is in the service's own earlier spans.
 
 The change is one Gotcha bullet added to error-root-cause/SKILL.md and `search_traces` added to its
-allowed-tools line (patch: harness/experiments/images/skill-callee-down.patch, 6 insertions, 1 deletion). The bullet:
+allowed-tools line (patch: records/inputs/images/skill-callee-down.patch, 6 insertions, 1 deletion). The bullet:
 
     - A client span that failed to connect (connection refused, unavailable) and
       has no server-side child is not the origin: the callee was down or

@@ -79,6 +79,7 @@ VERDICT_SCHEMA = os.path.join(HARNESS, "verdict-schema.json")
 CODEX_CLIENT = os.path.join(HARNESS, "codex_client.py")
 GOOSE_CLIENT = os.path.join(HARNESS, "goose_client.py")
 RECORDS = os.path.join(ROOT, "records")
+IMAGE_RECORDS = os.path.join(HARNESS, "experiments", "images")  # written by fixture/build-image.sh; instructions/ is its sibling
 DIST = os.path.join(ROOT, "dist")
 # cli: the Claude Code CLI; codex: the OpenAI Codex CLI; goose: Goose in the AI Assistant demo's pinned image.
 CLIENTS = ("cli", "codex", "goose")
@@ -1021,7 +1022,7 @@ def api_key_source(stream_path):
 
 
 def jaeger_commit(cfg, image):
-    for p in sorted(glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json"))):
+    for p in sorted(glob.glob(os.path.join(IMAGE_RECORDS, "*.json"))):
         rec = load_json(p)
         if rec.get("tag") == image and rec.get("branch_commit"):
             return rec["branch_commit"]
@@ -1346,10 +1347,10 @@ def run(a, cfg):
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
             # A variant image's record (experiments/images/*.json, matched by tag) may name a file under
             # instructions/ the served MCP instructions string must equal; absent or null is recorded only.
-            rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
+            rec = next((r for r in map(load_json, glob.glob(os.path.join(IMAGE_RECORDS, "*.json")))
                         if r.get("tag") == image_for[arm]), {})
             ins = rec.get("instructions")
-            ins = os.path.join(HARNESS, "experiments", "instructions", ins) if ins else None
+            ins = os.path.join(os.path.dirname(IMAGE_RECORDS), "instructions", ins) if ins else None
         # file and sha256 stay null: the record schema keeps the removed description check's keys
         desc[arm] = {"file": None, "sha256": None, "check": "recorded_only" if tools_for[arm] else "no_tools",
                      "instructions_path": ins}
