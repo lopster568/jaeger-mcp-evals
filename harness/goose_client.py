@@ -45,15 +45,19 @@ COMPACTION_NOTICE = "Exceeded auto-compact threshold"
 CONNECT_FAILED = "Failed to start extension 'jaeger'"
 
 
-def build_recipe(prompt, instructions, schema, url):
-    """The recipe text; url None gives no extension (an arm with tools off)."""
+def build_recipe(prompt, instructions, schema, url, param=None):
+    """The recipe text; url None gives no extension (an arm with tools off). param: the prompt is the file parameter
+    of that name, supplied with `--params NAME=<path>`: Goose substitutes it once (template_recipe.rs render, v1.57.0)
+    and never renders it again, so the text may hold template markers; the file holds it JSON-escaped."""
     recipe = {"version": "1.0.0", "title": "Jaeger root cause",
               "description": "One scenario prompt against Jaeger's MCP tools, answered through the verdict schema.",
-              "instructions": instructions.strip(), "prompt": prompt.strip(),
+              "instructions": instructions.strip(), "prompt": "{{ %s }}" % param if param else prompt.strip(),
               "extensions": [{"type": "streamable_http", "name": "jaeger", "uri": url, "timeout": 300}] if url else [],
               "response": {"json_schema": schema}}
+    if param:
+        recipe["parameters"] = [{"key": param, "input_type": "file", "requirement": "required", "description": "the text to judge"}]
     text = json.dumps(recipe, indent=2, ensure_ascii=False) + "\n"  # JSON escapes for non-ASCII are not valid YAML
-    found = [m for m in TEMPLATE_MARKERS if m in text]
+    found = [m for m in TEMPLATE_MARKERS if m in (json.dumps(instructions, ensure_ascii=False) if param else text)]
     if found:
         raise ValueError("recipe text holds template markers %s; Goose would render them" % " ".join(found))
     return text
@@ -87,14 +91,25 @@ def container_name(out_dir):
     return "goose-" + re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
 
 
-def docker_argv(name, desktop, work, provider, model, effort, max_turns):
-    """work is mounted at /work; docker -v reads a relative path as a volume name, so it is made absolute here."""
+def docker_argv(name, desktop, work, provider, model, effort, max_turns, extra=()):
+    """work is mounted at /work; docker -v reads a relative path as a volume name, so it is made absolute here.
+    effort "" sets no GOOSE_THINKING_EFFORT; extra goes after the run flags."""
+    env = ["-e", "GOOSE_PROVIDER=" + provider, "-e", "GOOSE_MODEL=" + model]
+    if effort:
+        env += ["-e", "GOOSE_THINKING_EFFORT=" + effort]
     return (["docker", "run", "--rm", "--name", name] + ([] if desktop else ["--network", "host"]) +
-            ["-w", "/work", "-v", "%s:/work:ro" % os.path.abspath(work), "-v", "%s:/goose-without-extensions.sh:ro" % WRAPPER,
-             "-e", "GOOSE_PROVIDER=" + provider, "-e", "GOOSE_MODEL=" + model, "-e", "GOOSE_THINKING_EFFORT=" + effort,
-             "-e", KEYS[provider], "--entrypoint", "sh", IMAGE, "/goose-without-extensions.sh",
+            ["-w", "/work", "-v", "%s:/work:ro" % os.path.abspath(work), "-v", "%s:/goose-without-extensions.sh:ro" % WRAPPER] + env +
+            ["-e", KEYS[provider], "--entrypoint", "sh", IMAGE, "/goose-without-extensions.sh",
              "run", "--recipe", "/work/recipe.yaml", "--max-turns", str(max_turns), "--no-session", "-q",
-             "--output-format", "stream-json"])
+             "--output-format", "stream-json"] + list(extra))
+
+
+def remove_container(name):
+    """A timed-out or interrupted container would keep calling the model and Jaeger."""
+    try:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def _iso(created):
@@ -246,10 +261,7 @@ def main(argv=None):
         finally:
             for s in (signal.SIGTERM, signal.SIGINT):  # a second signal must not skip the removal
                 signal.signal(s, signal.SIG_IGN)
-            try:  # a timed-out or interrupted container would keep calling the model and Jaeger
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+            remove_container(name)
         err.seek(0)
         stderr_text = err.read()
     sys.stderr.write(stderr_text)

@@ -15,7 +15,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | `cells.jsonl` | batch dir | one line per cell: order, arm, timings, exit code, `failed`, `interrupted` | yes |
 | `scores.jsonl` | batch dir | one scored line per cell | yes |
 | `restore.json` | batch dir | flag restore: `restored_utc`, `cp_ok`, `default_variant`, `variant_after_restore`, `default_confirmed` | yes |
-| `grades.jsonl` | batch dir | one line per grader call, `{label, reason, key, model, prompt_sha256}`; score.py reads it first | no |
+| `grades.jsonl` | batch dir | one line per grader call, `{label, reason, key, client, provider, model, prompt_sha256}` (client and provider absent on rows written before 2026-11-21); score.py reads it first | no |
 | `RESULT.md` | `records/<experiment>/` | judge.py's answer for a judged pair, naming both batches; a re-run overwrites it | yes |
 | `INDEX.md` | `records/` | results table and batch list; regenerated after each run and judge | yes |
 
@@ -41,7 +41,7 @@ Written before the fault flip and rewritten after the leak scan. It repeats the 
 
 - `order` (the shuffled cell list), `n_per_arm`, `arms`, `file_hashes_sha256` (harness files, scenario, each prompt), `tools_list_path`.
 - `arm_pin` (expected and running image) and `tools_description_check` (mode, file, hash), with one arm.
-- `grader` (`model`, `prompt_sha256`, `cli_version`) and `scenario_version` (the scenario file's `version`).
+- `grader` (`client`, `model`, `prompt_sha256`, and `provider` and `image` for goose or `cli_version` for cli; absent `client` means cli) and `scenario_version` (the scenario file's `version`).
 - `goose_image`, client goose only: the pinned image the trials ran in, by digest.
 - `experiment.content`, the experiment file verbatim; judge.py reads it with `experiment.sha256` and `arm_pin`.
 

@@ -20,7 +20,7 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 | History and compaction | harness truncates nothing | `history_policy`, `compaction_events` |
 | Jaeger image and commit | `arms.<arm>.image` | `jaeger_image`, `jaeger_image_id`, `jaeger_commit`, `arm_pin` |
 | OTel Demo ref and overlay | `fixture/` | `otel_demo_ref`, `fixture_overlay_sha256` |
-| Mechanism grader | `GRADER_MODEL`, `harness/grader-prompt.txt` | manifest `grader`, `mechanism_grade`, `grader_model` |
+| Mechanism grader | `GRADER_CLIENT`, `GRADER_PROVIDER`, `GRADER_MODEL`, `harness/grader-prompt.txt` | manifest `grader`, `mechanism_grade`, `grader_model` |
 | Scenario and fault | `scenario` | `scenario_sha256`, `scenario_version`, `fault` |
 | Client version | installed `claude` or `codex`, or the pinned Goose image; `run.client_version` | `client_version_pre`, `observed.client_version` |
 | Trials, seed, order | `run.n_per_arm`, `run.seed` | `n_per_arm`, `seed`, `order_index` |
@@ -37,7 +37,7 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 ## Mechanism grader
 
 - Labels the agent's mechanism `correct`, `incorrect` or `unclear` against the scenario's `mechanism_truth`.
-- Model `GRADER_MODEL` (default `claude-fable-5-1`), command `GRADER_BIN` (default `claude`), both in `fixture.env`; prompt `harness/grader-prompt.txt`, recorded by sha256.
-- Runs through the Claude Code CLI (or a `GRADER_BIN` wrapper taking its `-p` arguments) sandboxed like the agent.
-- Every label is cached in the batch's `grades.jsonl`. Only the end of `bench.py run` calls the grader, and `verify` fails on a miss. Changing model, prompt or truth changes the key.
+- Client `GRADER_CLIENT` (`goose`, the default, or `cli`), model `GRADER_MODEL` (goose: falls back to `GOOSE_MODEL`, no default; cli: default `claude-fable-5-1`), goose provider `GRADER_PROVIDER` (falls back to `GOOSE_PROVIDER`), cli command `GRADER_BIN` (default `claude`), all in `fixture.env`; prompt `harness/grader-prompt.txt`, recorded by sha256.
+- Runs through Goose in the agent's pinned image with no extensions, or through the Claude Code CLI (or a `GRADER_BIN` wrapper taking its `-p` arguments), sandboxed like the agent. The published records were graded by `cli` and `claude-fable-5-1`; a grade from another grader is not comparable.
+- Every label is cached in the batch's `grades.jsonl`. Only the end of `bench.py run` calls the grader, and `verify` fails on a miss. Changing grader, model, prompt or truth changes the key; re-scoring looks up the grader the batch's manifest recorded.
 - Validation: on a blind 94-item set of real and constructed explanations, the grader's labels matched a human labeler on all 21 items the human labeled, and were identical across 3 passes on all 94; human-labeled evidence on near-miss explanations (right place, wrong cause) is still thin. The validation record is kept outside this repository.

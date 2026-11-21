@@ -19,6 +19,7 @@ from unittest import mock
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import grade  # noqa: E402
+import fake_grader  # noqa: E402,F401  (pins the cli grader)
 
 SHIM = """#!/usr/bin/env python3
 import json, os, sys
@@ -125,11 +126,12 @@ class TestGrade(unittest.TestCase):
 
     def test_grader_model_and_bin_are_settings(self):
         try:
-            with mock.patch.dict(os.environ, {"GRADER_MODEL": "m-x", "GRADER_BIN": "/w/claude-wrap"}):
+            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "cli", "GRADER_MODEL": "m-x", "GRADER_BIN": "/w/claude-wrap"}):
                 importlib.reload(grade)
                 self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("m-x", "/w/claude-wrap"))
         finally:
-            importlib.reload(grade)
+            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "cli"}):
+                importlib.reload(grade)
         self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("claude-fable-5-1", "claude"))
 
 

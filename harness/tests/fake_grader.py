@@ -13,6 +13,10 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import grade  # noqa: E402
 
+# The suite's grader is the cli one with the published model (the default is goose with no model); tests of the
+# goose grader patch grade.CLIENT, PROVIDER and GRADER_MODEL themselves.
+grade.CLIENT, grade.GRADER_MODEL = "cli", "claude-fable-5-1"
+
 KEYS = ("token", "address", "trimmed", "fraction")
 
 
@@ -26,4 +30,4 @@ def fake_call(truth, text):
 
 def graded():
     """Grader calls go to fake_call while this is active."""
-    return mock.patch.object(grade, "call_cli", fake_call)
+    return mock.patch.object(grade, "call_cli", fake_call)  # CLIENT is cli, so call_goose is not reached

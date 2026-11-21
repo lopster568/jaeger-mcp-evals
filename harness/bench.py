@@ -1170,6 +1170,24 @@ def run(a, cfg):
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
+    def goose_docker():
+        """docker and the pinned Goose image, for the goose client and the goose grader; None or die()'s result."""
+        log.detail("== pre-flight: goose (docker, %s) ==" % goose_client.IMAGE)
+        docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+        if not shutil.which("docker"):
+            return die("docker is not on PATH; the goose client and the goose grader run Goose in a container",
+                       fix="install Docker, or pick another run.client and set GRADER_CLIENT=cli")
+        try:
+            r = docker("info", "--format", "{{.OperatingSystem}}")
+        except subprocess.TimeoutExpired:
+            r = subprocess.CompletedProcess([], 1, "", "no answer in 60 s")
+        if r.returncode != 0:
+            return die("docker info failed: %s" % r.stderr.strip(), fix="start the Docker daemon (or Docker Desktop), then run again")
+        log.check(True, "docker on %s" % r.stdout.strip())
+        if docker("image", "inspect", goose_client.IMAGE).returncode != 0:
+            return die("the pinned Goose image is not on this machine; nothing was touched", fix="docker pull " + goose_client.IMAGE)
+        log.check(True, "Goose image %s" % goose_client.IMAGE.split("@")[0])
+
     if a.client == "cli":
         log.detail("== pre-flight: cli client (claude flags) ==")
         found = claude_missing_flags()
@@ -1198,20 +1216,9 @@ def run(a, cfg):
                        "log in, or pick another run.client" % a.codex_bin)
         log.check(True, "%s on PATH" % a.codex_bin)
     elif a.client == "goose":
-        log.detail("== pre-flight: goose client (docker, %s) ==" % goose_client.IMAGE)
-        docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
-        if not shutil.which("docker"):
-            return die("docker is not on PATH; the goose client runs Goose in a container", fix="install Docker, or pick another run.client")
-        try:
-            r = docker("info", "--format", "{{.OperatingSystem}}")
-        except subprocess.TimeoutExpired:
-            r = subprocess.CompletedProcess([], 1, "", "no answer in 60 s")
-        if r.returncode != 0:
-            return die("docker info failed: %s" % r.stderr.strip(), fix="start the Docker daemon (or Docker Desktop), then run again")
-        log.check(True, "docker on %s" % r.stdout.strip())
-        if docker("image", "inspect", goose_client.IMAGE).returncode != 0:
-            return die("the pinned Goose image is not on this machine; nothing was touched", fix="docker pull " + goose_client.IMAGE)
-        log.check(True, "Goose image %s" % goose_client.IMAGE.split("@")[0])
+        bad = goose_docker()
+        if bad:
+            return bad
         key = goose_client.KEYS[a.provider]
         if not cfg.get(key):
             return die("run.provider is %s but %s is empty in fixture.env; nothing was touched" % (a.provider, key),
@@ -1237,15 +1244,39 @@ def run(a, cfg):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"),
                        fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
-    try:
-        grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
-                                    stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
-    except (OSError, subprocess.TimeoutExpired):
-        grader_cli = None
-    log.detail("pre-flight: grader CLI %s" % grader_cli)
-    if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
-        return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
-                   fix="install the Claude Code CLI and log in (run `claude` once)")
+    grader_cli = None
+    if grade.CLIENT not in ("goose", "cli"):
+        return die("GRADER_CLIENT is %r, not goose or cli; nothing was touched" % grade.CLIENT, fix="set GRADER_CLIENT in fixture.env")
+    if grade.CLIENT == "cli":
+        try:
+            grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
+                                        stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        log.detail("pre-flight: grader CLI %s" % grader_cli)
+        if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
+            return die("ABORT - the cli mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
+                       fix="install the Claude Code CLI and log in (run `claude` once), or unset GRADER_CLIENT to grade through Goose")
+    else:
+        bad = goose_docker() if a.client != "goose" else None
+        if bad:
+            return bad
+        if grade.PROVIDER not in goose_client.KEYS:
+            return die("the grader provider is %r, not %s; nothing was touched" % (grade.PROVIDER, " or ".join(goose_client.KEYS)),
+                       fix="set GRADER_PROVIDER (or GOOSE_PROVIDER) in fixture.env, or GRADER_CLIENT=cli")
+        gkey = goose_client.KEYS[grade.PROVIDER]
+        if not cfg.get(gkey):
+            return die("the grader provider is %s but %s is empty in fixture.env; nothing was touched" % (grade.PROVIDER, gkey),
+                       fix="set %s in fixture.env" % gkey)
+        if not grade.GRADER_MODEL:
+            return die("the grader model is empty; nothing was touched",
+                       fix="set GRADER_MODEL (or GOOSE_MODEL) in fixture.env to a full model id of %s, or set GRADER_CLIENT=cli" % grade.PROVIDER)
+        log.check(True, "grader goose %s %s, %s set" % (grade.PROVIDER, grade.GRADER_MODEL, gkey))
+    line = "agent model %s, grader model %s. %s" % (a.model, grade.GRADER_MODEL, grade.WARNING)
+    if a.model == grade.GRADER_MODEL:
+        log.check(True, line)
+    else:
+        log.sub("WARNING: " + line)
     for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget, client=a.client):
         if ok:
             log.check(True, text)
@@ -1530,7 +1561,9 @@ def run(a, cfg):
     manifest = {"scenario": a.scenario, "batch_id": batch_id, "n_per_arm": a.n_per_arm, "arms": arms, "seed": seed,
                 "order": order, "file_hashes_sha256": hashes, "system_under_test": sut, "tools_list_sha256": tools_sha,
                 "instructions_sha256": instructions_sha, "tools_list_path": "tools.json" if tools_text else None,
-                "grader": {"model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"], "cli_version": grader_cli}}
+                "grader": dict({"client": grade.CLIENT, "model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"]},
+                               **({"cli_version": grader_cli} if grade.CLIENT == "cli" else
+                                  {"provider": grade.PROVIDER, "image": goose_client.IMAGE}))}
     # ponytail: arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.
     if len(arms) == 1:

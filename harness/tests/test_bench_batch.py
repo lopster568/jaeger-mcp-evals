@@ -37,6 +37,7 @@ HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import bench  # noqa: E402
 import codex_client  # noqa: E402
+import fake_grader  # noqa: E402,F401  (pins the cli grader)
 
 FLAGS = {"flags": {
     "paymentFailure": {"state": "ENABLED", "variants": {"100%": 1, "off": 0}, "defaultVariant": "off"},
@@ -187,6 +188,15 @@ for e in [
 ]:
     print(json.dumps(e))
 """
+
+
+FINAL_LABEL = [
+    {"type": "message", "message": {"id": "m1", "role": "assistant", "created": 1795256555, "content": [
+        {"type": "toolRequest", "id": "t1", "toolCall": {"status": "success", "value": {
+            "name": "recipe__final_output", "arguments": {"label": "correct", "reason": "same cause"}}}}]}},
+    {"type": "message", "message": {"id": "m2", "role": "user", "created": 1795256555, "content": [
+        {"type": "toolResponse", "id": "t1", "toolResult": {"status": "success", "value": {"content": [], "isError": False}}}]}},
+    {"type": "complete", "cost_usd": 0.001}]
 
 
 def read(path):
@@ -482,7 +492,7 @@ class TestBatch(BenchCase):
                          ["", "", "claude-fable-5-1", text("grader-prompt.txt")])
         self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
         self.assertNotEqual(graders[0]["cwd"], bench.ROOT)
-        self.assertEqual(m["grader"], {"model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
+        self.assertEqual(m["grader"], {"client": "cli", "model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
                                        "prompt_sha256": bench.sha256_file(os.path.join(HARNESS_DIR, "grader-prompt.txt"))})
         self.assertEqual(sorted((s["mechanism_grade"], s["grader_cached"]) for s in scores), [("correct", False), ("correct", True)])
         self.assertEqual(m["preflight"]["fixture_leak_under_fault"], "PASS")
@@ -1659,6 +1669,63 @@ class TestSoak(BenchCase):
         logs = glob.glob(os.path.join(self.runs, "paymentFailure", "soak-*.log"))
         self.assertEqual(len(logs), 1)
         self.assertIn("payment_calls_180s=5", read(logs[0]))
+
+
+class TestGooseGrader(BenchCase):
+    """GRADER_CLIENT goose: pre-flight refusals, the one model line, and a batch graded through the fake docker."""
+
+    def goose_grader(self, provider="anthropic", model="gm-1"):
+        for patcher in (mock.patch.object(bench.grade, "CLIENT", "goose"), mock.patch.object(bench.grade, "PROVIDER", provider),
+                        mock.patch.object(bench.grade, "GRADER_MODEL", model)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_preflight_refuses_without_a_model_a_known_provider_or_the_key(self):
+        self.goose_grader(model="")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 1)
+        self.assertIn("the grader model is empty", self.err)
+        self.assertIn("fix: set GRADER_MODEL (or GOOSE_MODEL) in fixture.env", self.err)
+        self.goose_grader(provider="nope", model="m")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 1)
+        self.assertIn("the grader provider is 'nope'", self.err)
+        self.goose_grader(model="m")
+        self.assertEqual(self.run_batch(1, "--dry-run"), 1)
+        self.assertIn("the grader provider is anthropic but ANTHROPIC_API_KEY is empty", self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
+        self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
+
+    def test_the_model_line_is_a_warning_only_when_the_models_differ(self):
+        self.goose_grader(model="gm-1")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
+        out = self.err + self.out
+        self.assertIn("WARNING: agent model sonnet, grader model gm-1. " + bench.grade.WARNING, out)
+        self.goose_grader(model="sonnet")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
+        out = self.err + self.out
+        self.assertIn("agent model sonnet, grader model sonnet. " + bench.grade.WARNING, out)
+        self.assertNotIn("WARNING: agent model", out)
+
+    def test_batch_is_graded_through_goose_and_the_manifest_says_so(self):
+        self.goose_grader(model="gm-1")
+        fake = os.path.join(self._tmp.name, "goose")
+        os.makedirs(fake)
+        pathlib.Path(fake, "stdout.jsonl").write_text("".join(json.dumps(e) + "\n" for e in FINAL_LABEL))
+        pathlib.Path(fake, "goose-stderr.txt").write_text("")
+        Fake.served_descriptions = {"get_services": "Summaries with an error flag per trace."}
+        self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-grader-secret-456", FAKE_GOOSE=fake), 0, self.err)
+        b = self.batch_dir()
+        g = load(os.path.join(b, "manifest.json"))["grader"]
+        self.assertEqual((g["client"], g["provider"], g["model"], g["image"]), ("goose", "anthropic", "gm-1", bench.goose_client.IMAGE))
+        self.assertNotIn("cli_version", g)
+        rows = bench.read_jsonl(os.path.join(b, "grades.jsonl"))
+        self.assertTrue(rows and all((r["client"], r["provider"], r["model"]) == ("goose", "anthropic", "gm-1") for r in rows))
+        self.assertEqual([s["mechanism_grade"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["correct", "correct"])
+        argv = read(os.path.join(self.home, "goose-argv.txt"))
+        self.assertIn("key_set=yes", argv)  # docker read the key from the environment
+        for f in glob.glob(os.path.join(b, "**", "*"), recursive=True):
+            if os.path.isfile(f):
+                self.assertNotIn("sk-grader-secret-456", read(f), f)
+        self.assertNotIn("sk-grader-secret-456", argv)
 
 
 class TestSandboxProbe(BenchCase):
