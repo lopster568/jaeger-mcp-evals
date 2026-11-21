@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Grade an agent's free-text mechanism against a scenario's mechanism_truth.
 
 One pinned model (setting GRADER_MODEL, default claude-fable-5-1; command GRADER_BIN, default claude) with one pinned prompt (grader-prompt.txt, by sha256) labels

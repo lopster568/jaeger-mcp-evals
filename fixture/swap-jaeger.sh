@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # usage: swap-jaeger.sh <image-tag>
 #
 # Points the fixture's jaeger container at <image-tag> (FIXTURE.md, "Switch the Jaeger image").

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for harness/tools.py (capture and the description comparison).
 
 A fake MCP streamable-HTTP server runs on 127.0.0.1 (http.server, stdlib)

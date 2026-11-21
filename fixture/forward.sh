@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # Keep ssh port forwards to a remote fixture alive: the ports bench.py and fixture_cli.py call on FIXTURE_HOST
 # (JAEGER_UI_PORT, OFREP_PORT, and PHOENIX_PORT with --phoenix). FIXTURE_HOST must be a loopback alias or localhost.
 #   fixture/forward.sh [--phoenix] SSH_TARGET   restart `ssh -N -L ...` until Ctrl-C; each restart is logged to stderr

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Minimal MCP streamable-HTTP client (JSON-RPC 2.0 over POST). Stdlib only.
 
 Covers exactly what the benchmark needs: initialize,

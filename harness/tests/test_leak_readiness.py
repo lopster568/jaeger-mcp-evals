@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """bench.py leak and readiness gates.
 
 Run with: python3 -m unittest discover harness/tests

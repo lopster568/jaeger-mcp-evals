@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """harness/measure.sh on a throwaway git repo: --dry-run prints the plan and builds nothing, a dirty
 checkout is refused. No docker, no ssh, no model; syntax of the three fixture scripts is checked too."""
 import json

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Runs one trial through the OpenAI Codex CLI (`codex exec`) and writes stream.jsonl
 in the Claude CLI's stream-json shape (init, assistant tool_use, user tool_result, result with
 structured_output), so score.py reads it unchanged. Started by

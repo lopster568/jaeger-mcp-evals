@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Unit tests for harness/judge.py (threshold judging from the experiment file in each manifest).
 
 Run with: python3 -m unittest discover harness/tests

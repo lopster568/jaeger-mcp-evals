@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """bench.py run end to end against a fake fixture.
 
 ssh, docker and claude are PATH shims: ssh runs its command with bash inside a

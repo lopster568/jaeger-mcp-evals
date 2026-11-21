@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """fixture_cli.py: what the make targets run, one line per step (fixture/FIXTURE.md stays the manual).
 
   fixture_cli.py setup     tools, fixture, up, phoenix: everything free, in order
@@ -36,7 +39,7 @@ ROOT = config.ROOT
 LOG = os.path.join(ROOT, ".make.log")
 SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
-# Measured 2026-10-15 for this smoke trial: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
+# Measured for this smoke trial: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
 SMOKE_SIZE = "about 50k tokens"
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",

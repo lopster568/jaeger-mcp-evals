@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """fixture/preflight.sh: busy fixture ports fail unless the stack is already ours. docker and claude are PATH shims (claude answers auth status)."""
 import os
 import pathlib

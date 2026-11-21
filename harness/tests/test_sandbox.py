@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """score.py's sandbox check (sandbox_ok, sandbox_violations, verdict INVALID) and how band,
 verify and judge count INVALID.
 
@@ -171,7 +174,7 @@ class TestInvalidCounted(unittest.TestCase):
 
 class TestInvalidCause(unittest.TestCase):
     def test_a_fixture_only_invalid_row_is_not_blamed_on_the_sandbox(self):
-        # the shape of the 2026-09-30 mainskill rows: sandbox held, fixture changed under the trial
+        # the shape of the mainskill rows: sandbox held, fixture changed under the trial
         row = {"verdict": "INVALID", "sandbox_ok": True, "fixture_ok": False}
         self.assertEqual(judge.invalid_cause([row]), "fixture")
         self.assertEqual(judge.invalid_cause([row, dict(row, sandbox_ok=False)]), "sandbox and fixture")

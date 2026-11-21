@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """grade.py against a fake claude CLI: the canned label is parsed, cached, and never fetched twice.
 
 Run with: python3 -m unittest discover harness/tests

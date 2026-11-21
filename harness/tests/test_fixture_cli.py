@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 """harness/fixture_cli.py: screen mode, blocker classification, pull counting, the failure block, and
 `setup` end to end in pipe mode against docker, git and claude shims on PATH. No real docker."""
 import contextlib

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
 # Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example;
 # a variable already in the environment wins.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
