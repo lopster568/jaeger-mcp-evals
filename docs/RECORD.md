@@ -25,7 +25,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 |---|---|---|
 | Identity and order | `schema_version`, `run_id`, `batch_id`, `order_index`, `trial_index`, `seed`, `arm` | `run_id` is `<batch_id>/<order_index>-<arm>`; `seed` is `run.seed`, else random |
 | Scenario and prompts | `scenario`, `scenario_sha256`, `prompt_name`, `prompt_sha256`, `system_prompt_sha256`, `verdict_schema_sha256` | sha256 of the files under `harness/` |
-| Model and client | `client`, `provider`, `model_requested`, `effort`, `max_turns`, `max_budget_usd`, `client_argv`, `history_policy`, `client_version_pre` | `run.*` (`provider` is always null); argv has prompts as `sha256:`, paths made relative; version taken at batch start |
+| Model and client | `client`, `provider`, `model_requested`, `effort`, `max_turns`, `max_budget_usd`, `client_argv`, `history_policy`, `client_version_pre` | `run.*` (`provider` is null except for client goose); argv has prompts as `sha256:`, paths made relative; version taken at batch start |
 | Tools served | `mcp_endpoint`, `mcp_config_sha256`, `tools_list_sha256`, `tools_count`, `tool_descriptions_file`, `tool_descriptions_sha256`, `tool_descriptions_check` | endpoint is host-free, null with `tools: false`; check is `compared`, `recorded_only` or `no_tools` |
 | System under test | `jaeger_image`, `jaeger_image_id`, `jaeger_commit`, `otel_demo_ref`, `fixture_overlay_sha256`, `system_under_test` | read from the fixture at batch start, not typed; `jaeger_commit` is `unresolved` if unknown; the last key is the block copied into each scores row |
 | Fault | `fault`, `flag_names` | `fault` is flag, activation field and value, plus `flip_utc`, `ofrep_confirmed`, `signal_traces_seen`; `flag_names` feeds the leak tripwire |
@@ -42,6 +42,7 @@ Written before the fault flip and rewritten after the leak scan. It repeats the 
 - `order` (the shuffled cell list), `n_per_arm`, `arms`, `file_hashes_sha256` (harness files, scenario, each prompt), `tools_list_path`.
 - `arm_pin` (expected and running image) and `tools_description_check` (mode, file, hash), with one arm.
 - `grader` (`model`, `prompt_sha256`, `cli_version`) and `scenario_version` (the scenario file's `version`).
+- `goose_image`, client goose only: the pinned image the trials ran in, by digest.
 - `experiment.content`, the experiment file verbatim; judge.py reads it with `experiment.sha256` and `arm_pin`.
 
 ## scores.jsonl

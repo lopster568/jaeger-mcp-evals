@@ -27,7 +27,7 @@ LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
 # CLAUDE_CODE_PLUGIN_DIRS: the user's own plugins load from it even with --setting-sources "".
-DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_PLUGIN_DIRS")
+DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_PLUGIN_DIRS")
 # Set on every Claude CLI call the harness makes (trials, sandbox probe, grader): no tool-search placeholder tool, no self-update.
 CLIENT_ENV = {"ENABLE_TOOL_SEARCH": "false", "DISABLE_AUTOUPDATER": "1"}
 

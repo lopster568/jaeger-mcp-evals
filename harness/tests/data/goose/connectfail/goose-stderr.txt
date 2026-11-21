@@ -1,0 +1,2 @@
+  ⚠ Failed to start extension 'jaeger' (failed to initialize MCP client: Send message error Transport [rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientWorker<reqwest::async_impl::client::Client>>] error: Client error: error sending request for url (http://gp-jaeger:1/jaeger/ui/api/ai/mcp/), when send discover request), continuing without it
+    Hint: ask goose to help debug the 'jaeger' extension

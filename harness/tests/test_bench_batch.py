@@ -75,6 +75,18 @@ case "$1 $2" in
     shift 3
     for id in "$@"; do echo "/$id 0 false 2026-01-01T00:00:00Z"; done
     ;;
+  # The goose client: pre-flight, version, one trial replaying a recording, and the cleanup.
+  "info --format") echo "Ubuntu 24.04" ;;
+  "image inspect") [ -z "$FAKE_NO_GOOSE_IMAGE" ] ;;
+  "rm -f") echo "$*" >> "$FAKE_HOME/docker-rm.log" ;;
+  "run --rm")
+    case " $* " in
+      *" --version "*) [ -n "$FAKE_GOOSE_NO_VERSION" ] || echo " 1.57.0" ;;
+      *) [ -n "$FAKE_GOOSE_HANG" ] && exec sleep 30
+         printf '%s\n' "$@" > "$FAKE_HOME/goose-argv.txt"
+         echo "key_set=${ANTHROPIC_API_KEY:+yes}" >> "$FAKE_HOME/goose-argv.txt"
+         cat "$FAKE_GOOSE/stdout.jsonl"; cat "$FAKE_GOOSE/goose-stderr.txt" >&2 ;;
+    esac ;;
   *) exit 1 ;;
 esac
 """
@@ -586,6 +598,58 @@ class TestBatch(BenchCase):
         c_indices = [i for i, v in enumerate(argv) if v == "-c"]
         self.assertTrue(c_indices and all(i < exec_i for i in c_indices))
 
+    def test_goose_client_runs_a_trial_and_records_no_key(self):
+        goose = {"client": "goose", "provider": "anthropic", "model": "claude-sonnet-5-5"}
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, ANTHROPIC_API_KEY="sk-goose-secret-123"), 0, self.err)
+        self.assertIn("goose_client.py", self.err)
+        self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="sk-goose-secret-123",
+                                        FAKE_GOOSE=os.path.join(HARNESS_DIR, "tests", "data", "goose", "success")), 0, self.err)
+        b = self.batch_dir()
+        for d, _, names in os.walk(b):
+            for n in names:
+                self.assertNotIn("sk-goose-secret-123", read(os.path.join(d, n)), os.path.join(d, n))
+        argv = read(os.path.join(self.home, "goose-argv.txt")).splitlines()
+        self.assertEqual(argv[-1], "key_set=yes")  # docker got the value from the environment
+        self.assertEqual(argv[argv.index("ANTHROPIC_API_KEY") - 1], "-e")
+        self.assertFalse([x for x in argv if "API_KEY=" in x])
+        self.assertIn(bench.goose_client.IMAGE, argv)
+        self.assertEqual(argv[argv.index("--network") + 1], "host")
+        m = load(os.path.join(b, "manifest.json"))
+        self.assertEqual((m["client"], m["provider"], m["goose_image"], m["client_version_pre"]),
+                         ("goose", "anthropic", bench.goose_client.IMAGE, "1.57.0"))
+        for f in ("goose_client.py", "goose/goose-without-extensions.sh"):
+            self.assertIn(f, m["file_hashes_sha256"])
+        trial = os.path.join(b, "0-noskill")
+        self.assertEqual(read(os.path.join(self.home, "docker-rm.log")).strip(), "rm -f goose-%s-0-noskill" % os.path.basename(b))
+        recipe = load(os.path.join(trial, "goose", "recipe.yaml"))
+        self.assertEqual(recipe["extensions"][0]["uri"], "http://127.0.0.1:%s/jaeger/ui/api/ai/mcp/" % self.port)
+        self.assertEqual(recipe["instructions"], text("system-prompt.txt"))
+        self.assertTrue(os.path.isfile(os.path.join(trial, "goose-events.jsonl")))
+        [s] = bench.read_jsonl(os.path.join(b, "scores.jsonl"))
+        self.assertEqual((s["verdict"], s["sandbox_ok"], s["call_sequence"], s["client_version"]),
+                         ("ABSTAIN", True, ["get_services"], "1.57.0"))
+
+    def test_goose_needs_its_image_and_key(self):
+        goose = {"client": "goose", "provider": "openrouter", "model": "m"}
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
+        self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose), 1)
+        self.assertIn("OPENROUTER_API_KEY is empty in fixture.env", self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_GOOSE_NO_VERSION="1"), 1)
+        self.assertIn("the Goose image reported no version", self.err)
+
+    def test_hung_goose_cell_is_stopped_and_its_container_removed(self):
+        goose = {"client": "goose", "provider": "anthropic", "model": "m"}
+        with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
+            self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="k",
+                                            FAKE_GOOSE_HANG="1"), 0, self.err)
+        b = self.batch_dir()
+        [c] = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
+        self.assertEqual((c["failed"], c["trial_exit_code"]), (True, 124))
+        self.assertEqual(read(os.path.join(self.home, "docker-rm.log")).strip(), "rm -f goose-%s-0-noskill" % os.path.basename(b))
+        stream = bench.read_jsonl(os.path.join(b, "0-noskill", "stream.jsonl"))
+        self.assertEqual((stream[0]["subtype"], stream[-1]["subtype"]), ("init", "error_during_execution"))
+
     def test_codex_client_stops_at_max_turns(self):
         out = os.path.join(self.home, "trial")
         os.makedirs(out)
@@ -1044,6 +1108,9 @@ class TestKnobFile(BenchCase):
 
     def test_provider_must_be_null(self):
         self.refused(lambda d: d["run"].update(provider="openai"), "run.provider must be null")
+
+    def test_goose_needs_a_known_provider(self):
+        self.refused(lambda d: d["run"].update(client="goose"), "run.provider must be one of anthropic, openrouter for client goose")
 
     def test_bill_api_key_only_for_cli(self):
         self.refused(lambda d: d["run"].update(client="codex", bill_api_key=True),
