@@ -113,7 +113,7 @@ class Blockers(unittest.TestCase):
 
     def test_coloured_dry_run_output(self):  # FORCE_COLOR reaches the child; dry_run() strips it before counting
         with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m only 7 containers running (need >= 19)"])):
-            rc, output = fc.dry_run()
+            rc, output = fc.dry_run(fc.SMOKE_RUN)
         self.assertEqual((fc.checks_passed(output), fc.blocker(output)[0]), (1, "only 7 containers running (need >= 19)"))
 
     def test_claude_rows_for_the_cli_path(self):
@@ -130,7 +130,7 @@ class Blockers(unittest.TestCase):
                 ("bench: GRADER_CLIENT is 'x', not goose or cli; nothing was touched", "GRADER_CLIENT is not goose or cli", "set GRADER_CLIENT in fixture.env")):
             text, report = fc.blocker(bench_line)
             self.assertEqual(text, short)
-            self.assertEqual(fc.preflight_failed(cfg, text, report).tries[0][0], fix)
+            self.assertEqual(fc.preflight_failed(cfg, text, report, fc.SMOKE_RUN).tries[0][0], fix)
 
 
 class Pull(unittest.TestCase):
@@ -310,17 +310,27 @@ class SmokeFile(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             fc.set_mode(io.StringIO())
 
-    def test_goose_default_writes_the_goose_copy(self):
-        path = fc.smoke_file({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m/x:free"})
-        self.assertEqual(path, fc.SMOKE_GOOSE)
+    def filled(self, cfg, **run):
+        """smoke_file(cfg) writes SMOKE_RUN: the template with run's three keys added, and a file bench.py loads."""
+        path = fc.smoke_file(cfg)
+        self.assertEqual(path, fc.SMOKE_RUN)
         e = json.loads(pathlib.Path(self.tmp.name, path).read_text())
         base = json.loads((REPO / fc.SMOKE).read_text())
-        self.assertEqual(e["run"], dict(base["run"], client="goose", provider="openrouter", model="m/x:free"))
+        self.assertFalse({"client", "provider", "model"} & set(base["run"]))
+        self.assertEqual(e["run"], dict(base["run"], **run))
         self.assertEqual({k: v for k, v in e.items() if k != "run"}, {k: v for k, v in base.items() if k != "run"})
+        fc.bench.load_experiment(os.path.join(self.tmp.name, path))
 
-    def test_cli_option_selects_the_cli_file(self):
-        self.assertEqual(fc.smoke_file({"SMOKE_CLIENT": "cli"}), fc.SMOKE)
-        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, fc.SMOKE_GOOSE)))
+    def test_goose_default_fills_in_goose(self):
+        self.filled({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m/x:free"}, client="goose", provider="openrouter", model="m/x:free")
+
+    def test_cli_option_fills_in_the_cli(self):
+        self.filled({"SMOKE_CLIENT": "cli", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
+                    client="cli", provider=None, model="claude-sonnet-5-5")
+
+    def test_bench_refuses_the_template(self):
+        with self.assertRaisesRegex(ValueError, "is the make smoke template .*; run make smoke, which fills them in"):
+            fc.bench.load_experiment(str(REPO / fc.SMOKE))
 
     def test_empty_goose_settings_stop_at_once(self):
         for cfg in ({}, {"GOOSE_PROVIDER": "openrouter"}, {"GOOSE_MODEL": "m"}, {"GOOSE_PROVIDER": "x", "GOOSE_MODEL": "m"}):

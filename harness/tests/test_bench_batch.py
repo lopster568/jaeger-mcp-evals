@@ -1043,7 +1043,8 @@ class TestKnobFile(BenchCase):
 
     def test_shipped_experiments_validate(self):
         inputs = glob.glob(os.path.join(HARNESS_DIR, "..", "records", "inputs", "*.json"))
-        for f in glob.glob(os.path.join(HARNESS_DIR, "experiments", "*.json")) + inputs:
+        smoke = os.path.join(HARNESS_DIR, "experiments", "smoke-paymentfailure.json")  # the make smoke template: test_fixture_cli.py
+        for f in set(glob.glob(os.path.join(HARNESS_DIR, "experiments", "*.json")) + inputs) - {smoke}:
             bench.load_experiment(f)
 
 

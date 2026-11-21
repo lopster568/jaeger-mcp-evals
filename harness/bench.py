@@ -1036,6 +1036,8 @@ def load_experiment(path):
     for k in ("name", "scenario", "hypothesis", "status"):
         check(isinstance(exp[k], str) and exp[k], "%s must be a non-empty string" % k)
     r = exp["run"]
+    check(not (exp["name"] == SMOKE_EXPERIMENT and isinstance(r, dict) and "client" not in r),
+          "%s is the make smoke template (no run.client, provider or model); run make smoke, which fills them in" % path)
     keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
     providers = CLIENTS[r["client"]]["providers"]

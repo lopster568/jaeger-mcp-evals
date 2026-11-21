@@ -38,8 +38,9 @@ from bench import BOLD_RED, CYAN, DIM, GREEN, dur, paint
 
 ROOT = config.ROOT
 LOG = os.path.join(ROOT, ".make.log")
-SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")  # run.client cli
-SMOKE_GOOSE = os.path.join("harness", "experiments", "smoke-goose.json")  # generated from SMOKE, git-ignored
+SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")  # a template: no run.client, provider, model
+SMOKE_RUN = os.path.join("harness", "experiments", "smoke-run.json")  # SMOKE filled in by smoke_file(), git-ignored
+SMOKE_CLI_MODEL = "claude-sonnet-5-5"
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
 # Measured for the cli smoke trial only: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
 # A Goose trial costs what its provider and model charge; bench.py prints its own expected-cost line.
@@ -221,14 +222,14 @@ def goose_needed(cfg):
 
 
 def smoke_file(cfg):
-    """The experiment make smoke dry-runs and runs: SMOKE for SMOKE_CLIENT=cli, else SMOKE with
-    Goose's provider and model from GOOSE_PROVIDER and GOOSE_MODEL, as measure.sh writes its pair file."""
+    """The experiment make smoke dry-runs and runs: SMOKE filled in with Goose's provider and model from
+    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for SMOKE_CLIENT=cli with SMOKE_CLI_MODEL."""
     client, provider, model = smoke_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
     if client == "cli":
-        return SMOKE
-    if client != "goose":
+        provider, model = None, SMOKE_CLI_MODEL
+    elif client != "goose":
         raise Failed("SMOKE_CLIENT is %r, not goose or cli" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose or cli")])
-    if provider not in goose_client.KEYS or not model:
+    elif provider not in goose_client.KEYS or not model:
         raise Failed("GOOSE_PROVIDER or GOOSE_MODEL is not set in fixture.env",
                      ["GOOSE_PROVIDER must be anthropic or openrouter and GOOSE_MODEL a full model id of it;",
                       "the key (ANTHROPIC_API_KEY or OPENROUTER_API_KEY) goes in fixture.env too.",
@@ -237,11 +238,11 @@ def smoke_file(cfg):
                       ("make smoke CLIENT=cli", "or smoke on the Claude Code CLI")])
     with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:
         e = json.load(f)
-    e["run"].update(client="goose", provider=provider, model=model)
-    with open(os.path.join(ROOT, SMOKE_GOOSE), "w", encoding="utf-8") as f:
+    e["run"] = dict(client=client, provider=provider, model=model, **e["run"])
+    with open(os.path.join(ROOT, SMOKE_RUN), "w", encoding="utf-8") as f:
         json.dump(e, f, indent=2)
         f.write("\n")
-    return SMOKE_GOOSE
+    return SMOKE_RUN
 
 
 def tools(cfg):
@@ -428,12 +429,12 @@ def checks_passed(output):
     return len(re.findall(r"(?m)^\s+ok\s", output))
 
 
-def dry_run(exp=SMOKE):
+def dry_run(exp):
     rc, lines = sh(BENCH + ["run", exp, "--dry-run"], cwd=ROOT)
     return rc, bench.ANSI.sub("", "\n".join(lines))  # FORCE_COLOR reaches the child; the counts and regexes need plain text
 
 
-def preflight_failed(cfg, text, report, exp=SMOKE):
+def preflight_failed(cfg, text, report, exp):
     t = next((t for k, t in TRIES.items() if re.search(k, text)), None)
     tries = [(t[0].replace("%s", cfg["FIXTURE_DEMO_DIR"]), t[1])] if t else [
         ("python3 harness/bench.py run %s --dry-run" % exp, "the full pre-flight report")]

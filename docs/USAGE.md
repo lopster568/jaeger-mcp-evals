@@ -22,7 +22,9 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 ## The experiment file
 
 `harness/experiments/<name>.json` is the complete configuration of a batch; copy one for your
-own runs. Every key is required except `run.client_version` and `run.bill_api_key`; unknown keys are refused. Below is the
+own runs. `smoke-paymentfailure.json` is the exception: a template without `run.client`, `provider` or `model`,
+which `bench.py run` refuses; `make smoke` fills them in (Goose from `GOOSE_PROVIDER` and `GOOSE_MODEL`, or
+`CLIENT=cli` with `claude-sonnet-5-5`) and runs the git-ignored `smoke-run.json` it writes. Every key is required except `run.client_version` and `run.bill_api_key`; unknown keys are refused. Below is the
 `goose` pair file `make measure` writes, with the long `hypothesis` elided and placeholders in angle brackets:
 
 ```json
