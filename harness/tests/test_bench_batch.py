@@ -1447,6 +1447,10 @@ class TestOtlpSpans(unittest.TestCase):
                           a["llm.token_count.prompt_details.cache_read"], a["llm.token_count.prompt_details.cache_write"]),
                          ("m1", "60", "5", "20", "30"))
         self.assertNotIn("llm.model_name", self.attrs(spans[0]))
+        self.assertEqual(a["llm.provider"], "anthropic")  # the default
+        spans = bench.otlp.trace_spans("k", self.events(), 10**9, [bench.otlp.kv("provider", "openrouter")])
+        self.assertEqual([self.attrs(s)["llm.provider"] for s in spans if self.attrs(s)["openinference.span.kind"] == "LLM"],
+                         ["openrouter"])
 
     def test_one_llm_span_per_model_and_usage_fallback(self):
         two = {"modelUsage": {"m1": {"inputTokens": 1}, "m2": {"inputTokens": 2, "outputTokens": 3}}}

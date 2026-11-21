@@ -2311,7 +2311,7 @@ def export(batch_dir, endpoint, cfg, out=print):
                       if isinstance(e, dict)]
             attrs = {"experiment": exp, "batch_id": m["batch_id"], "scenario": m["scenario"], "arm": row["arm"],
                      "trial_index": meta["trial_index"], "model": (meta.get("observed") or {}).get("model") or meta["model_requested"],
-                     "client": meta["client"], "verdict": row.get("verdict") or "ERROR"}
+                     "client": meta["client"], "provider": meta.get("provider") or "anthropic", "verdict": row.get("verdict") or "ERROR"}
             prompt = read_text(os.path.join(trial, "prompt.txt")) if os.path.exists(os.path.join(trial, "prompt.txt")) else ""
             t0 = int(datetime.strptime(meta["started_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()) * 10**9
             trial_spans = otlp.trace_spans("%s/%s/%s" % (m["scenario"], m["batch_id"], row["dir"]), events, t0,
