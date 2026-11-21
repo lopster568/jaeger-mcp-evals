@@ -610,14 +610,20 @@ def passes_to_read(scored):
     return rows
 
 
-def expected_cost(scenario, model, n_per_arm, max_budget, records=None):
-    """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
+def batch_client(bdir):
+    m = os.path.join(bdir, "manifest.json")
+    return load_json(m).get("client", "cli") if os.path.isfile(m) else "cli"
+
+
+def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="cli"):
+    """Pre-flight lines about spend, from the recorded trials of this scenario on this model and client:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
-    rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True) for r in read_jsonl(f)
-            if r.get("scenario_used") == scenario and r.get("model_asserted") == model]
+    rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True)
+            if batch_client(os.path.dirname(f)) == client
+            for r in read_jsonl(f) if r.get("scenario_used") == scenario and r.get("model_asserted") == model]
     costs = sorted(r["cost_usd"] for r in rows if isinstance(r.get("cost_usd"), (int, float)))
     if not costs:
-        return [(True, "expected cost unknown: no recorded trial of %s on %s" % (scenario, model))]
+        return [(True, "expected cost unknown: no recorded %s trial of %s on %s" % (client, scenario, model))]
     med, top = statistics.median(costs), costs[-1]
     out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
             % (n_per_arm * med, n_per_arm, top, max_budget))]
@@ -1240,7 +1246,7 @@ def run(a, cfg):
     if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
         return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
                    fix="install the Claude Code CLI and log in (run `claude` once)")
-    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget):
+    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget, client=a.client):
         if ok:
             log.check(True, text)
         else:

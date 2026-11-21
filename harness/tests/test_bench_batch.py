@@ -1725,12 +1725,15 @@ class TestSandboxProbe(BenchCase):
     def test_stage_one_names_the_cli_version_and_says_when_cost_is_unknown(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("ok    claude CLI 2.1.282 accepts the flags the harness passes", self.err)
-        self.assertIn("ok    expected cost unknown: no recorded trial of paymentFailure on sonnet", self.err)
+        self.assertIn("ok    expected cost unknown: no recorded cli trial of paymentFailure on sonnet", self.err)
 
     def test_expected_cost_is_per_arm_median_times_n(self):
         self.write_recorded([{"cost_usd": x} for x in (0.1, 0.2, 0.3)])
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
                          [(True, "expected cost about 2.00 USD per arm of 10 trials (recorded max 0.30 per trial, cap 2)")])
+        # recorded cli trials say nothing about a goose run on the same model id
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records, client="goose"),
+                         [(True, "expected cost unknown: no recorded goose trial of paymentFailure on sonnet")])
 
     def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
         self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +

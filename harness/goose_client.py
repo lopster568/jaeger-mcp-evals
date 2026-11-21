@@ -230,7 +230,7 @@ def main(argv=None):
     except ValueError as e:
         print("goose_client: %s" % e, file=sys.stderr)
         return 1
-    work = os.path.join(a.out_dir, "goose")
+    work = os.path.abspath(os.path.join(a.out_dir, "goose"))  # docker -v reads a relative path as a volume name
     os.makedirs(work, exist_ok=True)
     os.chmod(work, 0o755)  # the image's user reads the mount
     with open(os.path.join(work, "recipe.yaml"), "w", encoding="utf-8") as f:

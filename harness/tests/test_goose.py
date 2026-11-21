@@ -275,7 +275,8 @@ class TestCleanup(unittest.TestCase):
             proc = subprocess.Popen([sys.executable, os.path.join(HARNESS_DIR, "goose_client.py"), "--provider", "anthropic",
                                      "--model", "m", "--effort", "high", "--prompt-file", os.path.join(HARNESS_DIR, "prompts", "noskill.txt"),
                                      "--system-prompt-file", bench.SYSTEM_PROMPT, "--schema-file", bench.VERDICT_SCHEMA,
-                                     "--mcp-config", mcp, "--out-dir", out], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                     "--mcp-config", mcp, "--out-dir", os.path.join("batch-x", "0-a")],  # relative, as RUNS_DIR=runs gives
+                                    cwd=t, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             for _ in range(100):  # until the fake container is "running"
                 if os.path.exists(log) and "run --rm" in pathlib.Path(log).read_text():
                     break
@@ -285,6 +286,8 @@ class TestCleanup(unittest.TestCase):
             self.assertEqual(proc.returncode, 1)
             calls = pathlib.Path(log).read_text().splitlines()
             self.assertEqual(calls[-1], "rm -f goose-batch-x-0-a")
+            run = next(c for c in calls if c.startswith("run --rm"))
+            self.assertIn("-v %s:/work:ro" % os.path.join(os.path.realpath(out), "goose"), run.replace(t, os.path.realpath(t)))
             final = bench.read_jsonl(os.path.join(out, "stream.jsonl"))[-1]
             self.assertEqual((final["subtype"], final["error"]), ("error_during_execution", "goose stopped before it finished"))
 
