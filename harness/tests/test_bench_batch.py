@@ -1198,12 +1198,7 @@ class TestRecords(BenchCase):
     def test_batch_records_never_carry_fixture_identity_or_local_paths(self):
         """manifest/preflight/cells/scores/restore get committed publicly, so FIXTURE_HOST,
         FIXTURE_SSH_USER, FIXTURE_DEMO_DIR and any absolute local path must never reach them."""
-        host = "127.0.0.9"  # a loopback alias, distinct from the class-shared 127.0.0.1 server
-        srv = http.server.ThreadingHTTPServer((host, 0), Fake)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        self.addCleanup(srv.shutdown)
-        self.addCleanup(srv.server_close)
-        port = str(srv.server_address[1])
+        host, port = "localhost", self.port  # the class server; "localhost" is a needle distinct from "127.0.0.1"
         ssh_user, demo_name = "distinct-ssh-user-b7e1", "distinct-demo-dir-b7e1"
         os.symlink(self.demo, os.path.join(self.home, demo_name))  # same files, a distinctive name
         self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-test", OPENAI_API_KEY="sk-o",

@@ -30,7 +30,7 @@ if [ -n "$CHECK" ]; then
 fi
 
 [ -n "$TARGET" ] || die "usage: forward.sh [--phoenix] SSH_TARGET | --check"
-mapfile -t L < <(fwd_args)
+L=($(fwd_args))  # no mapfile: macOS bash 3.2
 trap 'kill "$pid" 2>/dev/null; log "stopped"; exit 0' INT TERM
 while :; do
   log "starting ssh -N to $TARGET: $(fwd_ports | tr '\n' ' ')"
