@@ -39,6 +39,24 @@ class CliCase(BenchCase):
 class TestClaudeBatch(CliCase):
     refused = tbb.TestKnobFile.refused
     spans = tbb.TestExport.spans
+    assert_restored = tbb.TestBatch.assert_restored
+
+    def test_hung_cell_is_killed_recorded_failed_and_flag_restored(self):  # bench.py kills claude itself: no graceful stop
+        with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
+            self.assertEqual(self.run_batch(3, FAKE_CLAUDE_HANG="1"), 4, self.err)
+        b = self.assert_restored()
+        cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
+        self.assertEqual([(c["failed"], c["trial_exit_code"]) for c in cells], [(True, 124)] * 3)
+        self.assertIn("cell killed after", read(os.path.join(b, "%d-%s" % (cells[0]["order_index"], cells[0]["arm"]), "stderr.txt")))
+
+    def test_three_failures_abort_exit_4(self):
+        self.assertEqual(self.run_batch(3, FAKE_CLAUDE_EXIT="1"), 4, self.err)
+        b = self.batch_dir()
+        cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
+        self.assertEqual([c["failed"] for c in cells], [True] * 3)
+        self.assertTrue(load(os.path.join(b, "restore.json"))["default_confirmed"])
+        self.assertEqual(self.flag_file(), self.pristine())
+
 
     def test_full_batch(self):
         Fake.served_descriptions = {"get_services": "Summaries with an error flag per trace."}  # stock Jaeger wording passes
