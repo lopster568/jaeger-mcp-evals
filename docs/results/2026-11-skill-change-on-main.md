@@ -55,7 +55,7 @@ n=10 trials per arm. CI is the Wilson 95% interval on the PASS rate. Calls are m
 | adFailure (2, stochastic) | [6/10](../../records/v1-main-d22c65b9-adFailure/batch-20261105T165512Z/) (4 PARTIAL) | [10/10](../../records/v1-main-d22c65b9-adFailure/batch-20261105T170641Z/) | [0.31, 0.83], [0.72, 1.00] | 0.09 | 5.5, 8 | 0.46, 0.84 |
 | emailMemoryLeak (2, bucketed) | [9/10](../../records/v1-main-d22c65b9-emailMemoryLeak/batch-20261106T034017Z/) (1 PARTIAL) | [10/10](../../records/v1-main-d22c65b9-emailMemoryLeak/batch-20261106T035241Z/) | [0.60, 0.98], [0.72, 1.00] | 1 | 8.5, 18 | 0.54, 1.57 |
 
-recommendationCacheFailure passes its rule. The other five are a regression check: at n=10 they cannot show the change is harmless, only that no PASS count went down, and the adFailure difference is not significant. All 120 trials report claude-sonnet-5-5 on Claude Code CLI 2.1.285 at effort high, with the fixture check and the sandbox check passing and no leak hits. `bench.py verify` re-scores every trial to its stored verdict.
+recommendationCacheFailure passes its rule. The other five are a regression check: at n=10 they cannot show the change is harmless, only that no PASS count went down, and the adFailure difference is not significant. All 120 trials report claude-sonnet-5-5 on Claude Code CLI 2.1.285 at effort high, with the fixture check and the sandbox check passing and no leak hits. `bench.py verify` re-scores every trial to its stored verdict (on the raw trajectories, which are not published).
 
 The change arm makes more tool calls on five of six scenarios. On emailMemoryLeak, 25 of the change arm's calls returned an error, almost all of them `search_traces` SQL the server rejected (wrong column names, missing time bounds), each retried.
 
@@ -74,4 +74,6 @@ Per scenario, both arms share the scenario version, the neutral prompt, the full
 1. `make setup` brings up the fixture ([fixture/FIXTURE.md](../../fixture/FIXTURE.md)).
 2. Build both images from a Jaeger checkout at d22c65b9, with and without the patch above, as the two image records describe ([main-d22c65b9.json](../../records/inputs/images/main-d22c65b9.json), [main-d22c65b9-v1.json](../../records/inputs/images/main-d22c65b9-v1.json)).
 3. With the fixture on each image in turn: `python3 harness/bench.py run records/inputs/v1-main-d22c65b9-<scenario>.json`. build-image.sh writes a fresh image record under `harness/experiments/images/`, the only place bench.py looks; the served-instructions check runs on the re-run only if the `instructions` key and its file under [records/inputs/instructions/](../../records/inputs/instructions/) are copied next to that record.
-4. `python3 harness/bench.py verify` re-scores the raw trajectories; `bench.fisher_p(<stock PASS>, <change PASS>, 10)` gives p.
+4. `bench.fisher_p(<stock PASS>, <change PASS>, 10)` gives p.
+
+Re-scoring the published batches needs their raw trajectories, which are not published.

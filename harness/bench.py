@@ -939,17 +939,22 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S, need_key=False):
     return problems, names
 
 
+def rendered_texts(prompt_file):
+    """The prompt and system prompt texts, trailing newlines stripped as bash's "$(cat f)" does. The leak
+    scan reads them for every client; claude_argv passes them."""
+    return read_text(prompt_file).rstrip("\n"), read_text(SYSTEM_PROMPT).rstrip("\n")
+
+
 def claude_argv(a, prompt_file, mcp_config):
-    """The Claude Code CLI call. Text args are passed like bash's "$(cat f)", which strips
-    trailing newlines."""
-    text = lambda p: read_text(p).rstrip("\n")
-    return ["claude", "-p", text(prompt_file),
+    """The Claude Code CLI call, with the texts of rendered_texts()."""
+    prompt, system = rendered_texts(prompt_file)
+    return ["claude", "-p", prompt,
             "--output-format", "stream-json", "--verbose",
             "--mcp-config", mcp_config, "--strict-mcp-config",
             "--setting-sources", "", "--restricted", "--tools", "",
             "--allowedTools", "mcp__jaeger__*",
-            "--system-prompt", text(SYSTEM_PROMPT),
-            "--json-schema", text(VERDICT_SCHEMA),
+            "--system-prompt", system,
+            "--json-schema", read_text(VERDICT_SCHEMA).rstrip("\n"),
             "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd]
 
 
@@ -1394,9 +1399,9 @@ def run(a, cfg):
     log.detail("== pre-flight: leak scan of the rendered prompts, system prompt and served tools/list ==")
     rendered = []
     for arm in arms:
-        argv = claude_argv(a, prompt_file[arm], "-")
-        rendered.append(("rendered prompt %s" % arm, argv[2]))
-    rendered.append(("rendered system prompt", argv[argv.index("--system-prompt") + 1]))
+        prompt, system = rendered_texts(prompt_file[arm])
+        rendered.append(("rendered prompt %s" % arm, prompt))
+    rendered.append(("rendered system prompt", system))
     if tools_text:
         rendered.append(("served tools/list", TOOLS_ALLOW.sub("", tools_text)))
     if instructions:
