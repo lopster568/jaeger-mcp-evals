@@ -118,3 +118,4 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - emailMemoryLeak: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - cartFailure: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - recommendationCacheFailure: version 4 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
+- Fixture: the overlay's four host ports (16686, 8013, 8016, 16006) bind 127.0.0.1; fixture_overlay_sha256 changes; no change in what the agent sees; comparable: yes. A remote fixture is reached through fixture/forward.sh.
