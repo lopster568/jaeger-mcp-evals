@@ -10,7 +10,6 @@ import io
 import json
 import os
 import pathlib
-import stat
 import sys
 import tempfile
 import threading
@@ -147,11 +146,11 @@ class FailureBlock(unittest.TestCase):
         buf = io.StringIO()
         with mock.patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(buf):
             fc.set_mode(sys.stdout)
-            fc.fail_block(fc.Step("Ready", "x"), "gave up after 10m00s: host thrashing", ["report line"],
-                          [("docker stats --no-stream", "find the container reading the disk")])
+            fc.fail_block(fc.Step("Ready", "x"), "gave up after 10m00s: Jaeger not answering", ["report line"],
+                          [("docker compose ps -a", "which container is not up")])
         self.assertEqual(buf.getvalue().splitlines(), [
-            "FAIL  Ready        gave up after 10m00s: host thrashing", "", "  report line", "",
-            "  Try:  docker stats --no-stream     find the container reading the disk",
+            "FAIL  Ready        gave up after 10m00s: Jaeger not answering", "", "  report line", "",
+            "  Try:  docker compose ps -a         which container is not up",
             "        fixture/FIXTURE.md, Gotchas  known fixture failures and fixes",
             "  Log:  " + bench.shown(fc.LOG)])
 
@@ -203,7 +202,7 @@ class Setup(unittest.TestCase):
         rc, text = self.setup_run(FAKE_PRESENT=SERVICES["flagd"])
         self.assertEqual(rc, 0, text)
         lines = text.splitlines()
-        self.assertEqual(lines[0], "jaeger-mcp-evals setup")
+        self.assertEqual(lines[0], "jaeger-ai-evals setup")
         self.assertRegex(lines[1], r"^ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+, goose openrouter vendor/model:free, OPENROUTER_API_KEY set, claude 2\.1\.300$")
         self.assertEqual(lines[2], "ok    Demo         OpenTelemetry Demo 3.0.0 cloned, overlay installed, 0s")
         self.assertIn("ok    Images       2 pulled, 1 present, 0s", lines)

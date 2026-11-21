@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Fixture settings: fixture.env.example, then fixture.env, then os.environ win."""
+import json
 import os
 import urllib.parse
 
@@ -47,3 +48,18 @@ def repo_relpath(path):
     sits under, home dirs included), so outside the repo it is the basename."""
     rel = os.path.relpath(os.path.abspath(path), ROOT)
     return os.path.basename(path) if rel.startswith("..") else rel
+
+
+def mcp_config_url(config_path, server):
+    """The URL of one server in a client's mcp.json; None when it lists no server (an arm without tools)."""
+    with open(config_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    servers = cfg.get("mcpServers") or {}
+    if not servers:
+        return None
+    entry = servers.get(server)
+    if not entry or not entry.get("url"):
+        raise ValueError("mcp config %s has no mcpServers.%s.url" % (config_path, server))
+    if entry.get("type") not in (None, "http", "streamable-http"):
+        raise ValueError("mcp server %s has type %r; only streamable HTTP is supported" % (server, entry.get("type")))
+    return entry["url"]

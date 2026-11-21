@@ -31,7 +31,7 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
-from codex_client import mcp_url
+import config
 
 IMAGE = "ghcr.io/aaif-goose/goose:v1.57.0@sha256:06485bd5275090903b7ef5313059d792dd88759d9c6e3365d300aba37454ca58"
 WRAPPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "goose", "goose-without-extensions.sh")
@@ -232,7 +232,7 @@ def main(argv=None):
     if a.provider not in KEYS:
         ap.error("--provider must be one of %s" % ", ".join(KEYS))
     signal.signal(signal.SIGTERM, _stop)  # bench.py stops a cell with SIGTERM: the container must still go
-    url = mcp_url(a.mcp_config, "jaeger")
+    url = config.mcp_config_url(a.mcp_config, "jaeger")
     desktop = docker_desktop()
     read = lambda p: open(p, encoding="utf-8").read()
     try:

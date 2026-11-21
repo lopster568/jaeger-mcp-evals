@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for harness/tools.py (capture and the description comparison).
+"""Tests for harness/tools.py (capture).
 
 A fake MCP streamable-HTTP server runs on 127.0.0.1 (http.server, stdlib)
 and answers initialize / notifications/initialized / tools/list either as
@@ -164,47 +164,6 @@ class TestCaptureTools(unittest.TestCase):
         r = self.capture("json")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("tools: FAIL", r.stderr)
-
-
-class TestToolsCheck(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = self._tmp.name
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def write(self, name, obj):
-        p = os.path.join(self.tmp, name)
-        with open(p, "w") as f:
-            json.dump(obj, f)
-        return p
-
-    def test_expected_descriptions_drops_status(self):
-        exp = tools_mod.expected_descriptions({"status": "CONFIRMED", "get_trace_errors": "x"})
-        self.assertEqual(exp, {"get_trace_errors": "x"})
-
-    def test_match(self):
-        tools = [dict(t) for t in TOOLS_PAGE1 + TOOLS_PAGE2]
-        tools[0]["description"] = "New critical path wording."
-        expected = {"get_critical_path": "New critical path wording.",
-                    "get_trace_errors": "Errors, old wording."}
-        self.assertEqual(tools_mod.compare_descriptions(tools, expected), [])
-
-    def test_mismatch_reports_name_and_both_strings(self):
-        tools = TOOLS_PAGE1 + TOOLS_PAGE2
-        expected = {"get_critical_path": "New critical path wording."}
-        mm = tools_mod.compare_descriptions(tools, expected)
-        self.assertEqual(mm, [("get_critical_path", "New critical path wording.", "Critical path, old wording.")])
-
-    def test_missing_tool_is_a_mismatch(self):
-        mm = tools_mod.compare_descriptions(TOOLS_PAGE1, {"get_trace_topology": "Topology."})
-        self.assertEqual(mm, [("get_trace_topology", "Topology.", None)])
-
-    def test_whitespace_difference_is_a_mismatch(self):
-        mm = tools_mod.compare_descriptions(TOOLS_PAGE1, {"get_trace_errors": "Errors, old wording. "})
-        self.assertEqual(len(mm), 1)
-
 
 
 if __name__ == "__main__":

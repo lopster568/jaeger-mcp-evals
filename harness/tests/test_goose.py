@@ -285,7 +285,7 @@ class TestCleanup(unittest.TestCase):
             pathlib.Path(mcp).write_text('{"mcpServers": {"jaeger": {"type": "http", "url": "http://127.0.0.1:1/m/"}}}')
             env = dict(os.environ, PATH=binp + os.pathsep + os.environ["PATH"], FAKE_LOG=log, ANTHROPIC_API_KEY="sk-x")
             proc = subprocess.Popen([sys.executable, os.path.join(HARNESS_DIR, "goose_client.py"), "--provider", "anthropic",
-                                     "--model", "m", "--effort", "high", "--prompt-file", os.path.join(HARNESS_DIR, "prompts", "noskill.txt"),
+                                     "--model", "m", "--effort", "high", "--prompt-file", os.path.join(HARNESS_DIR, "prompts", "neutral.txt"),
                                      "--system-prompt-file", bench.SYSTEM_PROMPT, "--schema-file", bench.VERDICT_SCHEMA,
                                      "--mcp-config", mcp, "--out-dir", os.path.join("batch-x", "0-a")],  # relative, as RUNS_DIR=runs gives
                                     cwd=t, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

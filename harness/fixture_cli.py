@@ -192,7 +192,7 @@ def fail_block(step, text, block, tries):
 
 
 def header(cmd):
-    out("\n  " + paint("1", "jaeger-mcp-evals") + "  " + cmd + "\n" if TTY else "jaeger-mcp-evals " + cmd)
+    out("\n  " + paint("1", "jaeger-ai-evals") + "  " + cmd + "\n" if TTY else "jaeger-ai-evals " + cmd)
 
 
 def first_token(argv):
@@ -221,7 +221,7 @@ def goose_needed(cfg):
 
 
 def smoke_file(cfg):
-    """The experiment the ready wait dry-runs and make smoke runs: SMOKE for SMOKE_CLIENT=cli, else SMOKE with
+    """The experiment make smoke dry-runs and runs: SMOKE for SMOKE_CLIENT=cli, else SMOKE with
     Goose's provider and model from GOOSE_PROVIDER and GOOSE_MODEL, as measure.sh writes its pair file."""
     client, provider, model = smoke_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
     if client == "cli":
@@ -437,7 +437,7 @@ def preflight_failed(cfg, text, report, exp=SMOKE):
     t = next((t for k, t in TRIES.items() if re.search(k, text)), None)
     tries = [(t[0].replace("%s", cfg["FIXTURE_DEMO_DIR"]), t[1])] if t else [
         ("python3 harness/bench.py run %s --dry-run" % exp, "the full pre-flight report")]
-    return Failed(text, ["bench.py pre-flight, last attempt:"] + ["  " + l for l in report], tries)
+    return Failed(text, ["bench.py pre-flight:"] + ["  " + l for l in report], tries)
 
 
 def ready(cfg):

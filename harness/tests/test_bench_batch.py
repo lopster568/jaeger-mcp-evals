@@ -43,10 +43,8 @@ FLAGS = {"flags": {
     "paymentFailure": {"state": "ENABLED", "variants": {"100%": 1, "off": 0}, "defaultVariant": "off"},
     "adFailure": {"state": "ENABLED", "variants": {"on": True, "off": False}, "defaultVariant": "off"},
 }}
-DESC_CHANGE = {"status": "CONFIRMED", "get_trace_errors": "pre-registered wording of get_trace_errors"}
 VARIANT_IMAGE = "jaeger-mcp-evals/jaeger:main-d22c65b9"
 STOCK_IMAGE = "quay.io/jaegertracing/jaeger:2.20.0"
-SYSTEM_NAMES = ("OpenTelemetry Demo", "otel demo", "opentelemetry-demo", "astronomy shop")
 RUN = {"client": "cli", "provider": None, "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2,
        "n_per_arm": 1, "seed": None}
 
@@ -324,12 +322,6 @@ class BenchCase(unittest.TestCase):
         patcher = mock.patch.object(bench, "RECORDS", self.records)
         patcher.start()
         self.addCleanup(patcher.stop)
-        # The batch tests run the recorded prompts (noskill, skill), which name the system under
-        # test; the leak gate itself is tested in test_leak_readiness.py.
-        words = [w for w in bench.score.leak_words(HARNESS_DIR) if w not in SYSTEM_NAMES]
-        patcher = mock.patch.object(bench.score, "leak_words", lambda harness_dir=None: words)
-        patcher.start()
-        self.addCleanup(patcher.stop)
         self.demo = os.path.join(self.home, "otel-demo-3.0.0")
         os.makedirs(os.path.join(self.demo, "src", "flagd"))
         os.makedirs(os.path.join(self.demo, "overlay"))
@@ -368,9 +360,9 @@ class BenchCase(unittest.TestCase):
         return rc
 
     def knob(self, arms=None, name="t", baseline_arm="noskill", **run):
-        """Write an experiment file; the default is the old two-prompt batch on the stock image."""
+        """Write an experiment file; the default is two arms on the stock image."""
         doc = {"name": name, "version": 2, "scenario": "paymentFailure", "hypothesis": "h", "run": dict(RUN, **run),
-               "arms": arms or {"noskill": arm("noskill"), "skill": arm("skill")}, "baseline_arm": baseline_arm,
+               "arms": arms or {"noskill": arm("neutral"), "skill": arm("neutral")}, "baseline_arm": baseline_arm,
                "thresholds": {}, "status": "CONFIRMED: test"}
         self.knob_path = os.path.join(self._tmp.name, name + ".json")
         pathlib.Path(self.knob_path).write_text(json.dumps(doc))
@@ -474,7 +466,7 @@ class TestBatch(BenchCase):
         first = cells[0]
         mcp = os.path.join(b, "%d-%s" % (first["order_index"], first["arm"]), "mcp.json")
         self.assertEqual(calls[0]["argv"][1:], [
-            "-p", text("prompts/%s.txt" % first["arm"]), "--output-format", "stream-json", "--verbose",
+            "-p", text("prompts/neutral.txt"), "--output-format", "stream-json", "--verbose",
             "--mcp-config", mcp, "--strict-mcp-config", "--setting-sources", "", "--restricted", "--tools", "",
             "--allowedTools", "mcp__jaeger__*", "--system-prompt", text("system-prompt.txt"),
             "--json-schema", text("verdict-schema.json"), "--model", "sonnet", "--effort", "xhigh",
@@ -612,7 +604,7 @@ class TestBatch(BenchCase):
         goose = {"client": "goose", "provider": "anthropic", "model": "claude-sonnet-5-5"}
         self.assertEqual(self.run_batch(1, "--dry-run", run=goose, ANTHROPIC_API_KEY="sk-goose-secret-123"), 0, self.err)
         self.assertIn("goose_client.py", self.err)
-        self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="sk-goose-secret-123",
+        self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("neutral")}, ANTHROPIC_API_KEY="sk-goose-secret-123",
                                         FAKE_GOOSE=os.path.join(HARNESS_DIR, "tests", "data", "goose", "success")), 0, self.err)
         b = self.batch_dir()
         for d, _, names in os.walk(b):
@@ -651,7 +643,7 @@ class TestBatch(BenchCase):
     def test_hung_goose_cell_is_stopped_and_its_container_removed(self):
         goose = {"client": "goose", "provider": "anthropic", "model": "m"}
         with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
-            self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="k",
+            self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("neutral")}, ANTHROPIC_API_KEY="k",
                                             FAKE_GOOSE_HANG="1"), 0, self.err)
         b = self.batch_dir()
         [c] = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
@@ -666,7 +658,7 @@ class TestBatch(BenchCase):
         mcp = os.path.join(out, "mcp.json")
         pathlib.Path(mcp).write_text('{"mcpServers": {}}')
         r = subprocess.run([sys.executable, bench.CODEX_CLIENT, "--model", "m", "--effort", "high", "--max-turns", "1",
-                            "--prompt-file", os.path.join(HARNESS_DIR, "prompts", "noskill.txt"),
+                            "--prompt-file", os.path.join(HARNESS_DIR, "prompts", "neutral.txt"),
                             "--system-prompt-file", bench.SYSTEM_PROMPT, "--schema-file", bench.VERDICT_SCHEMA,
                             "--mcp-config", mcp, "--out-dir", out], env=dict(os.environ, **self.env), capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -724,7 +716,7 @@ class TestBatch(BenchCase):
         self.assertEqual(self.run_batch(3, run={"seed": 42}), 0, self.err)
         m = load(os.path.join(self.batch_dir(), "manifest.json"))
         self.assertEqual(m["seed"], 42)
-        self.assertEqual(planned, ["order_index=%d arm=%s trial_index=%d prompt=%s" % (c["order_index"], c["arm"], c["trial_index"], c["arm"])
+        self.assertEqual(planned, ["order_index=%d arm=%s trial_index=%d prompt=neutral" % (c["order_index"], c["arm"], c["trial_index"])
                                    for c in m["order"]])
 
     def test_dry_run_without_seed_says_the_real_order_differs(self):
@@ -988,8 +980,7 @@ class TestLogGlyphs(unittest.TestCase):
 
 
 class TestExperiment(BenchCase):
-    """The shipped release-v2200-vs-main-paymentFailure.json, cut to one trial per arm. Its variant arm's
-    image record (main-d22c65b9) names no descriptions, so tests that need the description check add the key."""
+    """The shipped release-v2200-vs-main-paymentFailure.json, cut to one trial per arm."""
 
     def shipped(self):
         doc = load(os.path.join(HARNESS_DIR, "experiments", "release-v2200-vs-main-paymentFailure.json"))
@@ -1003,34 +994,29 @@ class TestExperiment(BenchCase):
 
     def with_record(self, **keys):
         """Run the shipped experiment on the variant image with extra keys on that image's record (its real
-        instructions key is dropped: the fake serves none). A path in the temp dir stays as is under the joins
-        in experiments/descriptions/ and experiments/instructions/."""
+        instructions key is dropped: the fake serves none). A path in the temp dir stays as is under the join
+        in experiments/instructions/."""
         real = bench.load_json
         rec = lambda p: dict(real(p), **{"instructions": None, **keys}) if real(p).get("tag") == VARIANT_IMAGE else real(p)
         with mock.patch.object(bench, "load_json", rec):
             return self.bench("run", self.shipped(), FAKE_IMAGE=VARIANT_IMAGE)
 
-    def descriptions_file(self):
-        f = os.path.join(self._tmp.name, "descriptions.json")
-        pathlib.Path(f).write_text(json.dumps(DESC_CHANGE))
-        return f
-
-    def test_variant_arm_runs_with_matching_descriptions(self):
-        Fake.served_descriptions = {k: v for k, v in DESC_CHANGE.items() if k != "status"}
-        rc = self.with_record(descriptions=self.descriptions_file())
+    def test_variant_arm_runs(self):
+        rc = self.with_record()
         self.assertEqual(rc, 0, self.err)
         b = self.batch_dir()
         m = load(os.path.join(b, "manifest.json"))
         self.assertEqual(m["arms"], ["variant"])
         self.assertEqual(m["arm_pin"], {"arm": "variant", "expected_image": VARIANT_IMAGE, "sut_jaeger_image_at_run": VARIANT_IMAGE})
-        self.assertEqual(m["tools_description_check"]["mode"], "compared")
+        self.assertEqual(m["tools_description_check"], {"mode": "recorded_only", "descriptions_file": None,
+                                                        "descriptions_sha256": None})
         self.assertEqual(m["experiment"]["name"], "release-v2200-vs-main-paymentFailure")
         self.assertEqual(m["jaeger_commit"], "d22c65b9bcbf7261172d5c31fb3ffa6b393f1d6c")
         trial = os.path.join(b, "0-variant")
         meta = load(os.path.join(trial, "meta.json"))
         self.assertEqual((meta["arm"], meta["prompt_name"], meta["model_requested"]), ("variant", "neutral", "sonnet"))
-        self.assertEqual(meta["tool_descriptions_check"], "compared")
-        self.assertEqual(meta["tool_descriptions_file"], bench.repo_relpath(self.descriptions_file()))
+        self.assertEqual(meta["tool_descriptions_check"], "recorded_only")
+        self.assertIsNone(meta["tool_descriptions_file"])
         self.assertEqual(meta["experiment"]["name"], "release-v2200-vs-main-paymentFailure")
         self.assertEqual(meta["tools_list_sha256"], bench.sha256_file(os.path.join(b, "tools.json")))
         self.assertEqual(bench.read_jsonl(os.path.join(b, "cells.jsonl"))[0]["arm"], "variant")
@@ -1059,14 +1045,6 @@ class TestExperiment(BenchCase):
         meta = load(os.path.join(self.batch_dir(), "0-baseline", "meta.json"))
         self.assertEqual(meta["tool_descriptions_check"], "recorded_only")
 
-    def test_description_mismatch_aborts(self):
-        rc = self.with_record(descriptions=self.descriptions_file())
-        self.assertEqual(rc, 1)
-        self.assertIn("MISMATCH get_trace_errors", self.err)
-        self.assertEqual(self.calls(), [])
-        self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
-        self.assertEqual(self.flag_file(), self.pristine())
-
     def test_leak_in_served_descriptions_aborts_before_the_flag(self):
         Fake.served_descriptions = {"get_trace_errors": "Errors of a trace, e.g. the paymentFailure path."}
         self.assertEqual(self.run_batch(1), 1)
@@ -1086,10 +1064,9 @@ class TestExperiment(BenchCase):
 
 
 class TestSharedImage(BenchCase):
-    """Two arms on one image: the non-baseline arm serves the baseline's wording,
-    so no descriptions check applies."""
+    """Two arms on one image: the non-baseline arm serves the baseline's wording."""
 
-    def test_same_image_without_descriptions_is_recorded_only(self):
+    def test_same_image_is_recorded_only(self):
         self.assertEqual(self.run_batch(1), 0, self.err)
         m = load(os.path.join(self.batch_dir(), "manifest.json"))
         self.assertEqual(m["arms"], ["noskill", "skill"])
@@ -1339,7 +1316,7 @@ class TestOracle(BenchCase):
         self.assertIn("never matched", pre["oracle_message"])
         self.assertEqual(load(os.path.join(self.batch_dir(), "manifest.json"))["preflight"]["oracle"], "FAIL")
         self.assertIn("trials go on (the fault is in the traces)", self.err.lower().replace("\n", " ").replace("        ", ""))
-        url = next(l.split("Report it: ")[1] for l in self.err.splitlines() if "Report it: https://github.com/lopster568/jaeger-mcp-evals/issues/new?" in l)
+        url = next(l.split("Report it: ")[1] for l in self.err.splitlines() if "Report it: https://github.com/jaegertracing/jaeger-ai-evals/issues/new?" in l)
         self.assertLess(len(url), 6000)
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         self.assertEqual(q["title"], ["oracle fails on %s: paymentFailure" % STOCK_IMAGE])
@@ -1364,7 +1341,7 @@ class TestOracle(BenchCase):
 
 class TestNoTools(BenchCase):
     def test_notools_arm_has_no_mcp_server(self):
-        arms = {"notools": arm("noskill", tools=False)}
+        arms = {"notools": arm("neutral", tools=False)}
         self.assertEqual(self.bench("run", self.knob(arms, baseline_arm="notools", n_per_arm=2)), 0, self.err)
         b = self.batch_dir()
         m = load(os.path.join(b, "manifest.json"))
@@ -1379,17 +1356,17 @@ class TestNoTools(BenchCase):
             self.assertEqual(load(os.path.join(trial, "mcp.json")), {"mcpServers": {}})
             meta = load(os.path.join(trial, "meta.json"))
             self.assertEqual(list(meta), META_V4_KEYS)
-            self.assertEqual((meta["arm"], meta["prompt_name"]), ("notools", "noskill"))
+            self.assertEqual((meta["arm"], meta["prompt_name"]), ("notools", "neutral"))
             self.assertEqual(meta["tool_descriptions_check"], "no_tools")
             self.assertIsNone(meta["tools_count"])
         # Same argv as a tools arm: only the mcp.json it points at differs.
         argv = self.calls()[0]["argv"]
-        self.assertEqual(argv[2], text("prompts/noskill.txt"))
+        self.assertEqual(argv[2], text("prompts/neutral.txt"))
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(len(bench.read_jsonl(os.path.join(b, "scores.jsonl"))), 2)
 
     def test_notools_beside_a_tools_arm(self):
-        arms = {"noskill": arm("noskill"), "notools": arm("noskill", tools=False)}
+        arms = {"noskill": arm("neutral"), "notools": arm("neutral", tools=False)}
         self.assertEqual(self.run_batch(1, arms=arms), 0, self.err)
         b = self.batch_dir()
         self.assertEqual(load(os.path.join(b, "preflight.json"))["oracle"], "PASS")
@@ -1457,7 +1434,7 @@ class TestOtlpSpans(unittest.TestCase):
                           a["llm.token_count.prompt_details.cache_read"], a["llm.token_count.prompt_details.cache_write"]),
                          ("m1", "60", "5", "20", "30"))
         self.assertNotIn("llm.model_name", self.attrs(spans[0]))
-        self.assertEqual(a["llm.provider"], "anthropic")  # the default
+        self.assertNotIn("llm.provider", a)  # no provider attribute: unknown, so not set
         spans = bench.otlp.trace_spans("k", self.events(), 10**9, [bench.otlp.kv("provider", "openrouter")])
         self.assertEqual([self.attrs(s)["llm.provider"] for s in spans if self.attrs(s)["openinference.span.kind"] == "LLM"],
                          ["openrouter"])
@@ -1534,9 +1511,9 @@ class TestExport(BenchCase):
         batch_id = os.path.basename(b)
         for root in (s for s in spans if s["attrs"]["openinference.span.kind"] == "AGENT"):
             a = root["attrs"]
-            self.assertEqual({k: a[k] for k in ("experiment", "batch_id", "model", "client", "verdict", "trial_index")},
+            self.assertEqual({k: a[k] for k in ("experiment", "batch_id", "model", "client", "provider", "verdict", "trial_index")},
                              {"experiment": "t", "batch_id": batch_id, "model": "claude-sonnet-5", "client": "cli",
-                              "verdict": "PASS", "trial_index": 0})
+                              "provider": "anthropic", "verdict": "PASS", "trial_index": 0})
             trial = [d for d in os.listdir(b) if d.endswith("-" + a["arm"])][0]
             tid = root[1][0]
             self.assertEqual(tid.hex(), bench.hashlib.sha256(("paymentFailure/%s/%s" % (batch_id, trial)).encode()).hexdigest()[:32])
@@ -1546,6 +1523,15 @@ class TestExport(BenchCase):
             tool = next(s for s in children if s["attrs"]["openinference.span.kind"] == "TOOL")
             self.assertEqual(tool["attrs"]["tool.name"], "mcp__jaeger__get_trace_errors")
             self.assertEqual(tool["attrs"]["output.value"], "Payment request failed. Invalid token.")
+
+    def test_export_sets_no_provider_for_codex(self):
+        self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
+        b = self.batch_dir()
+        for p in glob.glob(os.path.join(b, "*-*", "meta.json")):  # a codex trial records provider null
+            pathlib.Path(p).write_text(json.dumps(dict(load(p), client="codex")))
+        self.assertEqual(self.bench("export", b, PHOENIX_PORT=self.phoenix_port), 0, self.out)
+        _, spans = self.spans(Fake.otlp_posts[0][1])
+        self.assertFalse([s for s in spans if "provider" in s["attrs"] or "llm.provider" in s["attrs"]])
 
     def snapshot(self):
         return {os.path.relpath(os.path.join(d, n), self._tmp.name): pathlib.Path(d, n).read_bytes()
@@ -1738,14 +1724,14 @@ class TestSandboxProbe(BenchCase):
         return bench.read_jsonl(p) if os.path.isfile(p) else []
 
     def test_pass_records_result_and_tool_names_and_runs_the_trial_argv(self):
-        arms = {"noskill": arm("noskill"), "off": arm("noskill", tools=False)}
+        arms = {"noskill": arm("neutral"), "off": arm("neutral", tools=False)}
         self.assertEqual(self.run_batch(1, arms=arms, ANTHROPIC_API_KEY="sk-test"), 0, self.err)
         pre = load(os.path.join(self.batch_dir(), "preflight.json"))
         self.assertEqual(pre["sandbox_probe"], {"result": "PASS", "tools": {"noskill": self.SERVED, "off": ["StructuredOutput"]}})
         probes = {bool(p["mcp"]["mcpServers"]): p for p in self.probes()}
         url = "http://127.0.0.1:%s/jaeger/ui/api/ai/mcp/" % self.port
         self.assertEqual(probes[True]["mcp"], {"mcpServers": {"jaeger": {"type": "http", "url": url}}})
-        trial = self.calls()[0]["argv"]  # both arms use prompt noskill: argvs differ only in --mcp-config
+        trial = self.calls()[0]["argv"]  # both arms use prompt neutral: argvs differ only in --mcp-config
         self.assertEqual(probes[True]["argv"][-1], "--no-session-persistence")
         drop = lambda argv: [x for i, x in enumerate(argv) if i == 0 or argv[i - 1] != "--mcp-config"]
         self.assertEqual(drop(probes[True]["argv"][1:-1]), drop(trial[1:]))
@@ -1825,6 +1811,10 @@ class TestSandboxProbe(BenchCase):
         self.assertIn("WARNING: a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                       "or expect ERROR trials", self.err)
         self.assertNotIn("of 30 turns", self.err)
+        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:
+            json.dump({"client": "goose"}, f)
+        lines = bench.expected_cost("paymentFailure", "sonnet", 1, 2, records=self.records, client="goose")
+        self.assertEqual([ok for ok, _ in lines], [True])  # goose gets no budget cap, so nothing to warn about
 
     def test_dry_run_probes_too(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)

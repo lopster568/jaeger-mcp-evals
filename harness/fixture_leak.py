@@ -6,15 +6,13 @@
 
 The prompt leak gate only reads prompts. A review found the OTel demo labels its
 own faults inside the telemetry the agent reads (feature_flag events, flagd
-spans). This gate samples recent traces from Jaeger (or reads saved trace files) and
-fails if any span name, service name, tag key, tag value, event name or event field
-contains a leak word, a flag name, or "flagd".
+spans). This gate samples recent traces from Jaeger and fails if any span name,
+service name, tag key, tag value, event name or event field contains a leak word,
+a flag name, or "flagd".
 
-usage: fixture_leak.py --live [--flagd demo.flagd.json] [--lookback-s 300] [--services a,b,c]
-       fixture_leak.py --file trace.json [more.json ...] [--flagd demo.flagd.json]
-The Jaeger host comes from fixture.env (harness/config.py). --flagd names the
-flagd file whose "flags" keys are the flag names to look for; without it the
-built-in FLAGS list is used.
+usage: fixture_leak.py --live [--lookback-s 300]
+The Jaeger host comes from fixture.env (harness/config.py); the flag names are the
+built-in FLAGS list (bench.py passes the flagd file's own).
 exit 0 = clean, 1 = leaks found, 2 = could not read anything
 """
 import argparse, json, re, sys, time, urllib.request
@@ -38,7 +36,7 @@ ALLOW = re.compile(r"^response_flags$", re.I)
 
 
 def scan_trace(t, hits, pats):
-    """t is a v1 trace ({spans, processes}, saved files) or bench.traces()'s v3 form (OTLP spans)."""
+    """t is bench.traces()'s v3 form (OTLP spans) or a v1 trace ({spans, processes})."""
     procs = {pid: p.get("serviceName", "") for pid, p in t.get("processes", {}).items()}
     val = lambda v: str(next(iter(v.values()), "")) if isinstance(v, dict) else str(v)  # OTLP {"stringValue": ..}
     for s in t.get("spans", []):
@@ -106,21 +104,11 @@ def scan_live(flags, lookback_s=300, services=SERVICES, out=print):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true")
-    ap.add_argument("--flagd", help="flagd JSON file; its flags keys replace the built-in list")
     ap.add_argument("--lookback-s", type=int, default=300)
-    ap.add_argument("--services", default=",".join(SERVICES))
-    ap.add_argument("--file", nargs="*")
     a = ap.parse_args()
-    flags = list(json.load(open(a.flagd))["flags"]) if a.flagd else FLAGS
-    if a.file:
-        pats, hits, traces = patterns(flags), {}, 0
-        for f in a.file:
-            for t in json.load(open(f)).get("data", []):
-                scan_trace(t, hits, pats); traces += 1
-        return report(hits, traces)
     if a.live:
-        return scan_live(flags, a.lookback_s, a.services.split(","))
-    ap.error("give --live or --file")
+        return scan_live(FLAGS, a.lookback_s)
+    ap.error("give --live")
 
 if __name__ == "__main__":
     sys.exit(main())

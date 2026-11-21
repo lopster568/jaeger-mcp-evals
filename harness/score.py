@@ -108,9 +108,9 @@ def extract_structured(final):
     """Return the structured verdict dict carried by the result event, or
     None if it does not look like one.
 
-    The Claude Code CLI's --json-schema flag carries the validated answer in
-    a "structured_output" field alongside "result" on the result event
-    (every structured run on disk has it).
+    The validated answer is a "structured_output" field alongside "result"
+    on the result event: the Claude Code CLI writes it for --json-schema, and
+    goose_client and codex_client write the same field.
     """
     if not isinstance(final, dict):
         return None
@@ -200,8 +200,7 @@ def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_t
     must list exactly the Jaeger tools, plus StructuredOutput for the cli client (codex and goose list
     no tools), and exactly one MCP server, jaeger (none for an arm with tools
     off). Every tool_use must name an allowed tool (load_skill too for goose); one the client refused
-    (REJECTED) is attempted_unknown_tool, any other executed_unknown_tool. codex_client's "error"
-    items are not tool calls."""
+    (REJECTED) is attempted_unknown_tool, any other executed_unknown_tool."""
     if init is None:
         return ["no_init_event"]
     extra = {VERDICT_TOOL} | ({GOOSE_SKILL_TOOL} if client == "goose" else set())
@@ -215,8 +214,6 @@ def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_t
         out.append("mcp_servers:%s" % ",".join(map(str, servers)))
     for c in all_calls:
         name = c["name"]
-        if client == "codex" and name == "error":
-            continue
         ok = name in allowed if allowed_jaeger is not None else name in extra or is_jaeger_name(name)
         if not ok:
             r = results_by_id.get(c["id"]) or {}
@@ -314,14 +311,8 @@ def score(out_dir, call_grader=False, scenario=None):
     sandbox_violations = sandbox_check(init, all_calls, results_by_id, allowed_jaeger, meta.get("client"), tools_on(meta))
     results = [results_by_id[c["id"]] for c in calls if c["id"] in results_by_id]
 
-    # read_skill directory-path failure: a read_skill call can be
-    # attempted and still come back is_error (or a near-empty result) when the
-    # agent names a directory instead of a skill file. Scoring only whether it
-    # was ever *attempted* hid that failure inside a 20/20 "called" number and
-    # confounded every skill arm. attempted/succeeded/errors are computed
-    # directly off each read_skill call's own result, keyed by tool_use_id
-    # (not off results_by_id filtered to Jaeger calls, since read_skill is a
-    # non-Jaeger tool).
+    # A read_skill call can come back is_error or near empty (a directory named instead of a
+    # skill file), so attempted, succeeded and errors read each call's own result by tool_use_id.
     read_skill_calls = [c for c in all_calls if c["name"].endswith("read_skill")]
     read_skill_results = [results_by_id[c["id"]] for c in read_skill_calls if c["id"] in results_by_id]
     read_skill_attempted = len(read_skill_calls) > 0

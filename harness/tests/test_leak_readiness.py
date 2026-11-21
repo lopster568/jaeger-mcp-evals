@@ -47,11 +47,10 @@ class TestLeak(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
     def test_naming_the_system_under_test_fails(self):
-        # The recorded prompts name it and now fail the gate; they stay as they are for the records.
-        for f in ("noskill.txt", "skill.txt"):
-            rc, out = gate(bench.leak, [os.path.join(HARNESS_DIR, "prompts", f)])
-            self.assertEqual(rc, 1, f)
-            self.assertIn("OpenTelemetry Demo", out[0])
+        # The early batches' noskill prompt, which names the demo: the gate refuses it.
+        rc, out = gate(bench.leak, [os.path.join(HARNESS_DIR, "tests", "data", "prompt-naming-the-demo.txt")])
+        self.assertEqual(rc, 1)
+        self.assertIn("OpenTelemetry Demo", out[0])
         for text in ("the otel demo", "an Astronomy Shop", "OPENTELEMETRY-DEMO checkout"):
             self.assertEqual(gate(bench.leak, [self.write(text)])[0], 1, text)
 
