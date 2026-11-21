@@ -1463,7 +1463,7 @@ def run(a, cfg):
         default_variant = pristine_doc["flags"][flag]["defaultVariant"]
     except (ValueError, KeyError, TypeError):
         return die("ABORT - could not read defaultVariant for %r from the fixture's pristine flag file" % flag,
-                   fix="check FIXTURE_PRISTINE_FLAG_FILE in fixture.env points at the pristine copy (make up creates it)")
+                   fix="check FIXTURE_PRISTINE_FLAG_FILE (harness/config.py, or fixture.env if set there) points at the pristine copy (make up creates it)")
     current = ofrep_variant(cfg, flag)
     if current != default_variant:
         return die("ABORT - OFREP reports %r=%r, default is %r" % (flag, current, default_variant))

@@ -40,7 +40,7 @@ cp <this repo>/fixture/compose.overlay.yaml <this repo>/fixture/jaeger-config.ym
 cp src/flagd/demo.flagd.json overlay/demo.flagd.json.pristine
 ```
 
-fixture.env names the pristine copy `FIXTURE_PRISTINE_FLAG_FILE`.
+`FIXTURE_PRISTINE_FLAG_FILE`, a constant in harness/config.py, names the pristine copy.
 
 ## Update the overlay
 
@@ -85,7 +85,7 @@ its trajectories there (docs/USAGE.md, Export to Phoenix).
 ## Health checks
 
 ```
-docker ps -q | wc -l                                    # at least MIN_CONTAINERS (default 19)
+docker ps -q | wc -l                                    # at least MIN_CONTAINERS (19, a constant in harness/config.py)
 curl -s http://localhost:16686/jaeger/ui/api/v3/services   # the demo's services, not an empty list
 curl -s -X POST -H 'Content-Type: application/json' -d '{"context":{}}' \
   http://localhost:8016/ofrep/v1/evaluate/flags/paymentFailure   # "variant":"off"
