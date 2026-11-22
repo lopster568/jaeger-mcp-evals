@@ -31,8 +31,9 @@ class Measure(unittest.TestCase):
         self.pair = ROOT / "harness" / "experiments" / ("measure-cartFailure-%s.json" % self.head)
         self.addCleanup(lambda: self.pair.unlink(missing_ok=True))
 
-    def measure(self, *args):
-        return subprocess.run(["bash", MEASURE, self.repo, "cartFailure", *args], capture_output=True, text=True, cwd=ROOT)
+    def measure(self, *args, **env):
+        env = dict(os.environ, **dict({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model-x"}, **env))
+        return subprocess.run(["bash", MEASURE, self.repo, "cartFailure", *args], capture_output=True, text=True, cwd=ROOT, env=env)
 
     def test_scripts_parse(self):
         for f in ("harness/measure.sh", "fixture/build-image.sh", "fixture/swap-jaeger.sh"):
@@ -41,7 +42,7 @@ class Measure(unittest.TestCase):
     def test_dry_run_prints_the_plan_and_builds_nothing(self):
         r = self.measure("--dry-run")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for want in ("build-image.sh", "swap-jaeger.sh", "bench.py run", "judge.py", "fisher_p_max", "claude-sonnet-5-5"):
+        for want in ("build-image.sh", "swap-jaeger.sh", "bench.py run", "judge.py", "fisher_p_max", "vendor/model-x"):
             self.assertIn(want, r.stdout)
         self.assertFalse(self.pair.exists())  # dry run writes no pair file
         self.assertEqual(subprocess.run(["git", "-C", self.repo, "worktree", "list"], capture_output=True, text=True).stdout.count("\n"), 1)
@@ -55,10 +56,26 @@ class Measure(unittest.TestCase):
         self.assertIn("judge.py", tail[0])
         self.assertEqual([l.split("bench.py ")[-1] for l in tail[1:]], ["export <baseline batch dir>", "export <variant batch dir>"])
 
-    def planned_pair(self):
-        out = self.measure("--dry-run").stdout
+    def planned_pair(self, *args):
+        out = self.measure("--dry-run", *args).stdout
         text = out.split("would write %s:\n" % self.pair, 1)[1]
         return json.JSONDecoder().raw_decode(text)[0]
+
+    def test_pair_file_runs_goose_by_default(self):
+        run = self.planned_pair()["run"]
+        self.assertEqual((run["client"], run["provider"], run["model"]), ("goose", "openrouter", "vendor/model-x"))
+        self.assertNotIn("bill_api_key", run)
+
+    def test_client_cli_runs_the_claude_cli_on_the_api_key(self):
+        run = self.planned_pair("--client", "cli")["run"]
+        self.assertEqual((run["client"], run["provider"], run["model"], run["bill_api_key"]), ("cli", None, "claude-sonnet-5-5", True))
+
+    def test_goose_settings_required(self):
+        for env, said in (({"GOOSE_MODEL": ""}, "GOOSE_MODEL is empty"), ({"GOOSE_PROVIDER": ""}, "GOOSE_PROVIDER must be")):
+            r = self.measure("--dry-run", **env)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn(said, r.stderr)
+            self.assertIn("fix: set", r.stderr)
 
     def test_generated_pair_file_is_not_pinned_to_a_client_version(self):
         self.assertNotIn("client_version", self.planned_pair()["run"])

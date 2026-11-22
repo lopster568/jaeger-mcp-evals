@@ -1,0 +1,6 @@
+# Copyright (c) 2026 The Jaeger Authors.
+# SPDX-License-Identifier: Apache-2.0
+
+# The fixture scripts source fixture/lib.sh by a computed path; their source= directives name it, relative to the script.
+external-sources=true
+source-path=SCRIPTDIR

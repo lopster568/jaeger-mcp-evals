@@ -1,0 +1,3 @@
+Error: Ran into this error: Request failed: Bad request (400): probe stub: request rejected on purpose (provider request id: req_probe_4).
+
+Please retry if you think this is a transient or recoverable error.

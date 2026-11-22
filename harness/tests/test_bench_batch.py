@@ -37,6 +37,7 @@ HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import bench  # noqa: E402
 import codex_client  # noqa: E402
+import fake_grader  # noqa: E402,F401  (pins the cli grader)
 
 FLAGS = {"flags": {
     "paymentFailure": {"state": "ENABLED", "variants": {"100%": 1, "off": 0}, "defaultVariant": "off"},
@@ -75,6 +76,18 @@ case "$1 $2" in
     shift 3
     for id in "$@"; do echo "/$id 0 false 2026-01-01T00:00:00Z"; done
     ;;
+  # The goose client: pre-flight, version, one trial replaying a recording, and the cleanup.
+  "info --format") echo "Ubuntu 24.04" ;;
+  "image inspect") [ -z "$FAKE_NO_GOOSE_IMAGE" ] ;;
+  "rm -f") echo "$*" >> "$FAKE_HOME/docker-rm.log" ;;
+  "run --rm")
+    case " $* " in
+      *" --version "*) [ -n "$FAKE_GOOSE_NO_VERSION" ] || echo " 1.57.0" ;;
+      *) [ -n "$FAKE_GOOSE_HANG" ] && exec sleep 30
+         printf '%s\n' "$@" > "$FAKE_HOME/goose-argv.txt"
+         echo "key_set=${ANTHROPIC_API_KEY:+yes}" >> "$FAKE_HOME/goose-argv.txt"
+         cat "$FAKE_GOOSE/stdout.jsonl"; cat "$FAKE_GOOSE/goose-stderr.txt" >&2 ;;
+    esac ;;
   *) exit 1 ;;
 esac
 """
@@ -175,6 +188,15 @@ for e in [
 ]:
     print(json.dumps(e))
 """
+
+
+FINAL_LABEL = [
+    {"type": "message", "message": {"id": "m1", "role": "assistant", "created": 1795256555, "content": [
+        {"type": "toolRequest", "id": "t1", "toolCall": {"status": "success", "value": {
+            "name": "recipe__final_output", "arguments": {"label": "correct", "reason": "same cause"}}}}]}},
+    {"type": "message", "message": {"id": "m2", "role": "user", "created": 1795256555, "content": [
+        {"type": "toolResponse", "id": "t1", "toolResult": {"status": "success", "value": {"content": [], "isError": False}}}]}},
+    {"type": "complete", "cost_usd": 0.001}]
 
 
 def read(path):
@@ -470,7 +492,7 @@ class TestBatch(BenchCase):
                          ["", "", "claude-fable-5-1", text("grader-prompt.txt")])
         self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
         self.assertNotEqual(graders[0]["cwd"], bench.ROOT)
-        self.assertEqual(m["grader"], {"model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
+        self.assertEqual(m["grader"], {"client": "cli", "model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
                                        "prompt_sha256": bench.sha256_file(os.path.join(HARNESS_DIR, "grader-prompt.txt"))})
         self.assertEqual(sorted((s["mechanism_grade"], s["grader_cached"]) for s in scores), [("correct", False), ("correct", True)])
         self.assertEqual(m["preflight"]["fixture_leak_under_fault"], "PASS")
@@ -585,6 +607,58 @@ class TestBatch(BenchCase):
         self.assertNotIn("-c", argv[exec_i + 1:])
         c_indices = [i for i, v in enumerate(argv) if v == "-c"]
         self.assertTrue(c_indices and all(i < exec_i for i in c_indices))
+
+    def test_goose_client_runs_a_trial_and_records_no_key(self):
+        goose = {"client": "goose", "provider": "anthropic", "model": "claude-sonnet-5-5"}
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, ANTHROPIC_API_KEY="sk-goose-secret-123"), 0, self.err)
+        self.assertIn("goose_client.py", self.err)
+        self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="sk-goose-secret-123",
+                                        FAKE_GOOSE=os.path.join(HARNESS_DIR, "tests", "data", "goose", "success")), 0, self.err)
+        b = self.batch_dir()
+        for d, _, names in os.walk(b):
+            for n in names:
+                self.assertNotIn("sk-goose-secret-123", read(os.path.join(d, n)), os.path.join(d, n))
+        argv = read(os.path.join(self.home, "goose-argv.txt")).splitlines()
+        self.assertEqual(argv[-1], "key_set=yes")  # docker got the value from the environment
+        self.assertEqual(argv[argv.index("ANTHROPIC_API_KEY") - 1], "-e")
+        self.assertFalse([x for x in argv if "API_KEY=" in x])
+        self.assertIn(bench.goose_client.IMAGE, argv)
+        self.assertEqual(argv[argv.index("--network") + 1], "host")
+        m = load(os.path.join(b, "manifest.json"))
+        self.assertEqual((m["client"], m["provider"], m["goose_image"], m["client_version_pre"]),
+                         ("goose", "anthropic", bench.goose_client.IMAGE, "1.57.0"))
+        for f in ("goose_client.py", "goose/goose-without-extensions.sh"):
+            self.assertIn(f, m["file_hashes_sha256"])
+        trial = os.path.join(b, "0-noskill")
+        self.assertEqual(read(os.path.join(self.home, "docker-rm.log")).strip(), "rm -f goose-%s-0-noskill" % os.path.basename(b))
+        recipe = load(os.path.join(trial, "goose", "recipe.yaml"))
+        self.assertEqual(recipe["extensions"][0]["uri"], "http://127.0.0.1:%s/jaeger/ui/api/ai/mcp/" % self.port)
+        self.assertEqual(recipe["instructions"], text("system-prompt.txt"))
+        self.assertTrue(os.path.isfile(os.path.join(trial, "goose-events.jsonl")))
+        [s] = bench.read_jsonl(os.path.join(b, "scores.jsonl"))
+        self.assertEqual((s["verdict"], s["sandbox_ok"], s["call_sequence"], s["client_version"]),
+                         ("ABSTAIN", True, ["get_services"], "1.57.0"))
+
+    def test_goose_needs_its_image_and_key(self):
+        goose = {"client": "goose", "provider": "openrouter", "model": "m"}
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
+        self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose), 1)
+        self.assertIn("OPENROUTER_API_KEY is empty in fixture.env", self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_GOOSE_NO_VERSION="1"), 1)
+        self.assertIn("the Goose image reported no version", self.err)
+
+    def test_hung_goose_cell_is_stopped_and_its_container_removed(self):
+        goose = {"client": "goose", "provider": "anthropic", "model": "m"}
+        with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
+            self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("noskill")}, ANTHROPIC_API_KEY="k",
+                                            FAKE_GOOSE_HANG="1"), 0, self.err)
+        b = self.batch_dir()
+        [c] = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
+        self.assertEqual((c["failed"], c["trial_exit_code"]), (True, 124))
+        self.assertEqual(read(os.path.join(self.home, "docker-rm.log")).strip(), "rm -f goose-%s-0-noskill" % os.path.basename(b))
+        stream = bench.read_jsonl(os.path.join(b, "0-noskill", "stream.jsonl"))
+        self.assertEqual((stream[0]["subtype"], stream[-1]["subtype"]), ("init", "error_during_execution"))
 
     def test_codex_client_stops_at_max_turns(self):
         out = os.path.join(self.home, "trial")
@@ -1045,6 +1119,9 @@ class TestKnobFile(BenchCase):
     def test_provider_must_be_null(self):
         self.refused(lambda d: d["run"].update(provider="openai"), "run.provider must be null")
 
+    def test_goose_needs_a_known_provider(self):
+        self.refused(lambda d: d["run"].update(client="goose"), "run.provider must be one of anthropic, openrouter for client goose")
+
     def test_bill_api_key_only_for_cli(self):
         self.refused(lambda d: d["run"].update(client="codex", bill_api_key=True),
                      "run.bill_api_key must be true or false, and true only for client cli")
@@ -1380,6 +1457,10 @@ class TestOtlpSpans(unittest.TestCase):
                           a["llm.token_count.prompt_details.cache_read"], a["llm.token_count.prompt_details.cache_write"]),
                          ("m1", "60", "5", "20", "30"))
         self.assertNotIn("llm.model_name", self.attrs(spans[0]))
+        self.assertEqual(a["llm.provider"], "anthropic")  # the default
+        spans = bench.otlp.trace_spans("k", self.events(), 10**9, [bench.otlp.kv("provider", "openrouter")])
+        self.assertEqual([self.attrs(s)["llm.provider"] for s in spans if self.attrs(s)["openinference.span.kind"] == "LLM"],
+                         ["openrouter"])
 
     def test_one_llm_span_per_model_and_usage_fallback(self):
         two = {"modelUsage": {"m1": {"inputTokens": 1}, "m2": {"inputTokens": 2, "outputTokens": 3}}}
@@ -1590,6 +1671,63 @@ class TestSoak(BenchCase):
         self.assertIn("payment_calls_180s=5", read(logs[0]))
 
 
+class TestGooseGrader(BenchCase):
+    """GRADER_CLIENT goose: pre-flight refusals, the one model line, and a batch graded through the fake docker."""
+
+    def goose_grader(self, provider="anthropic", model="gm-1"):
+        for patcher in (mock.patch.object(bench.grade, "CLIENT", "goose"), mock.patch.object(bench.grade, "PROVIDER", provider),
+                        mock.patch.object(bench.grade, "GRADER_MODEL", model)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_preflight_refuses_without_a_model_a_known_provider_or_the_key(self):
+        self.goose_grader(model="")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 1)
+        self.assertIn("the grader model is empty", self.err)
+        self.assertIn("fix: set GRADER_MODEL (or GOOSE_MODEL) in fixture.env", self.err)
+        self.goose_grader(provider="nope", model="m")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 1)
+        self.assertIn("the grader provider is 'nope'", self.err)
+        self.goose_grader(model="m")
+        self.assertEqual(self.run_batch(1, "--dry-run"), 1)
+        self.assertIn("the grader provider is anthropic but ANTHROPIC_API_KEY is empty", self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
+        self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
+
+    def test_the_model_line_is_a_warning_only_when_the_models_differ(self):
+        self.goose_grader(model="gm-1")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
+        out = self.err + self.out
+        self.assertIn("WARNING: agent model sonnet, grader model gm-1. " + bench.grade.WARNING, out)
+        self.goose_grader(model="sonnet")
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
+        out = self.err + self.out
+        self.assertIn("agent model sonnet, grader model sonnet. " + bench.grade.WARNING, out)
+        self.assertNotIn("WARNING: agent model", out)
+
+    def test_batch_is_graded_through_goose_and_the_manifest_says_so(self):
+        self.goose_grader(model="gm-1")
+        fake = os.path.join(self._tmp.name, "goose")
+        os.makedirs(fake)
+        pathlib.Path(fake, "stdout.jsonl").write_text("".join(json.dumps(e) + "\n" for e in FINAL_LABEL))
+        pathlib.Path(fake, "goose-stderr.txt").write_text("")
+        Fake.served_descriptions = {"get_services": "Summaries with an error flag per trace."}
+        self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-grader-secret-456", FAKE_GOOSE=fake), 0, self.err)
+        b = self.batch_dir()
+        g = load(os.path.join(b, "manifest.json"))["grader"]
+        self.assertEqual((g["client"], g["provider"], g["model"], g["image"]), ("goose", "anthropic", "gm-1", bench.goose_client.IMAGE))
+        self.assertNotIn("cli_version", g)
+        rows = bench.read_jsonl(os.path.join(b, "grades.jsonl"))
+        self.assertTrue(rows and all((r["client"], r["provider"], r["model"]) == ("goose", "anthropic", "gm-1") for r in rows))
+        self.assertEqual([s["mechanism_grade"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["correct", "correct"])
+        argv = read(os.path.join(self.home, "goose-argv.txt"))
+        self.assertIn("key_set=yes", argv)  # docker read the key from the environment
+        for f in glob.glob(os.path.join(b, "**", "*"), recursive=True):
+            if os.path.isfile(f):
+                self.assertNotIn("sk-grader-secret-456", read(f), f)
+        self.assertNotIn("sk-grader-secret-456", argv)
+
+
 class TestSandboxProbe(BenchCase):
     """Pre-flight's sandbox probe: the trial's own claude argv against a local 400 server."""
     SERVED = ["StructuredOutput"] + ["mcp__jaeger__" + n for n in
@@ -1652,18 +1790,26 @@ class TestSandboxProbe(BenchCase):
 
     def write_recorded(self, rows):
         os.makedirs(os.path.join(self.records, "old", "batch-1"))
+        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:  # as every record has
+            json.dump({"client": "cli"}, f)
         with open(os.path.join(self.records, "old", "batch-1", "scores.jsonl"), "w") as f:
             f.writelines(json.dumps(dict({"scenario_used": "paymentFailure", "model_asserted": "sonnet"}, **r)) + "\n" for r in rows)
 
     def test_stage_one_names_the_cli_version_and_says_when_cost_is_unknown(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("ok    claude CLI 2.1.282 accepts the flags the harness passes", self.err)
-        self.assertIn("ok    expected cost unknown: no recorded trial of paymentFailure on sonnet", self.err)
+        self.assertIn("ok    expected cost unknown: no recorded cli trial of paymentFailure on sonnet", self.err)
 
     def test_expected_cost_is_per_arm_median_times_n(self):
         self.write_recorded([{"cost_usd": x} for x in (0.1, 0.2, 0.3)])
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
                          [(True, "expected cost about 2.00 USD per arm of 10 trials (recorded max 0.30 per trial, cap 2)")])
+        # recorded cli trials say nothing about a goose run on the same model id
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records, client="goose"),
+                         [(True, "expected cost unknown: no recorded goose trial of paymentFailure on sonnet")])
+        os.remove(os.path.join(self.records, "old", "batch-1", "manifest.json"))  # no manifest: no known client, not read
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
+                         [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
 
     def test_expected_cost_from_recorded_trials_and_no_warning_when_far_below_the_cap(self):
         self.write_recorded([{"cost_usd": c, "num_turns": 10} for c in (0.1, 0.2, 0.3)] +

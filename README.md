@@ -20,8 +20,7 @@ flowchart LR
 | Need | Detail |
 |---|---|
 | Tools | Python 3.11 or newer (standard library only), Docker with Compose v2, git, curl; `make preflight` checks them and the ports |
-| Agent client | `run.client`: the published protocol supports only `cli` (Claude Code CLI on your logged-in plan); `codex` is experimental and unsupported. Pinned per experiment file by `run.model` (published: `claude-sonnet-5-5`); `run.client_version` is an optional pin for exact re-runs; the grader is `GRADER_MODEL` (default `claude-fable-5-1`) run by `GRADER_BIN` (default `claude`), so with the defaults the login needs access to that model |
-| Sandbox | with `cli` the agent starts with its built-in tools off and only `mcp__jaeger__*` allowed; a trial that shows any other tool scores INVALID |
+| Agent client | `run.client`: `goose`, the default for `make measure`, runs Goose v1.57.0 in the image the Jaeger AI Assistant demo pins, through Docker, with `run.provider` `anthropic` or `openrouter` and that provider's key in `fixture.env`; `cli` (Claude Code CLI) ran every published result; `codex` is experimental. `run.model` by full id; `run.client_version` pins exact re-runs. The agent sees only Jaeger's MCP tools (plus Goose's `load_skill`, counted); any other tool scores INVALID. The mechanism grader follows the agent client: `GRADER_CLIENT` `goose` (default, same image, `GRADER_PROVIDER` and `GRADER_MODEL` falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`, no default model) or `cli` (`GRADER_MODEL` default `claude-fable-5-1`, run by `GRADER_BIN`) |
 | Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; boots the pinned release quay.io/jaegertracing/jaeger:2.23.0; `make measure` runs the Jaeger built from your checkout (main lineage); no other release is used or tested |
 | Cost | published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant, plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |
 | Host | `make` targets run on the fixture host, this machine by default; `bench.py` can drive a remote fixture over ssh |
@@ -29,14 +28,13 @@ flowchart LR
 ## Quick Start
 
 ```bash
-claude         # once: /login, then /exit; setup checks the CLI with this login
-make setup     # free: install the fixture, start it and Phoenix, wait until it passes pre-flight
-make smoke     # paid: one agent trial end to end, about 50k tokens
-# your own experiment
+cp fixture.env.example fixture.env   # set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key, as for the Jaeger AI Assistant demo (scripts/ai-sidecar/goose)
+make setup     # free: install the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
+make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base, on Goose
+make smoke     # paid: one Goose trial end to end; CLIENT=cli runs it on the Claude Code CLI (log in once: claude)
 python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan
 python3 harness/bench.py run harness/experiments/<name>.json            # paid: runs the trials and scores them
 python3 harness/bench.py verify                                         # free: re-scores every run from its raw files
-make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base
 ```
 
 > [!WARNING]

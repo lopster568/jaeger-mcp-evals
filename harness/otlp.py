@@ -75,6 +75,7 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
     sid = lambda i: hashlib.sha256(("%s/%d" % (key, i)).encode()).hexdigest()[:16]
     u = result.get("usage") or {}
     model = next((a["value"]["stringValue"] for a in root_attrs if a["key"] == "model"), "")
+    provider = next((a["value"]["stringValue"] for a in root_attrs if a["key"] == "provider"), "anthropic")
     models = result.get("modelUsage") or {model: {"inputTokens": u.get("input_tokens"), "cacheReadInputTokens": u.get("cache_read_input_tokens"),
                                                   "cacheCreationInputTokens": u.get("cache_creation_input_tokens"),
                                                   "outputTokens": u.get("output_tokens")}}
@@ -84,7 +85,7 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
         read, write, out = n(d, "cacheReadInputTokens"), n(d, "cacheCreationInputTokens"), n(d, "outputTokens")
         prompt_n = n(d, "inputTokens") + read + write
         return ([kv("llm.model_name", m)] if m else []) + [
-            kv("llm.provider", "anthropic"), kv("llm.token_count.prompt", prompt_n), kv("llm.token_count.completion", out),
+            kv("llm.provider", provider), kv("llm.token_count.prompt", prompt_n), kv("llm.token_count.completion", out),
             kv("llm.token_count.total", prompt_n + out), kv("llm.token_count.prompt_details.cache_read", read),
             kv("llm.token_count.prompt_details.cache_write", write)]
 

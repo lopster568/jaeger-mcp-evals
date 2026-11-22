@@ -4,11 +4,15 @@
 
 """Grade an agent's free-text mechanism against a scenario's mechanism_truth.
 
-One pinned model (setting GRADER_MODEL, default claude-fable-5-1; command GRADER_BIN, default claude) with one pinned prompt (grader-prompt.txt, by sha256) labels
-the pair correct, incorrect or unclear through the Claude Code CLI, sandboxed like the agent:
-no tools, no MCP servers, no settings, no session, a temp cwd, no API keys in the environment.
-Every label is cached in <batch>/grades.jsonl, keyed by sha256 of (model, prompt sha256, truth,
-text), so re-scoring reads the cache and never calls the model again.
+One pinned model with one pinned prompt (grader-prompt.txt, by sha256) labels the pair correct,
+incorrect or unclear, through Goose in the pinned image (setting GRADER_CLIENT goose, the default;
+GRADER_PROVIDER and GRADER_MODEL, falling back to GOOSE_PROVIDER and GOOSE_MODEL, no default model)
+or through the Claude Code CLI (GRADER_CLIENT cli; GRADER_MODEL default claude-fable-5-1, command
+GRADER_BIN default claude). Both are sandboxed like the agent: no tools, no MCP servers, no session,
+a temp cwd, the provider key by name only. Every label is cached in <batch>/grades.jsonl, keyed by
+sha256 of the grader's identity, prompt sha256, truth and text, so re-scoring reads the cache and
+never calls the model again. A re-score looks up the grader the batch's manifest recorded
+(batch_grader), not the current setting, so a changed default never leaves an old batch ungraded.
 """
 import hashlib
 import json
@@ -17,17 +21,28 @@ import subprocess
 import tempfile
 
 import config
+import goose_client
 
 HARNESS = os.path.dirname(os.path.abspath(__file__))
 _CFG = config.load()
-GRADER_MODEL = _CFG.get("GRADER_MODEL") or "claude-fable-5-1"  # settings, see fixture.env.example
+
+
+def settings(cfg):
+    """(client, provider, model) from fixture.env's settings; goose has no default model."""
+    client = cfg.get("GRADER_CLIENT") or "goose"
+    return (client, cfg.get("GRADER_PROVIDER") or cfg.get("GOOSE_PROVIDER") or "",
+            cfg.get("GRADER_MODEL") or ("claude-fable-5-1" if client == "cli" else cfg.get("GOOSE_MODEL") or ""))
+
+
+CLIENT, PROVIDER, GRADER_MODEL = settings(_CFG)  # see fixture.env.example
+WARNING = "The grader decides every mechanism score: use the agent's model or a stronger reasoning model."
 PROMPT = os.path.join(HARNESS, "grader-prompt.txt")
 CLAUDE = _CFG.get("GRADER_BIN") or "claude"
 LABELS = ("correct", "incorrect", "unclear")
 SCHEMA = {"type": "object", "properties": {"label": {"type": "string", "enum": list(LABELS)}, "reason": {"type": "string"}},
           "required": ["label", "reason"], "additionalProperties": False}
 # CLAUDE_CODE_PLUGIN_DIRS: the user's own plugins load from it even with --setting-sources "".
-DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_PLUGIN_DIRS")
+DROP_ENV = ("CLAUDECODE", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_PLUGIN_DIRS")
 # Set on every Claude CLI call the harness makes (trials, sandbox probe, grader): no tool-search placeholder tool, no self-update.
 CLIENT_ENV = {"ENABLE_TOOL_SEARCH": "false", "DISABLE_AUTOUPDATER": "1"}
 
@@ -53,8 +68,29 @@ def prompt_sha():
     return hashlib.sha256(prompt_text().encode("utf-8")).hexdigest()
 
 
-def cache_key(truth, text):
-    return hashlib.sha256(json.dumps([GRADER_MODEL, prompt_sha(), truth, text]).encode("utf-8")).hexdigest()
+def current():
+    """The grader identity of the current setting."""
+    return {"client": CLIENT, "provider": None if CLIENT == "cli" else PROVIDER, "model": GRADER_MODEL}
+
+
+def batch_grader(batch_dir):
+    """The grader identity the batch's manifest recorded; a manifest without a client is a cli batch (written before
+    GRADER_CLIENT). None when the batch has no manifest or its manifest names no grader model."""
+    try:
+        with open(os.path.join(batch_dir, "manifest.json"), encoding="utf-8") as f:
+            g = json.load(f).get("grader") or {}
+    except (OSError, ValueError):
+        return None
+    if not g.get("model"):
+        return None
+    return {"client": g.get("client") or "cli", "provider": g.get("provider"), "model": g.get("model")}
+
+
+def cache_key(truth, text, who=None):
+    """cli keys are unchanged since before GRADER_CLIENT; a goose key also holds client and provider."""
+    who = who or current()
+    head = [who["model"]] if who["client"] == "cli" else [who["client"], who["provider"], who["model"]]
+    return hashlib.sha256(json.dumps(head + [prompt_sha(), truth, text]).encode("utf-8")).hexdigest()
 
 
 def user_prompt(truth, text):
@@ -112,10 +148,56 @@ def call_cli(truth, text):
         raise RuntimeError("grader: no valid label (exit %s): %r" % (p.returncode, e))
 
 
+def call_goose(truth, text):
+    """One grader call through goose_client's container, no extensions. The untrusted answer is not recipe text: Goose
+    renders a recipe as a template, so it travels as a file parameter, substituted once (JSON-escaped into the
+    recipe's prompt string), never rendered again. Raises RuntimeError on anything but a valid label."""
+    key = goose_client.KEYS.get(PROVIDER)
+    if not key:
+        raise RuntimeError("grader: provider %r is not one of %s" % (PROVIDER, ", ".join(goose_client.KEYS)))
+    env = child_env(False)
+    env[key] = config.load().get(key, "")  # by name to docker (-e NAME): never argv, never a record
+    answer = json.dumps(user_prompt(truth, text), ensure_ascii=False)[1:-1]
+    for c in "\u2028\u2029\x85":  # YAML line breaks JSON leaves raw
+        answer = answer.replace(c, "\\u%04x" % ord(c))
+    name = "goose-grader-" + hashlib.sha256((truth + text).encode("utf-8")).hexdigest()[:12]
+    with tempfile.TemporaryDirectory() as tmp:
+        work, events = os.path.join(tmp, "goose"), os.path.join(tmp, "events.jsonl")
+        os.mkdir(work, 0o755)
+        for fname, body in (("recipe.yaml", goose_client.build_recipe("", prompt_text(), SCHEMA, None, param="answer")),
+                            ("answer.txt", answer)):
+            with open(os.path.join(work, fname), "w", encoding="utf-8") as f:
+                f.write(body)
+            os.chmod(os.path.join(work, fname), 0o644)
+        argv = goose_client.docker_argv(name, goose_client.docker_desktop(), work, PROVIDER, GRADER_MODEL, "", 3,
+                                        ["--params", "answer=/work/answer.txt"])
+        try:
+            with open(events, "w", encoding="utf-8") as raw, tempfile.TemporaryFile("w+", encoding="utf-8") as err:
+                rc = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=raw, stderr=err, timeout=TIMEOUT_S).returncode
+                err.seek(0)
+                stderr = err.read()
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise RuntimeError("grader: goose did not run: %r" % e)
+        finally:
+            goose_client.remove_container(name)
+        result = goose_client.to_stream(goose_client.read_events(events), stderr, GRADER_MODEL, None, with_tools=False,
+                                        returncode=rc)[-1]
+    try:
+        ans = result["structured_output"]
+        if ans["label"] not in LABELS:
+            raise ValueError(ans["label"])
+        return {"label": ans["label"], "reason": str(ans["reason"]), "cost_usd": result.get("total_cost_usd")}
+    except (ValueError, KeyError, TypeError) as e:
+        raise RuntimeError("grader: no valid label (exit %s): %r %s" % (rc, e, result.get("error") or ""))
+
+
 def grade(batch_dir, truth, text, call=True):
-    """The cached label for (truth, text), else one call_cli (call=True) appended to the cache, else None.
-    Returns {"label", "reason", "cost_usd", "model", "prompt_sha256", "cached"}; cost_usd is None on rows cached before 2026-11-17."""
-    key, path = cache_key(truth, text), os.path.join(batch_dir, "grades.jsonl")
+    """The cached label for (truth, text), else one grader call (call=True) appended to the cache, else None.
+    call=True is bench.py run, which writes the current identity to the manifest first; call=False looks up the grader
+    the batch's manifest recorded. Returns {"label", "reason", "cost_usd", "model", "prompt_sha256", "cached"};
+    cost_usd is None on rows cached before 2026-11-17."""
+    who = current() if call else batch_grader(batch_dir) or current()
+    key, path = cache_key(truth, text, who), os.path.join(batch_dir, "grades.jsonl")
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -124,7 +206,8 @@ def grade(batch_dir, truth, text, call=True):
                     return dict(row, cached=True)
     if not call:
         return None
-    row = dict(call_cli(truth, text), key=key, model=GRADER_MODEL, prompt_sha256=prompt_sha())
+    row = dict((call_cli if CLIENT == "cli" else call_goose)(truth, text), key=key, client=CLIENT,
+               provider=who["provider"], model=GRADER_MODEL, prompt_sha256=prompt_sha())
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
     return dict(row, cached=False)

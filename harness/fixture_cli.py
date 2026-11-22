@@ -7,9 +7,9 @@
   fixture_cli.py setup     tools, fixture, up, phoenix: everything free, in order
   fixture_cli.py tools     the Tools line (after fixture/preflight.sh has checked them)
   fixture_cli.py fixture   clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay
-  fixture_cli.py up        pull missing images, start the demo, wait until the smoke dry run passes pre-flight
+  fixture_cli.py up        pull missing images (and the Goose image), start the demo, wait until it is up
   fixture_cli.py phoenix   start the Phoenix trajectory store and wait until it answers
-  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial
+  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (SMOKE_CLIENT: goose by default, or cli)
   fixture_cli.py down      stop the demo containers, keeping their data
   fixture_cli.py clean     remove the demo containers and network
   fixture_cli.py test      the offline unit tests
@@ -33,14 +33,17 @@ import urllib.request
 
 import bench
 import config
+import goose_client
 from bench import BOLD_RED, CYAN, DIM, GREEN, dur, paint
 
 ROOT = config.ROOT
 LOG = os.path.join(ROOT, ".make.log")
-SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")
+SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")  # run.client cli
+SMOKE_GOOSE = os.path.join("harness", "experiments", "smoke-goose.json")  # generated from SMOKE, git-ignored
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
-# Measured for this smoke trial: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
-SMOKE_SIZE = "about 50k tokens"
+# Measured for the cli smoke trial only: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
+# A Goose trial costs what its provider and model charge; bench.py prints its own expected-cost line.
+SMOKE_SIZES = {"cli": "about 50k tokens", "goose": "cost depends on your provider and model"}
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",
            "jaeger-config.yml": "overlay/jaeger-config.yml",
@@ -48,7 +51,7 @@ OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/com
 COMPOSE = ["docker", "compose", "--env-file", ".env", "--env-file", ".env.override", "-f", "compose.yaml",
            "-f", "compose.full.yaml", "-f", "compose.observability.yaml", "-f", "overlay/compose.overlay.yaml"]
 PULL_TRIES, PULL_BACKOFF_S = 4, 10  # give up after PULL_TRIES attempts in a row with no new image; pulls resume per layer
-READY_BUDGET_S, READY_SLEEP_S, THRASH_STOP = 600, 30, 3  # the ready wait: 10 min, a dry run every 30 s
+READY_BUDGET_S, READY_SLEEP_S = 600, 30  # the ready wait: 10 min, a check every 30 s
 GOTCHAS = ("fixture/FIXTURE.md, Gotchas", "known fixture failures and fixes")
 NAME_W = 13
 
@@ -204,6 +207,43 @@ def host_only(cfg):
     return cfg.get("FIXTURE_HOST_ONLY") == "1"
 
 
+def smoke_client(cfg):
+    return cfg.get("SMOKE_CLIENT") or "goose"
+
+
+def smoke_size(cfg):
+    return SMOKE_SIZES.get(smoke_client(cfg), SMOKE_SIZES["goose"])
+
+
+def goose_needed(cfg):
+    """The Goose image is needed by a goose smoke and by the goose grader (bench.py pre-flight checks both)."""
+    return smoke_client(cfg) == "goose" or cfg.get("GRADER_CLIENT") != "cli"
+
+
+def smoke_file(cfg):
+    """The experiment the ready wait dry-runs and make smoke runs: SMOKE for SMOKE_CLIENT=cli, else SMOKE with
+    Goose's provider and model from GOOSE_PROVIDER and GOOSE_MODEL, as measure.sh writes its pair file."""
+    client, provider, model = smoke_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
+    if client == "cli":
+        return SMOKE
+    if client != "goose":
+        raise Failed("SMOKE_CLIENT is %r, not goose or cli" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose or cli")])
+    if provider not in goose_client.KEYS or not model:
+        raise Failed("GOOSE_PROVIDER or GOOSE_MODEL is not set in fixture.env",
+                     ["GOOSE_PROVIDER must be anthropic or openrouter and GOOSE_MODEL a full model id of it;",
+                      "the key (ANTHROPIC_API_KEY or OPENROUTER_API_KEY) goes in fixture.env too.",
+                      "The Jaeger AI Assistant demo's scripts/ai-sidecar/goose uses the same two settings."],
+                     [("set GOOSE_PROVIDER, GOOSE_MODEL and the key in fixture.env", "then run again"),
+                      ("make smoke CLIENT=cli", "or smoke on the Claude Code CLI")])
+    with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:
+        e = json.load(f)
+    e["run"].update(client="goose", provider=provider, model=model)
+    with open(os.path.join(ROOT, SMOKE_GOOSE), "w", encoding="utf-8") as f:
+        json.dump(e, f, indent=2)
+        f.write("\n")
+    return SMOKE_GOOSE
+
+
 def tools(cfg):
     def mm(v):
         v = v.lstrip("v")
@@ -214,9 +254,21 @@ def tools(cfg):
         versions = ("local docker not running (remote fixture)",)
     else:
         versions = ("docker " + (docker or "?"), "compose " + (compose or "?"))
-    versions += ("python %d.%d" % sys.version_info[:2],) + (
-        () if host_only(cfg) else ("claude " + first_token(["claude", "--version"]),))
-    out(line("ok", "Tools", sep().join(versions) + ("" if host_only(cfg) else ", logged in")))
+    versions += ("python %d.%d" % sys.version_info[:2],) + (() if host_only(cfg) else agent_tools(cfg))
+    out(line("ok", "Tools", sep().join(versions)))
+
+
+def agent_tools(cfg):
+    """The Tools line's agent part: Goose's settings (never the key) when it is the smoke client; claude when
+    installed or used by the cli smoke or grader. Login is not checked here (preflight.sh does)."""
+    parts, p, key = [], cfg.get("GOOSE_PROVIDER", ""), None
+    if smoke_client(cfg) == "goose":
+        key = goose_client.KEYS.get(p)
+        ok = key and cfg.get("GOOSE_MODEL") and cfg.get(key)
+        parts.append("goose %s %s, %s set" % (p, cfg["GOOSE_MODEL"], key) if ok else "goose settings incomplete")
+    if "cli" in (smoke_client(cfg), cfg.get("GRADER_CLIENT")) or shutil.which("claude"):
+        parts.append("claude " + first_token(["claude", "--version"]))
+    return tuple(parts)
 
 
 def demo_dir(cfg):
@@ -302,6 +354,19 @@ def images(d):
     return services
 
 
+def goose_image(cfg):
+    """bench.py's pre-flight needs the pinned Goose image; pull it like the demo's when absent. A FIXTURE_HOST_ONLY host
+    runs no agent, so it never needs it."""
+    if host_only(cfg) or not goose_needed(cfg):
+        return
+    st, image = Step("Goose image", "checking"), goose_client.IMAGE
+    if not subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        return st.ok("present", False)
+    st.text = "pulling " + image.split("@")[0]
+    must(sh(["docker", "pull", image])[0], "docker pull")
+    st.ok("pulled")
+
+
 def containers(d, services):
     st = Step("Containers", "starting %d" % len(services))
     rc, lines = sh(COMPOSE[:2] + ["--progress", "plain"] + COMPOSE[2:] + ["up", "-d"], cwd=d)
@@ -314,29 +379,36 @@ def containers(d, services):
           + (sep() + ", ".join(recreated) + " recreated" if recreated else ""))
 
 
-def si(x):
-    return "%.1fM" % (x / 1e6) if x >= 1e6 else "%dk" % (x // 1000) if x >= 1000 else "%d" % x
-
-
-# A pre-flight blocker is retried until the ready budget runs out, since the fixture is usually still
-# warming up. Only these never are: waiting cannot fix them. "thrash" retries THRASH_STOP times.
-NEVER = [
+# A failed smoke dry run's first FAIL, in short form; the first matching row wins.
+SHORT = [
+    (r"claude is not on PATH", "claude is not on PATH (the cli client needs it)"),
     (r"not logged in|no model request with a JSON body", "claude is not logged in, or its request never arrived"),
+    (r"docker is not on PATH", "docker is not installed, and the Goose client runs in a container"),
+    (r"pinned Goose image is not on this machine", "the pinned Goose image is not on this machine"),
+    (r"(run\.provider|grader provider) is \w+ but \w+ is empty", "the provider's API key is empty in fixture.env"),
+    (r"grader model is empty", "the grader model is empty"),
+    (r"grader provider is '", "the grader provider is not anthropic or openrouter"),
+    (r"GRADER_CLIENT is", "GRADER_CLIENT is not goose or cli"),
     (r"does not accept", "the Claude Code CLI lacks flags the harness passes"),
     (r"leak|name no fault", "a leak check failed"),
     (r"harness trajectories in Jaeger's store", "Jaeger's store holds exported trajectories; restart the jaeger container"),
 ]
-THRASH = r"host busy: ([\d.]+) disk blocks/s"
 TRIES = {
+    r"^claude is not on PATH": ("install the Claude Code CLI, run claude, then /login", "only the cli client needs it; the default smoke runs Goose"),
     r"^claude is": ("claude, then /login", "log the Claude Code CLI in"),
+    r"^docker is not installed": ("install Docker Engine or Docker Desktop", "or GRADER_CLIENT=cli with a cli smoke"),
+    r"^the pinned Goose image": ("docker pull " + goose_client.IMAGE, "the image the Goose client and grader run"),
+    r"^the provider's API key": ("set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in fixture.env", "the key of GOOSE_PROVIDER (or GRADER_PROVIDER)"),
+    r"^the grader model": ("set GRADER_MODEL or GOOSE_MODEL in fixture.env", "a full model id, or GRADER_CLIENT=cli"),
+    r"^the grader provider": ("set GRADER_PROVIDER or GOOSE_PROVIDER in fixture.env", "anthropic or openrouter"),
+    r"^GRADER_CLIENT": ("set GRADER_CLIENT in fixture.env", "goose or cli"),
     r"^the Claude Code CLI": ("claude update", "a CLI that accepts the harness flags"),
-    r"^host thrashing": ("docker stats --no-stream", "find the container reading the disk"),
     r"containers running": ("cd %s && docker compose ps -a", "which container is not up"),
 }
 
 
 def blocker(output):
-    """(short text, retry?, report lines) for a failed dry run, from its first FAIL check (with that
+    """(short text, report lines) for a failed dry run, from its first FAIL check (with that
     check's detail), else bench.py's abort line, else its last line."""
     lines = [l for l in output.splitlines() if l.strip()] or ["no output"]
     i = next((k for k, l in enumerate(lines) if re.match(r"\s*FAIL\s", l) or l.startswith("bench: ")), len(lines) - 1)
@@ -345,56 +417,32 @@ def blocker(output):
     if check:
         report = [mark("fail") + " " + check.group(1)] + ["  " + l.strip() for l in lines[i + 1:i + 7] if l.startswith("        ")]
     detail = "\n".join([first] + report)
-    for pat, short in NEVER:
+    for pat, short in SHORT:
         if re.search(pat, detail):
-            return short, False, report
-    m = re.search(THRASH, detail)
-    if m:
-        return "host thrashing, %s blocks/s read (limit 50k)" % si(float(m.group(1))), "thrash", report
+            return short, report
     text = re.sub(r"^\s*(FAIL\s+|bench: (ABORT - )?)", "", first)
-    return text[:70] + ("..." if len(text) > 70 else ""), True, report
+    return text[:70] + ("..." if len(text) > 70 else ""), report
 
 
 def checks_passed(output):
     return len(re.findall(r"(?m)^\s+ok\s", output))
 
 
-def dry_run():
-    rc, lines = sh(BENCH + ["run", SMOKE, "--dry-run"], cwd=ROOT)
+def dry_run(exp=SMOKE):
+    rc, lines = sh(BENCH + ["run", exp, "--dry-run"], cwd=ROOT)
     return rc, bench.ANSI.sub("", "\n".join(lines))  # FORCE_COLOR reaches the child; the counts and regexes need plain text
 
 
-def preflight_failed(cfg, text, report, prefix=""):
+def preflight_failed(cfg, text, report, exp=SMOKE):
     t = next((t for k, t in TRIES.items() if re.search(k, text)), None)
     tries = [(t[0].replace("%s", cfg["FIXTURE_DEMO_DIR"]), t[1])] if t else [
-        ("python3 harness/bench.py run %s --dry-run" % SMOKE, "the full pre-flight report")]
-    return Failed(prefix + text, ["bench.py pre-flight, last attempt:"] + ["  " + l for l in report], tries)
+        ("python3 harness/bench.py run %s --dry-run" % exp, "the full pre-flight report")]
+    return Failed(text, ["bench.py pre-flight, last attempt:"] + ["  " + l for l in report], tries)
 
 
 def ready(cfg):
-    """FIXTURE.md, Bring up: wait until bench.py's own pre-flight passes, through the smoke dry run."""
-    st, thrash = Step("Ready", "running pre-flight"), 0
-    while True:
-        rc, output = dry_run()
-        if rc == 0:
-            n = checks_passed(output)
-            st.ok("pre-flight %d of %d" % (n, n))
-            return
-        text, retry, report = blocker(output)
-        thrash = thrash + 1 if retry == "thrash" else 0
-        if not retry:
-            raise preflight_failed(cfg, text, report)
-        if thrash >= THRASH_STOP:
-            raise preflight_failed(cfg, text, report, "gave up after %d tries: " % thrash)
-        if time.monotonic() - st.t0 + READY_SLEEP_S > READY_BUDGET_S:
-            raise preflight_failed(cfg, text, report, "gave up after %s: " % st.elapsed())
-        st.text = text
-        time.sleep(READY_SLEEP_S)
-
-
-def ready_host(cfg):
-    """FIXTURE_HOST_ONLY: no agent here, so wait on the fixture alone (MIN_CONTAINERS running, Jaeger answering);
-    bench.py's pre-flight, which needs claude, runs on the agent machine."""
+    """FIXTURE.md, Bring up: wait on the fixture alone (MIN_CONTAINERS running, Jaeger answering), whatever the
+    agent settings; bench.py's pre-flight runs in every bench.py run and in make smoke's dry run."""
     st, why = Step("Ready", "waiting for the fixture"), ""
     while True:
         n = len(sh(["docker", "ps", "-q"], merge=False)[1])
@@ -431,31 +479,42 @@ def phoenix(cfg, d):
     st.ok("trajectory store up")
 
 
+def smoke_ready(cfg):
+    """True when make smoke can start: a cli smoke, or a Goose smoke with provider, model and key set."""
+    key = goose_client.KEYS.get(cfg.get("GOOSE_PROVIDER", ""))
+    return smoke_client(cfg) != "goose" or bool(key and cfg.get("GOOSE_MODEL") and cfg.get(key))
+
+
 def footer(cfg, t0):
     jaeger, phx = config.jaeger_base(cfg), "http://%s:%s" % (cfg["FIXTURE_HOST"], cfg["PHOENIX_PORT"])
     if not TTY:
         out("Ready in %s. Jaeger UI %s  Phoenix %s" % (dur(time.monotonic() - t0), jaeger, phx))
-        out("Next: make smoke    one agent trial, %s" % SMOKE_SIZE)
+        out("Next: make smoke    one agent trial, %s" % smoke_size(cfg))
+        if not smoke_ready(cfg):
+            out("Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env")
         return
     out("\n  " + paint("1", "Ready in %s" % dur(time.monotonic() - t0)) + "\n")
     out("    Jaeger UI   " + jaeger)
     out("    Phoenix     " + phx + "\n")
-    out("  Next: " + paint("1", "make smoke") + "    " + paint(DIM, "one agent trial, %s" % SMOKE_SIZE) + "\n")
+    out("  Next: " + paint("1", "make smoke") + "    " + paint(DIM, "one agent trial, %s" % smoke_size(cfg)) + "\n")
+    if not smoke_ready(cfg):
+        out("  Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env\n")
 
 
 def smoke(cfg):
     """The dry run, a 5 s window to cancel, then bench.py's own run output (this process becomes bench.py)."""
     st = Step("Pre-flight", "dry run")
-    rc, output = dry_run()
+    exp = smoke_file(cfg)
+    rc, output = dry_run(exp)
     if rc:
-        text, _, report = blocker(output)
-        raise preflight_failed(cfg, text, report)
+        text, report = blocker(output)
+        raise preflight_failed(cfg, text, report, exp=exp)
     n = checks_passed(output)
     st.ok("%d of %d%sdry run, nothing spent" % (n, n, sep()), False)
-    with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, exp), encoding="utf-8") as f:
         e = json.load(f)
     pad = "  " if TTY else ""
-    out("\n" + pad + "One agent trial: " + sep().join((e["run"]["model"], "arm " + ", ".join(e["arms"]), SMOKE_SIZE)))
+    out("\n" + pad + "One agent trial: " + sep().join((e["run"]["model"], "arm " + ", ".join(e["arms"]), smoke_size(cfg))))
     if TTY and sys.stdin.isatty():
         for s in range(5, 0, -1):
             sys.stdout.write("\r\x1b[K  Starting in %ds, Ctrl-C to cancel" % s)
@@ -467,7 +526,7 @@ def smoke(cfg):
         time.sleep(5)
     sys.stdout.flush()
     os.chdir(ROOT)
-    os.execv(BENCH[0], BENCH + ["run", SMOKE])
+    os.execv(BENCH[0], BENCH + ["run", exp])
 
 
 def down(cfg, remove=False):
@@ -530,8 +589,10 @@ def main(argv=None):
             fixture(cfg)
         if cmd in ("setup", "up"):
             d = demo_dir(cfg)
-            containers(d, images(d))
-            (ready_host if host_only(cfg) else ready)(cfg)
+            services = images(d)
+            goose_image(cfg)
+            containers(d, services)
+            ready(cfg)
         if cmd in ("setup", "phoenix"):
             phoenix(cfg, demo_dir(cfg))
         if cmd == "setup":

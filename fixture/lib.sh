@@ -1,5 +1,6 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
+# shellcheck shell=bash
 
 # Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example;
 # a variable already in the environment wins.
@@ -12,6 +13,7 @@ for f in "$ROOT/fixture.env" "$ROOT/fixture.env.example"; do
 done
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 TARGET="$FIXTURE_SSH_USER@$FIXTURE_HOST"
+# shellcheck disable=SC2034  # read by the scripts that source this file
 D="${FIXTURE_DEMO_DIR#\~/}"  # absolute, or relative to the home directory
 
 # Commands start in the home directory on the fixture: this machine when FIXTURE_SSH_USER is
@@ -28,4 +30,5 @@ cp_line() {
 }
 
 # The compose invocation the fixture runs under (FIXTURE.md); run it from the demo dir.
+# shellcheck disable=SC2034  # read by the scripts that source this file
 COMPOSE='docker compose --env-file .env --env-file .env.override -f compose.yaml -f compose.full.yaml -f compose.observability.yaml -f overlay/compose.overlay.yaml'

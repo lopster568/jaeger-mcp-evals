@@ -169,8 +169,10 @@ def check_abstain_structured(verdict):
 
 JAEGER_PREFIX = "mcp__jaeger__"
 VERDICT_TOOL = "StructuredOutput"  # the CLI's own tool for the --json-schema answer
-# tool_result text for a name the client does not have (the CLI's)
-REJECTED = ("No such tool available",)
+# tool_result text for a name the client does not have: the CLI's, then Goose's "Tool '<name>' is not available."
+REJECTED = ("No such tool available", "' is not available.")
+# Goose's built-in skill loader, registered on every run (the demo's agent has it too); allowed for client goose, counted.
+GOOSE_SKILL_TOOL = "load_skill"
 
 
 def tools_on(meta):
@@ -195,14 +197,15 @@ def jaeger_names(out_dir, meta, init_tools):
 
 def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_tools):
     """Violations of the trial's sandbox, as strings; empty means sandbox_ok. The init event
-    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (codex lists
+    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (codex and goose list
     no tools), and exactly one MCP server, jaeger (none for an arm with tools
-    off). Every tool_use must name an allowed tool; one the client refused (REJECTED) is
-    attempted_unknown_tool, any other executed_unknown_tool. codex_client's "error" items are
-    not tool calls."""
+    off). Every tool_use must name an allowed tool (load_skill too for goose); one the client refused
+    (REJECTED) is attempted_unknown_tool, any other executed_unknown_tool. codex_client's "error"
+    items are not tool calls."""
     if init is None:
         return ["no_init_event"]
-    out, allowed = [], (allowed_jaeger or set()) | {VERDICT_TOOL}
+    extra = {VERDICT_TOOL} | ({GOOSE_SKILL_TOOL} if client == "goose" else set())
+    out, allowed = [], (allowed_jaeger or set()) | extra
     if "tools" in init and allowed_jaeger is not None:
         got = set(init["tools"] or [])
         out += ["init_tool_extra:%s" % t for t in sorted(got - allowed)]
@@ -214,7 +217,7 @@ def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_t
         name = c["name"]
         if client == "codex" and name == "error":
             continue
-        ok = name in allowed if allowed_jaeger is not None else name == VERDICT_TOOL or is_jaeger_name(name)
+        ok = name in allowed if allowed_jaeger is not None else name in extra or is_jaeger_name(name)
         if not ok:
             r = results_by_id.get(c["id"]) or {}
             kind = "attempted_unknown_tool" if r.get("rejected") else "executed_unknown_tool"
@@ -305,6 +308,9 @@ def score(out_dir, call_grader=False, scenario=None):
     is_jaeger = (lambda n: n in allowed_jaeger) if allowed_jaeger is not None else is_jaeger_name
     calls = [c for c in all_calls if is_jaeger(c["name"])]
     non_jaeger_tool_calls = [c["name"] for c in all_calls if not is_jaeger(c["name"])]
+    # Goose's load_skill can stand in for Jaeger's read_skill on a skill experiment, so each arm shows its count.
+    n_loads = non_jaeger_tool_calls.count(GOOSE_SKILL_TOOL)
+    skill_loads = ["load_skill calls %d" % n_loads] if n_loads else []
     sandbox_violations = sandbox_check(init, all_calls, results_by_id, allowed_jaeger, meta.get("client"), tools_on(meta))
     results = [results_by_id[c["id"]] for c in calls if c["id"] in results_by_id]
 
@@ -399,7 +405,7 @@ def score(out_dir, call_grader=False, scenario=None):
         "effort": meta.get("effort"),
         "compaction_events": compaction_events,
         "client_version": (init or {}).get("claude_code_version") or (init or {}).get("client_version"),
-        "client_limits": client_limits(final, meta, compaction_events, retries) + [
+        "client_limits": client_limits(final, meta, compaction_events, retries) + skill_loads + [
             "plugin loaded: %s" % p.get("name") for p in (init or {}).get("plugins") or [] if p.get("path") != "builtin"],
         "sandbox_ok": not breached,
         "sandbox_violations": sandbox_violations,

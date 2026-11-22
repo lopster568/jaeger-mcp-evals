@@ -54,18 +54,8 @@ GIT = """#!/bin/bash
 CLAUDE = """#!/bin/bash
 echo "2.1.300 (Claude Code)"
 """
-BENCH_OK = """import sys
-print("Pre-flight")
-for c in ("claude accepts the flags", "fixture reachable", "jaeger image x"): print("  ok    " + c)
-"""
 
 # Real bench.py run --dry-run output tails (Log.check and die() formats), screen lines on a pipe.
-THRASH = """Pre-flight
-  ok    claude accepts the flags the harness passes
-  FAIL  host busy: 1525860.5 disk blocks/s read (limit 50000)
-        pre-flight: vmstat bi mean(non-first)=1525860.5 loadavg=17.83 16.74 14.14
-        fix: wait for other jobs on this machine to finish, then run again
-bench: ABORT - stopped before any trial; the fault flag was not touched"""
 TOOLS = """Pre-flight
   ok    jaeger image quay.io/jaegertracing/jaeger:2.20.0 sha256:9ae01775e2b2
         arms here: baseline
@@ -117,41 +107,31 @@ class Blockers(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             fc.set_mode(io.StringIO())
 
-    def test_anything_else_retries(self):
-        self.assertEqual(fc.blocker(TOOLS)[:2], ("could not capture tools/list: transport error talking to MCP server: U...", True))
-        self.assertEqual(fc.blocker(CONTAINERS)[:2], ("only 7 containers running (need >= 19)", True))
-        text, retry, _ = fc.blocker("bench: ABORT - something new and unexpected")
-        self.assertEqual((text, retry), ("something new and unexpected", True))
+    def test_first_failure_is_shortened(self):
+        self.assertEqual(fc.blocker(TOOLS)[0], "could not capture tools/list: transport error talking to MCP server: U...")
+        self.assertEqual(fc.blocker(CONTAINERS)[0], "only 7 containers running (need >= 19)")
+        self.assertEqual(fc.blocker("bench: ABORT - something new and unexpected")[0], "something new and unexpected")
 
     def test_coloured_dry_run_output(self):  # FORCE_COLOR reaches the child; dry_run() strips it before counting
-        with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m host busy: 9.0 disk blocks/s read (limit 1)"])):
+        with mock.patch.object(fc, "sh", return_value=(1, ["\x1b[32m  ok   \x1b[0m a", "\x1b[1;31m  FAIL \x1b[0m only 7 containers running (need >= 19)"])):
             rc, output = fc.dry_run()
-        self.assertEqual((fc.checks_passed(output), fc.blocker(output)[1]), (1, "thrash"))
+        self.assertEqual((fc.checks_passed(output), fc.blocker(output)[0]), (1, "only 7 containers running (need >= 19)"))
 
-    def test_thrash_is_its_own_kind(self):
-        text, retry, report = fc.blocker(THRASH)
-        self.assertEqual((text, retry), ("host thrashing, 1.5M blocks/s read (limit 50k)", "thrash"))
-        self.assertEqual([bench.ANSI.sub("", l) for l in report], ["FAIL host busy: 1525860.5 disk blocks/s read (limit 50000)",
-                                  "  pre-flight: vmstat bi mean(non-first)=1525860.5 loadavg=17.83 16.74 14.14",
-                                  "  fix: wait for other jobs on this machine to finish, then run again"])
+    def test_claude_rows_for_the_cli_path(self):
+        self.assertEqual(fc.blocker(PROBE)[0], "claude is not logged in, or its request never arrived")
+        self.assertEqual(fc.blocker(FLAGS)[0], "the Claude Code CLI lacks flags the harness passes")
 
-    def test_unfixable_by_waiting_stops(self):
-        self.assertEqual(fc.blocker(PROBE)[:2], ("claude is not logged in, or its request never arrived", False))
-        self.assertEqual(fc.blocker(FLAGS)[:2], ("the Claude Code CLI lacks flags the harness passes", False))
-
-    def test_a_store_holding_trajectories_is_not_retried(self):
-        out = "  FAIL  no harness trajectories in Jaeger's store\n        fix: restart the jaeger container"
-        self.assertEqual(fc.blocker(out)[1], False)
-
-    def test_ready_stops_after_three_thrashing_attempts(self):
-        with mock.patch.object(fc, "dry_run", return_value=(1, THRASH)) as dr, mock.patch.object(fc, "READY_SLEEP_S", 0), \
-                contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(fc.Failed) as e:
-                fc.ready({"FIXTURE_DEMO_DIR": "~/demo"})
-            fc.STEP.fail("")
-        self.assertEqual(dr.call_count, 3)
-        self.assertTrue(e.exception.text.startswith("gave up after 3 tries: host thrashing"))
-        self.assertEqual(e.exception.tries[0][0], "docker stats --no-stream")
+    def test_a_goose_preflight_failure_gets_its_fix_line(self):
+        cfg = {"FIXTURE_DEMO_DIR": "~/demo"}
+        for bench_line, short, fix in (
+                ("bench: the pinned Goose image is not on this machine; nothing was touched", "the pinned Goose image is not on this machine", "docker pull " + fc.goose_client.IMAGE),
+                ("bench: docker is not on PATH; the goose client and the goose grader run Goose in a container", "docker is not installed, and the Goose client runs in a container", "install Docker Engine or Docker Desktop"),
+                ("bench: run.provider is openrouter but OPENROUTER_API_KEY is empty in fixture.env; nothing was touched", "the provider's API key is empty in fixture.env", "set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in fixture.env"),
+                ("bench: the grader model is empty; nothing was touched", "the grader model is empty", "set GRADER_MODEL or GOOSE_MODEL in fixture.env"),
+                ("bench: GRADER_CLIENT is 'x', not goose or cli; nothing was touched", "GRADER_CLIENT is not goose or cli", "set GRADER_CLIENT in fixture.env")):
+            text, report = fc.blocker(bench_line)
+            self.assertEqual(text, short)
+            self.assertEqual(fc.preflight_failed(cfg, text, report).tries[0][0], fix)
 
 
 class Pull(unittest.TestCase):
@@ -195,7 +175,6 @@ class Setup(unittest.TestCase):
         for name, text in (("docker", DOCKER), ("git", GIT), ("claude", CLAUDE)):
             (t / "bin" / name).write_text(text)
             (t / "bin" / name).chmod(0o755)
-        (t / "bench.py").write_text(BENCH_OK)
         (t / "root").mkdir()
         (t / "root" / "fixture").symlink_to(REPO / "fixture")
         (t / "root" / "fixture.env.example").write_text((REPO / "fixture.env.example").read_text())
@@ -204,7 +183,9 @@ class Setup(unittest.TestCase):
         self.t = t
         self.env = {"PATH": str(t / "bin") + os.pathsep + os.environ["PATH"], "FIXTURE_SSH_USER": "",
                     "FIXTURE_HOST": "localhost", "FIXTURE_DEMO_DIR": str(t / "demo"),
-                    "PHOENIX_PORT": str(self.srv.server_address[1])}
+                    "PHOENIX_PORT": str(self.srv.server_address[1]), "JAEGER_UI_PORT": str(self.srv.server_address[1]),
+                    "JAEGER_BASE_PATH": "", "MIN_CONTAINERS": "3", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model:free",
+                    "OPENROUTER_API_KEY": "k", "SMOKE_CLIENT": "", "GRADER_CLIENT": "goose"}
 
     def tearDown(self):
         self.srv.shutdown()
@@ -214,8 +195,7 @@ class Setup(unittest.TestCase):
     def setup_run(self, **env):
         buf = io.StringIO()
         with mock.patch.dict(os.environ, dict(self.env, **env)), contextlib.redirect_stdout(buf), \
-                mock.patch.multiple(fc, ROOT=str(self.t / "root"), LOG=str(self.t / "root" / ".make.log"),
-                                    BENCH=[sys.executable, str(self.t / "bench.py")]):
+                mock.patch.multiple(fc, ROOT=str(self.t / "root"), LOG=str(self.t / "root" / ".make.log")):
             rc = fc.main(["setup"])
         return rc, buf.getvalue()
 
@@ -224,13 +204,14 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         lines = text.splitlines()
         self.assertEqual(lines[0], "jaeger-mcp-evals setup")
-        self.assertRegex(lines[1], r"^ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+, claude 2\.1\.300, logged in$")
+        self.assertRegex(lines[1], r"^ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+, goose openrouter vendor/model:free, OPENROUTER_API_KEY set, claude 2\.1\.300$")
         self.assertEqual(lines[2], "ok    Demo         OpenTelemetry Demo 3.0.0 cloned, overlay installed, 0s")
         self.assertIn("ok    Images       2 pulled, 1 present, 0s", lines)
         self.assertIn("ok    Containers   3 started, flagd recreated, 0s", lines)
-        self.assertIn("ok    Ready        pre-flight 3 of 3, 0s", lines)
+        self.assertIn("ok    Goose image  pulled, 0s", lines)
+        self.assertIn("ok    Ready        3 containers running, Jaeger answers, 0s", lines)
         self.assertIn("ok    Phoenix      trajectory store up, 0s", lines)
-        self.assertEqual(lines[-1], "Next: make smoke    one agent trial, about 50k tokens")
+        self.assertEqual(lines[-1], "Next: make smoke    one agent trial, cost depends on your provider and model")
         self.assertTrue((self.t / "demo" / "overlay" / "compose.overlay.yaml").is_file())
         self.assertTrue((self.t / "demo" / "overlay" / "demo.flagd.json.pristine").is_file())
         self.assertNotIn("Pulling", text)  # third-party output stays in the log
@@ -239,6 +220,34 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertIn("ok    Demo         OpenTelemetry Demo 3.0.0, overlay up to date", text)
         self.assertIn("ok    Images       3 present", text)
+        self.assertIn("ok    Goose image  pulled", text)  # the shim has no goose image present either time
+
+    def test_goose_image_present_is_not_pulled(self):
+        rc, text = self.setup_run(FAKE_PRESENT=fc.goose_client.IMAGE)
+        self.assertEqual(rc, 0, text)
+        self.assertIn("ok    Goose image  present", text)
+
+    def test_host_only_needs_no_goose_image(self):
+        rc, text = self.setup_run(FIXTURE_HOST_ONLY="1")
+        self.assertEqual(rc, 0, text)
+        self.assertNotIn("Goose image", text)
+
+    def test_cli_smoke_and_grader_need_no_goose_image(self):
+        rc, text = self.setup_run(SMOKE_CLIENT="cli", GRADER_CLIENT="cli")
+        self.assertEqual(rc, 0, text)
+        self.assertNotIn("Goose image", text)
+        self.assertIn("claude 2.1.300", text)
+        self.assertTrue(text.splitlines()[-1].endswith("one agent trial, about 50k tokens"), text)
+
+    def test_goose_contributor_without_claude_or_settings_still_reaches_ready(self):
+        with mock.patch("shutil.which", return_value=None):  # no claude anywhere on PATH
+            rc, text = self.setup_run(GOOSE_PROVIDER="", GOOSE_MODEL="")
+        self.assertEqual(rc, 0, text)
+        self.assertRegex(text, r"ok    Tools        .*goose settings incomplete\n")
+        self.assertNotIn("claude", text.split("Demo")[0])
+        self.assertNotIn("logged in", text)
+        self.assertIn("ok    Ready        3 containers running, Jaeger answers", text)
+        self.assertEqual(text.splitlines()[-1], "Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env")
 
     def test_pull_is_retried_then_succeeds(self):
         with mock.patch.object(fc, "PULL_BACKOFF_S", 0):
@@ -262,13 +271,10 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("FAIL  Images       docker compose pull failed", text)
 
-    def test_host_only_setup_skips_claude_and_waits_on_the_fixture(self):
-        (self.t / "bin" / "claude").unlink()
-        rc, text = self.setup_run(FIXTURE_HOST_ONLY="1", JAEGER_UI_PORT=self.env["PHOENIX_PORT"],
-                                  JAEGER_BASE_PATH="", MIN_CONTAINERS="3")
+    def test_host_only_setup_shows_no_agent_tools(self):
+        rc, text = self.setup_run(FIXTURE_HOST_ONLY="1")
         self.assertEqual(rc, 0, text)
         self.assertRegex(text, r"ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+\n")
-        self.assertIn("ok    Ready        3 containers running, Jaeger answers", text)
 
     def test_tools_line_without_docker_prints_no_junk_version(self):
         # on WSL without Docker the shim prints "The command 'docker' could not be found..." and first_token returns "The"
@@ -288,6 +294,49 @@ class Setup(unittest.TestCase):
         self.assertIn("    Error response from daemon: port is already allocated", text)
         self.assertIn("  Log:  ", text)
         self.assertNotIn("Ready", text)
+
+
+class SmokeFile(unittest.TestCase):
+    """smoke_file: which experiment the smoke runs, and the stop at once on missing Goose settings."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        exp = pathlib.Path(self.tmp.name, "harness", "experiments")
+        exp.mkdir(parents=True)
+        (exp / "smoke-paymentfailure.json").write_text((REPO / fc.SMOKE).read_text())
+        p = mock.patch.object(fc, "ROOT", self.tmp.name)
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(self.tmp.cleanup)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            fc.set_mode(io.StringIO())
+
+    def test_goose_default_writes_the_goose_copy(self):
+        path = fc.smoke_file({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m/x:free"})
+        self.assertEqual(path, fc.SMOKE_GOOSE)
+        e = json.loads(pathlib.Path(self.tmp.name, path).read_text())
+        base = json.loads((REPO / fc.SMOKE).read_text())
+        self.assertEqual(e["run"], dict(base["run"], client="goose", provider="openrouter", model="m/x:free"))
+        self.assertEqual({k: v for k, v in e.items() if k != "run"}, {k: v for k, v in base.items() if k != "run"})
+
+    def test_cli_option_selects_the_cli_file(self):
+        self.assertEqual(fc.smoke_file({"SMOKE_CLIENT": "cli"}), fc.SMOKE)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, fc.SMOKE_GOOSE)))
+
+    def test_empty_goose_settings_stop_at_once(self):
+        for cfg in ({}, {"GOOSE_PROVIDER": "openrouter"}, {"GOOSE_MODEL": "m"}, {"GOOSE_PROVIDER": "x", "GOOSE_MODEL": "m"}):
+            with self.assertRaises(fc.Failed) as e:
+                fc.smoke_file(cfg)
+            self.assertIn("GOOSE_PROVIDER or GOOSE_MODEL", e.exception.text)
+            self.assertTrue(any("OPENROUTER_API_KEY" in l and "scripts/ai-sidecar" not in l for l in e.exception.block))
+            self.assertTrue(any("scripts/ai-sidecar/goose" in l for l in e.exception.block))
+
+    def test_smoke_stops_before_any_dry_run(self):
+        buf = io.StringIO()
+        with mock.patch.object(fc, "dry_run") as dr, contextlib.redirect_stdout(buf), self.assertRaises(fc.Failed):
+            fc.smoke({})
+        fc.STEP.fail("")
+        dr.assert_not_called()
 
 
 if __name__ == "__main__":

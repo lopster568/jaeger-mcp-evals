@@ -24,7 +24,7 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote=""):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader=""):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
                 shim = os.path.join(d, name)
@@ -34,7 +34,7 @@ class Preflight(unittest.TestCase):
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%d:16686"\n' % port)
             env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
-                       FIXTURE_SSH_USER=remote)
+                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader)
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
 
     def test_busy_port_fails_unless_stack_is_ours(self):
@@ -52,17 +52,20 @@ class Preflight(unittest.TestCase):
 
     def test_host_only_skips_the_claude_checks(self):
         self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="1").returncode, 0)
-        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="0").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="0", grader="cli").returncode, 1)
 
     def test_remote_fixture_skips_docker_and_ports_on_the_agent_machine(self):
         # FIXTURE_SSH_USER set: Docker and the demo's ports live on the fixture host; here docker always fails
         self.assertEqual(self.run_script(1, jaeger=False, remote="u").returncode, 0)
         self.assertEqual(self.run_script(1, jaeger=False).returncode, 0)  # local: the working docker shim passes
 
-    def test_logged_out_claude_fails(self):
-        r = self.run_script(1, jaeger=False, logged_in=False)
+    def test_logged_out_claude_fails_only_for_the_cli_grader(self):
+        r = self.run_script(1, jaeger=False, logged_in=False, grader="cli")
         self.assertEqual(r.returncode, 1)
         self.assertIn("claude is not logged in", r.stdout)
+        r = self.run_script(1, jaeger=False, logged_in=False, grader="goose")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("needed only for run.client cli or GRADER_CLIENT=cli", r.stdout)
 
 
 if __name__ == "__main__":

@@ -7,14 +7,14 @@ See README.md, fixture/FIXTURE.md, docs/RECORD.md (recorded keys) and docs/TUNIN
 Python 3.11+, bash, git, Docker with Compose v2 and one agent client
 (Clients below), here or on a remote host over ssh (clone this repo there, fixture/FIXTURE.md).
 Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.env` (copy of
-`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys and Codex command.
+`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings for `make measure` and the Codex command.
 
 > [!WARNING]
 > Every trial is one paid agent run: 20 for 10 per arm with two arms.
 
 ## Before you start
 
-1. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first; `make up` waits up to 10 minutes, Phoenix one to two more; traces show after a few minutes of load.
+1. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `GOOSE_PROVIDER`, `GOOSE_MODEL` and that provider's key in fixture.env (the demo's settings) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=cli` on the Claude Code CLI (`SMOKE_CLIENT` in fixture.env sets the default).
    ```bash
    make setup
    ```
@@ -55,9 +55,9 @@ verbatim except that the long `hypothesis` is elided:
 | Key | Values | Meaning |
 |---|---|---|
 | `name`, `version`, `scenario`, `hypothesis` | string, `2`, a `harness/scenarios/` name, text | records land in `records/<name>/`; the hypothesis states what the thresholds test |
-| `run.client`, `run.provider` | `cli` `codex`; `null` | Clients below; provider must be null |
+| `run.client`, `run.provider` | `goose` `cli` `codex`; `anthropic` `openrouter` or `null` | Clients below; provider is required for goose, null for the others |
 | `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged; an alias is warned, not pinned |
-| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), tool calls (codex); budget has no effect with codex |
+| `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), Goose turns (goose), tool calls (codex); budget has no effect with goose or codex |
 | `run.n_per_arm`, `run.seed`, `run.client_version` | integer, integer or `null`, optional string | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only) |
 | `arms.<arm>` | `prompt`, `image`, `tools` | a `harness/prompts/<prompt>.txt` name; the Jaeger image it needs; `false` removes the MCP server |
 | `baseline_arm`, `thresholds`, `status` | arm or `null`; object; text | what `judge.py` compares against; see Thresholds; a batch refuses while `status` contains `DRAFT` |
@@ -67,7 +67,8 @@ verbatim except that the long `hypothesis` is elided:
 
 ### Clients
 
-- `cli`: the logged-in `claude`, no API key in its environment.
+- `goose`, the default for `make measure`: Goose v1.57.0 via `harness/goose_client.py`, in the image the Jaeger AI Assistant demo pins (`IMAGE` in that file, recorded as `goose_image`), started through the demo's `goose-without-extensions.sh` (`harness/goose/`), one container per trial, removed when the trial ends or is stopped. Needs Docker, the image (pre-flight prints the `docker pull` line), `run.provider` `anthropic` or `openrouter` and that provider's key (`ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`) in fixture.env; the key reaches only this client, by name. `make measure` takes provider and model from `GOOSE_PROVIDER` and `GOOSE_MODEL`, and `--client cli` runs it on the Claude Code CLI instead (`bash harness/measure.sh <checkout> <scenario> --client cli`). `run.effort` is sent as `GOOSE_THINKING_EFFORT` (`xhigh` is Goose's alias of `max`). Goose's own `load_skill` tool (two built-in skills, no network) is allowed and each call is listed under Client limits, since on a skill experiment it can stand in for Jaeger's `read_skill`. Goose calls Jaeger's shared MCP endpoint, as the other clients do; the demo's gateway path (a chat turn through `/api/ai/chat` with the UI tools) is not measured. On Docker Desktop (macOS, Windows) the container's host network is the Docker VM's, so the client drops `--network host` and sends a loopback MCP host to `host.docker.internal`; keep `FIXTURE_HOST=localhost` there.
+- `cli`: the logged-in `claude`, no API key in its environment. Every published result ran on it.
 - `codex`: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
 
 ## Run a batch
@@ -121,7 +122,7 @@ A batch aborts before the flag flips on:
 - Client version: optional `run.client_version`, for an exact re-run of a published result. Pre-flight aborts before anything is touched only when the experiment file sets it and `claude --version` reports another version; `make measure` does not write it. Without it the version is recorded and `judge.py` refuses a pair whose arms differ.
 - The harness does not pin the CLI, it checks it. Every Claude CLI call it makes (trials, the sandbox probe, the grader) runs with `ENABLE_TOOL_SEARCH=false` and `DISABLE_AUTOUPDATER=1`; stage 1 prints the installed version; `judge.py` refuses a pair whose trials ran on different client versions (exit 2, both versions named) and, for batches that recorded none, says "client version not recorded" and judges. Keep each pair on one client.
 - Before spending, stage 1 prints `expected cost about X USD per arm of n trials (recorded max Y per trial, cap Z)`, X being n times the recorded median, from the recorded trials of the scenario on the model (`records/**/scores.jsonl`), or `expected cost unknown`. It WARNs, without stopping, when the recorded max is at least half of `run.max_budget_usd`: such a trial can be cut off and return no verdict. There is no turn warning: the CLI's `num_turns` is not what `--max-turns` counts (a trial recorded 40 turns under `--max-turns 30` and ended success). Multiply by the number of arms the batch runs.
-- Grader: `GRADER_MODEL` (default `claude-fable-5-1`) run by `GRADER_BIN` (default `claude`, any command that accepts the Claude Code CLI's `-p` arguments), both in `fixture.env`.
+- Grader: `GRADER_CLIENT` in `fixture.env`, `goose` (default) or `cli`. `goose` runs `goose run` in the same pinned image as the agent, no extensions, with `GRADER_PROVIDER` and `GRADER_MODEL`, falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`; there is no default model, and pre-flight refuses without a provider, its key and a model. `cli` runs `GRADER_MODEL` (default `claude-fable-5-1`) through `GRADER_BIN` (default `claude`, any command that accepts the Claude Code CLI's `-p` arguments). Stage 1 prints one line naming the agent model and the grader model, as a WARNING when they differ: The grader decides every mechanism score: use the agent's model or a stronger reasoning model. Re-scoring (`verify`, `band`, `judge`) reads grades by the grader the batch's manifest recorded, so changing the setting never leaves an old batch ungraded; grades from different graders are not comparable.
 - Jaeger: `make measure` runs the Jaeger built from your checkout (main lineage); the fixture itself boots the pinned release quay.io/jaegertracing/jaeger:2.23.0 and no other release is used or tested. `bench.py` reads traces from Jaeger's `/api/v3/traces` endpoint.
 - Cost of the published pair (skill-callee-down-cli55, 10 trials per arm, sum of `cost_usd` in scores.jsonl): baseline 0.77 USD, variant 2.77 USD. Wall time from the first cell start to the last cell end in cells.jsonl: about 4.5 minutes and 8 minutes. The grader adds one call per trial.
 - For a pull request, attach `RESULT.md` (from `judge.py`) and the batch directory `bench.py run` copied to `records/<name>/`.

@@ -63,6 +63,7 @@ from time import sleep
 
 import config
 import fixture_leak
+import goose_client
 import grade
 import judge
 import otlp
@@ -75,10 +76,11 @@ ROOT = config.ROOT
 SYSTEM_PROMPT = os.path.join(HARNESS, "system-prompt.txt")
 VERDICT_SCHEMA = os.path.join(HARNESS, "verdict-schema.json")
 CODEX_CLIENT = os.path.join(HARNESS, "codex_client.py")
+GOOSE_CLIENT = os.path.join(HARNESS, "goose_client.py")
 RECORDS = os.path.join(ROOT, "records")
 DIST = os.path.join(ROOT, "dist")
-# cli: the Claude Code CLI; codex: the OpenAI Codex CLI.
-CLIENTS = ("cli", "codex")
+# cli: the Claude Code CLI; codex: the OpenAI Codex CLI; goose: Goose in the AI Assistant demo's pinned image.
+CLIENTS = ("cli", "codex", "goose")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new"]
 TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
@@ -88,7 +90,8 @@ TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
 CELL_TIMEOUT_S = 1800
 BASELINE_LOOKBACK_S = 600
 HISTORY_POLICY = {"cli": {"harness_truncation": "none", "cli_autocompact": "default"},
-                  "codex": {"harness_truncation": "none", "cli_autocompact": "unknown"}}
+                  "codex": {"harness_truncation": "none", "cli_autocompact": "unknown"},
+                  "goose": {"harness_truncation": "none", "cli_autocompact": "default"}}
 NOT_RECORDED = "not recorded"
 # Runs on the fixture with the flag file, flag and variant as argv; the script
 # itself arrives on stdin, so no value is ever spliced into Python source.
@@ -607,14 +610,20 @@ def passes_to_read(scored):
     return rows
 
 
-def expected_cost(scenario, model, n_per_arm, max_budget, records=None):
-    """Pre-flight lines about spend, from the recorded trials of this scenario on this model:
+def batch_client(bdir):
+    m = os.path.join(bdir, "manifest.json")
+    return load_json(m).get("client", "cli") if os.path.isfile(m) else None  # no manifest: no known client
+
+
+def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="cli"):
+    """Pre-flight lines about spend, from the recorded trials of this scenario on this model and client:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
-    rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True) for r in read_jsonl(f)
-            if r.get("scenario_used") == scenario and r.get("model_asserted") == model]
+    rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True)
+            if batch_client(os.path.dirname(f)) == client
+            for r in read_jsonl(f) if r.get("scenario_used") == scenario and r.get("model_asserted") == model]
     costs = sorted(r["cost_usd"] for r in rows if isinstance(r.get("cost_usd"), (int, float)))
     if not costs:
-        return [(True, "expected cost unknown: no recorded trial of %s on %s" % (scenario, model))]
+        return [(True, "expected cost unknown: no recorded %s trial of %s on %s" % (client, scenario, model))]
     med, top = statistics.median(costs), costs[-1]
     out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
             % (n_per_arm * med, n_per_arm, top, max_budget))]
@@ -960,6 +969,11 @@ def claude_missing_flags():
 def client_argv(a, prompt_file, mcp_config, trial):
     if a.client == "cli":
         return claude_argv(a, prompt_file, mcp_config)
+    if a.client == "goose":
+        return [sys.executable, GOOSE_CLIENT, "--provider", a.provider, "--model", a.model, "--effort", a.effort,
+                "--max-turns", str(a.max_turns), "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT,
+                "--schema-file", VERDICT_SCHEMA, "--mcp-config", mcp_config, "--out-dir", trial] + (
+                    ["--client-version", a.client_pre] if a.client_pre else [])
     return [sys.executable, CODEX_CLIENT, "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns),
             "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT, "--schema-file", VERDICT_SCHEMA,
             "--mcp-config", mcp_config, "--out-dir", trial, "--codex-bin", a.codex_bin]
@@ -1066,7 +1080,10 @@ def load_experiment(path):
     r = exp["run"]
     keys(r, "run", RUN_KEYS, optional=("client_version", "bill_api_key"))
     check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
-    check(r["provider"] is None, "run.provider must be null")
+    if r["client"] == "goose":
+        check(r["provider"] in goose_client.KEYS, "run.provider must be one of %s for client goose" % ", ".join(goose_client.KEYS))
+    else:
+        check(r["provider"] is None, "run.provider must be null for client %s" % r["client"])
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
     check(r["effort"] in EFFORTS, "run.effort must be one of %s" % ", ".join(EFFORTS))
     check(is_int(r["max_turns"]) and r["max_turns"] > 0, "run.max_turns must be a positive integer")
@@ -1153,6 +1170,24 @@ def run(a, cfg):
            "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
+    def goose_docker():
+        """docker and the pinned Goose image, for the goose client and the goose grader; None or die()'s result."""
+        log.detail("== pre-flight: goose (docker, %s) ==" % goose_client.IMAGE)
+        docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+        if not shutil.which("docker"):
+            return die("docker is not on PATH; the goose client and the goose grader run Goose in a container",
+                       fix="install Docker, or pick another run.client and set GRADER_CLIENT=cli")
+        try:
+            r = docker("info", "--format", "{{.OperatingSystem}}")
+        except subprocess.TimeoutExpired:
+            r = subprocess.CompletedProcess([], 1, "", "no answer in 60 s")
+        if r.returncode != 0:
+            return die("docker info failed: %s" % r.stderr.strip(), fix="start the Docker daemon (or Docker Desktop), then run again")
+        log.check(True, "docker on %s" % r.stdout.strip())
+        if docker("image", "inspect", goose_client.IMAGE).returncode != 0:
+            return die("the pinned Goose image is not on this machine; nothing was touched", fix="docker pull " + goose_client.IMAGE)
+        log.check(True, "Goose image %s" % goose_client.IMAGE.split("@")[0])
+
     if a.client == "cli":
         log.detail("== pre-flight: cli client (claude flags) ==")
         found = claude_missing_flags()
@@ -1180,31 +1215,69 @@ def run(a, cfg):
             return die("%s is not on PATH; install the OpenAI Codex CLI (or the wrapper named by CODEX_BIN) and "
                        "log in, or pick another run.client" % a.codex_bin)
         log.check(True, "%s on PATH" % a.codex_bin)
+    elif a.client == "goose":
+        bad = goose_docker()
+        if bad:
+            return bad
+        key = goose_client.KEYS[a.provider]
+        if not cfg.get(key):
+            return die("run.provider is %s but %s is empty in fixture.env; nothing was touched" % (a.provider, key),
+                       fix="set %s in fixture.env" % key)
+        log.check(True, "provider %s, %s set" % (a.provider, key))
+    version_cmd = {"cli": ["claude", "--version"], "codex": [a.codex_bin, "--version"],
+                   "goose": ["docker", "run", "--rm", "--entrypoint", "goose", goose_client.IMAGE, "--version"]}[a.client]
     try:
-        client_pre = subprocess.run(["claude" if a.client == "cli" else a.codex_bin, "--version"],
-                                    capture_output=True, text=True,
+        client_pre = subprocess.run(version_cmd, capture_output=True, text=True,
                                     stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
     except (OSError, subprocess.TimeoutExpired):
         client_pre = None
+    a.client_pre = client_pre  # goose_client records it in the stream: the image is pinned, so it holds per trial
+    if a.client == "goose" and not client_pre:  # the one container start before the paid trials
+        return die("the Goose image reported no version (docker run --entrypoint goose ... --version); nothing was touched",
+                   fix="docker run --rm --entrypoint goose %s --version" % goose_client.IMAGE)
     want = exp["run"].get("client_version")
     if want:
-        # "2.1.283 (Claude Code)", "codex-cli 0.153.2": the first token starting with a digit
+        # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "1.57.0" (goose): the first token starting with a digit
         got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
         pre["client_version"] = "PASS" if got == want else "FAIL"
         if not log.check(got == want, "%s %s" % ("claude CLI" if a.client == "cli" else a.client + " client", want)):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"),
                        fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
-    try:
-        grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
-                                    stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
-    except (OSError, subprocess.TimeoutExpired):
-        grader_cli = None
-    log.detail("pre-flight: grader CLI %s" % grader_cli)
-    if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
-        return die("ABORT - the mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
-                   fix="install the Claude Code CLI and log in (run `claude` once)")
-    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget):
+    grader_cli = None
+    if grade.CLIENT not in ("goose", "cli"):
+        return die("GRADER_CLIENT is %r, not goose or cli; nothing was touched" % grade.CLIENT, fix="set GRADER_CLIENT in fixture.env")
+    if grade.CLIENT == "cli":
+        try:
+            grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
+                                        stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        log.detail("pre-flight: grader CLI %s" % grader_cli)
+        if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
+            return die("ABORT - the cli mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
+                       fix="install the Claude Code CLI and log in (run `claude` once), or unset GRADER_CLIENT to grade through Goose")
+    else:
+        bad = goose_docker() if a.client != "goose" else None
+        if bad:
+            return bad
+        if grade.PROVIDER not in goose_client.KEYS:
+            return die("the grader provider is %r, not %s; nothing was touched" % (grade.PROVIDER, " or ".join(goose_client.KEYS)),
+                       fix="set GRADER_PROVIDER (or GOOSE_PROVIDER) in fixture.env, or GRADER_CLIENT=cli")
+        gkey = goose_client.KEYS[grade.PROVIDER]
+        if not cfg.get(gkey):
+            return die("the grader provider is %s but %s is empty in fixture.env; nothing was touched" % (grade.PROVIDER, gkey),
+                       fix="set %s in fixture.env" % gkey)
+        if not grade.GRADER_MODEL:
+            return die("the grader model is empty; nothing was touched",
+                       fix="set GRADER_MODEL (or GOOSE_MODEL) in fixture.env to a full model id of %s, or set GRADER_CLIENT=cli" % grade.PROVIDER)
+        log.check(True, "grader goose %s %s, %s set" % (grade.PROVIDER, grade.GRADER_MODEL, gkey))
+    line = "agent model %s, grader model %s. %s" % (a.model, grade.GRADER_MODEL, grade.WARNING)
+    if a.model == grade.GRADER_MODEL:
+        log.check(True, line)
+    else:
+        log.sub("WARNING: " + line)
+    for ok, text in expected_cost(a.scenario, a.model, a.n_per_arm, budget, client=a.client):
         if ok:
             log.check(True, text)
         else:
@@ -1460,7 +1533,8 @@ def run(a, cfg):
         c["order_index"] = i
     hashes = {name: sha256_file(os.path.join(HARNESS, name)) for name in
               ("bench.py", "tools.py", "fixture_leak.py", "score.py", "system-prompt.txt", "verdict-schema.json",
-               "mcp_client.py", "codex_client.py", "leak-words.txt", "judge.py", "grade.py", "grader-prompt.txt")}
+               "mcp_client.py", "codex_client.py", "goose_client.py", "goose/goose-without-extensions.sh", "leak-words.txt",
+               "judge.py", "grade.py", "grader-prompt.txt")}
     hashes["scenario_file"] = sha256_file(sf)
     for arm in arms:
         hashes["prompts/%s.txt" % prompt_for[arm]] = sha256_file(prompt_file[arm])
@@ -1487,7 +1561,9 @@ def run(a, cfg):
     manifest = {"scenario": a.scenario, "batch_id": batch_id, "n_per_arm": a.n_per_arm, "arms": arms, "seed": seed,
                 "order": order, "file_hashes_sha256": hashes, "system_under_test": sut, "tools_list_sha256": tools_sha,
                 "instructions_sha256": instructions_sha, "tools_list_path": "tools.json" if tools_text else None,
-                "grader": {"model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"], "cli_version": grader_cli}}
+                "grader": dict({"client": grade.CLIENT, "model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"]},
+                               **({"cli_version": grader_cli} if grade.CLIENT == "cli" else
+                                  {"provider": grade.PROVIDER, "image": goose_client.IMAGE}))}
     # ponytail: arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.
     if len(arms) == 1:
@@ -1497,6 +1573,8 @@ def run(a, cfg):
     manifest.update(common)
     if a.bill_api_key:
         manifest["billing"] = "ANTHROPIC_API_KEY"
+    if a.client == "goose":  # a constant in goose_client.py, so both arms of a pair run the same image by construction
+        manifest["goose_image"] = goose_client.IMAGE
     manifest["experiment"] = dict(common["experiment"], content=exp)
     if not a.dry_run:
         write_json(os.path.join(bdir, "manifest.json"), manifest)
@@ -1792,7 +1870,7 @@ META_KEYS = (
     "system_under_test", "fixture_changes", "fixture_ok")
 
 
-SECRET_KEYS = ("ANTHROPIC_API_KEY",)
+SECRET_KEYS = ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY")
 
 
 def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_url, cfg, expected_restarts,
@@ -1826,12 +1904,15 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     env = grade.child_env(a.client == "cli")
     if a.bill_api_key:
         env.update(secrets or {})  # environment only: never argv, never a record
+    if a.client == "goose":  # the provider's key only, read by `docker run -e NAME`; never argv, never a record
+        key = goose_client.KEYS[a.provider]
+        env[key] = cfg.get(key, "")
     stream = os.path.join(trial, "stream.jsonl")
     before = container_snapshot(cfg)
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory() as work, open(stream, "w") as so, open(os.path.join(trial, "stderr.txt"), "w") as se:
         try:
-            # codex_client.py writes stream.jsonl itself (--out-dir), so its stdout goes with stderr.
+            # codex_client.py and goose_client.py write stream.jsonl themselves (--out-dir), so their stdout goes with stderr.
             p = subprocess.Popen(argv, cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=so if a.client == "cli" else se,
                                  stderr=se)
         except OSError as e:
@@ -1845,15 +1926,13 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
                         break
                     except subprocess.TimeoutExpired:
                         if time.monotonic() - t0 > CELL_TIMEOUT_S:
-                            p.kill()
-                            p.wait()
+                            stop(p, a.client == "goose")
                             se.write("bench: cell killed after %d s (CELL_TIMEOUT_S)\n" % CELL_TIMEOUT_S)
                             rc = 124
                             break
                         tick()
             except BaseException:  # an interrupt must not leave the agent running
-                p.kill()
-                p.wait()
+                stop(p, a.client == "goose")
                 raise
     with open(os.path.join(trial, "exit.txt"), "w") as f:
         f.write("exit=%d\n" % rc)
@@ -1864,6 +1943,19 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     return {"order_index": oi, "arm": arm, "trial_index": c["trial_index"], "model": a.model,
             "out_dir": name, "trial_exit_code": rc, "wall_time_s": meta["wall_time_s"],
             "started_utc": meta["started_utc"], "ended_utc": meta["ended_utc"], "failed": rc != 0}
+
+
+def stop(p, graceful):
+    """Kill a trial's client; graceful (goose_client) gets SIGTERM and 30 s first, to remove its container."""
+    if graceful:
+        p.terminate()
+        try:
+            p.wait(timeout=30)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    p.kill()
+    p.wait()
 
 
 def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
@@ -2129,7 +2221,7 @@ PACK_PATTERNS = ("claude.ai/code/session", "Claude-Session:")
 
 def pack_members(batches):
     """(arcname, bytes) for every file of every batch, sorted; arcname is <scenario>/<batch-id>/<path>.
-    mcp.json carries the real fixture URL by design: its url becomes the host-free :<port><path>.
+    mcp.json and goose/recipe.yaml carry the real fixture URL by design: it becomes the host-free :<port><path>.
     batch.log (the operator log: ssh target, fixture URLs, absolute paths by design) stays out."""
     for scenario, bdir in batches:
         files = []
@@ -2145,6 +2237,12 @@ def pack_members(batches):
                     if srv.get("url"):
                         srv["url"] = config.host_free(srv["url"])
                 data = (json.dumps(doc, indent=2) + "\n").encode()
+            if arc.endswith("/goose/recipe.yaml"):  # JSON text (goose_client.build_recipe)
+                doc = json.loads(data)
+                for ext in doc.get("extensions") or []:
+                    if ext.get("uri"):
+                        ext["uri"] = config.host_free(ext["uri"])
+                data = (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode()
             yield arc, data
 
 
@@ -2246,7 +2344,7 @@ def export(batch_dir, endpoint, cfg, out=print):
                       if isinstance(e, dict)]
             attrs = {"experiment": exp, "batch_id": m["batch_id"], "scenario": m["scenario"], "arm": row["arm"],
                      "trial_index": meta["trial_index"], "model": (meta.get("observed") or {}).get("model") or meta["model_requested"],
-                     "client": meta["client"], "verdict": row.get("verdict") or "ERROR"}
+                     "client": meta["client"], "provider": meta.get("provider") or "anthropic", "verdict": row.get("verdict") or "ERROR"}
             prompt = read_text(os.path.join(trial, "prompt.txt")) if os.path.exists(os.path.join(trial, "prompt.txt")) else ""
             t0 = int(datetime.strptime(meta["started_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()) * 10**9
             trial_spans = otlp.trace_spans("%s/%s/%s" % (m["scenario"], m["batch_id"], row["dir"]), events, t0,

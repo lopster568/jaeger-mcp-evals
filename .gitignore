@@ -7,3 +7,4 @@ __pycache__/
 runs/
 dist/
 .make.log
+harness/experiments/smoke-goose.json
