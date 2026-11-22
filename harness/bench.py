@@ -1426,7 +1426,8 @@ def run(a, cfg):
     if not log.check(rc == 0, "demo telemetry names no fault"):
         if rc == 2:  # fixture_leak read no traces: an unreachable or just-emptied store, not a leak
             return die("ABORT - the fixture leak scan read no traces from Jaeger; nothing was touched",
-                       fix="if Jaeger was just recreated, wait a few minutes for traffic, then run again")
+                       fix="check Jaeger answers at FIXTURE_HOST (the line above names the error); if it was just "
+                           "recreated, wait a few minutes for traffic, then run again")
         return die("ABORT - the demo serves telemetry that names a flag; nothing was touched",
                    fix="apply fixture/apply-deflag.sh, then run again")
     log.detail("bench: pre-flight PASS")

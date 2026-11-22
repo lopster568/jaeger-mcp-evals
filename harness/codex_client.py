@@ -15,6 +15,7 @@ streamable HTTP form (`codex mcp add --help`, confirmed with `codex mcp get --js
 value fails to load); `--disable <feature>` names are from `codex features list`.
 `-c mcp_servers.jaeger.default_tools_approval_mode="approve"` is from 0.159.0 (values auto, prompt,
 writes, approve): without it 0.159.0 answers every MCP call "requires approval, but approval policy is never".
+Checked on 0.159.0 only; whether an older codex loads the key is not checked.
 Not from help, unverified: `-c model_reasoning_effort`. codex exec has no system
 prompt flag, so the system prompt is folded ahead of the prompt, and no turn cap, so
 this wrapper stops codex after --max-turns tool calls.
@@ -104,7 +105,6 @@ def codex_argv(codex_bin, model, effort, schema_file, url):
     c_pairs = ["-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
                "-c", 'model_reasoning_effort="%s"' % effort]
     if url:
-        # codex 0.159.0 refuses an MCP call under approval_policy never unless the server's tools are pre-approved
         c_pairs += ["-c", 'mcp_servers.jaeger.url="%s"' % url, "-c", 'mcp_servers.jaeger.default_tools_approval_mode="approve"']
     argv = [codex_bin] + c_pairs + ["exec", "--json", "--ephemeral", "--skip-git-repo-check",
             "--ignore-user-config", "--ignore-rules", "--color", "never", "-s", "read-only",
