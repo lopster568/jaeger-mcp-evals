@@ -581,7 +581,7 @@ class TestBatch(BenchCase):
         goose = {"client": "goose", "provider": "openrouter", "model": "m"}
         self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
         self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
-        self.assertEqual(self.run_batch(1, "--dry-run", run=goose), 1)
+        self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY=""), 1)  # "": a filled fixture.env must not leak in
         self.assertIn("OPENROUTER_API_KEY is empty in fixture.env", self.err)
         self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_GOOSE_NO_VERSION="1"), 1)
         self.assertIn("the Goose image reported no version", self.err)
