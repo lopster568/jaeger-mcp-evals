@@ -63,6 +63,7 @@ class TestCodexBatch(BenchCase):
         argv = calls[0]["argv"]
         self.assertEqual(argv[argv.index("--output-schema") + 1], bench.VERDICT_SCHEMA)
         self.assertIn('mcp_servers.jaeger.url="%s"' % url, argv)
+        self.assertIn('mcp_servers.jaeger.default_tools_approval_mode="approve"', argv)
         self.assertEqual(argv[argv.index("-m") + 1], "gpt-t")
         self.assertIn(text("system-prompt.txt"), calls[0]["stdin"])
         self.assertFalse(calls[0]["api_key"])
