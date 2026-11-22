@@ -1424,7 +1424,10 @@ def run(a, cfg):
     rc = fixture_leak.scan_live(list(pristine_doc["flags"]), 300, out=log.detail)
     pre["fixture_leak_baseline"] = "PASS" if rc == 0 else "FAIL"
     if not log.check(rc == 0, "demo telemetry names no fault"):
-        return die("ABORT - the demo serves telemetry that names a flag (or Jaeger was unreadable); nothing was touched",
+        if rc == 2:  # fixture_leak read no traces: an unreachable or just-emptied store, not a leak
+            return die("ABORT - the fixture leak scan read no traces from Jaeger; nothing was touched",
+                       fix="if Jaeger was just recreated, wait a few minutes for traffic, then run again")
+        return die("ABORT - the demo serves telemetry that names a flag; nothing was touched",
                    fix="apply fixture/apply-deflag.sh, then run again")
     log.detail("bench: pre-flight PASS")
 

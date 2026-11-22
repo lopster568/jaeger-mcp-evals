@@ -577,6 +577,12 @@ class TestBatch(BenchCase):
         self.assertEqual((s["verdict"], s["sandbox_ok"], s["call_sequence"], s["client_version"]),
                          ("ABSTAIN", True, ["get_services"], "1.57.0"))
 
+    def test_fixture_leak_abort_says_which(self):
+        for rc, said in ((1, "the demo serves telemetry that names a flag"), (2, "the fixture leak scan read no traces")):
+            with mock.patch.object(bench.fixture_leak, "scan_live", lambda *a, rc=rc, **k: rc):
+                self.assertEqual(self.run_batch(1, "--dry-run"), 1)
+            self.assertIn(said, self.err)
+
     def test_goose_needs_its_image_and_key(self):
         goose = {"client": "goose", "provider": "openrouter", "model": "m"}
         self.assertEqual(self.run_batch(1, "--dry-run", run=goose, OPENROUTER_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
