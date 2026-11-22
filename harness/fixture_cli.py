@@ -577,6 +577,8 @@ def main(argv=None):
     if cmd in ("setup", "fixture") and not os.path.isfile(os.path.join(ROOT, "fixture.env")):
         shutil.copyfile(os.path.join(ROOT, "fixture.env.example"), os.path.join(ROOT, "fixture.env"))
     cfg = config.load(ROOT)
+    if cfg.get("FIXTURE_BIND"):
+        os.environ.setdefault("FIXTURE_BIND", cfg["FIXTURE_BIND"])  # compose reads it from the environment
     try:
         if cmd == "test":
             return test()

@@ -19,7 +19,8 @@ D="${FIXTURE_DEMO_DIR#\~/}"  # absolute, or relative to the home directory
 # Commands start in the home directory on the fixture: this machine when FIXTURE_SSH_USER is
 # empty, else the ssh host. fx_line CMD prints the shell line that runs CMD there; fx runs it.
 fx_line() {
-  if [ -z "$FIXTURE_SSH_USER" ]; then printf 'cd ~ && %s' "$1"; else printf 'ssh %s %s %q' "$SSH_OPTS" "$TARGET" "$1"; fi
+  if [ -z "$FIXTURE_SSH_USER" ]; then printf 'cd ~ && %s' "$1"
+  else printf 'ssh %s %s %q' "$SSH_OPTS" "$TARGET" "${FIXTURE_BIND:+export FIXTURE_BIND=$FIXTURE_BIND; }$1"; fi
 }
 fx() { bash -c "$(fx_line "$1")"; }
 # cp_line SRC... DEST prints the cp (or scp) line that copies local files to DEST on the fixture.
