@@ -43,4 +43,4 @@ fi
 
 echo "== waiting 4 minutes for fresh traces, then scanning what the fixture serves =="
 sleep 240
-python3 "$HERE/../harness/fixture_leak.py" --live --lookback-s 200
+"${PYTHON:-python3}" "$HERE/../harness/fixture_leak.py" --live --lookback-s 200

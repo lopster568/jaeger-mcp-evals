@@ -40,20 +40,6 @@ DISABLE = ("shell_tool", "apps", "plugins", "multi_agent", "image_generation", "
            "computer_use", "in_app_browser", "view_image", "sleep_tool", "goals", "tool_suggest")
 
 
-def mcp_url(config_path, server):
-    with open(config_path, encoding="utf-8") as f:
-        cfg = json.load(f)
-    servers = cfg.get("mcpServers") or {}
-    if not servers:
-        return None  # the notools arm: no MCP server, no tools
-    entry = servers.get(server)
-    if not entry or not entry.get("url"):
-        raise ValueError("mcp config %s has no mcpServers.%s.url" % (config_path, server))
-    if entry.get("type") not in (None, "http", "streamable-http"):
-        raise ValueError("mcp server %s has type %r; only streamable HTTP is supported" % (server, entry.get("type")))
-    return entry["url"]
-
-
 _TYPES = {
     "object": dict, "array": list, "string": str, "boolean": bool,
     "null": type(None),
@@ -144,7 +130,7 @@ def main(argv=None):
     ap.add_argument("--max-turns", type=int, default=30)
     ap.add_argument("--codex-bin", default="codex", help="command that runs the Codex CLI, e.g. a proxy wrapper")
     a = ap.parse_args(argv)
-    url = mcp_url(a.mcp_config, "jaeger")
+    url = config.mcp_config_url(a.mcp_config, "jaeger")
     argv = codex_argv(a.codex_bin, a.model, a.effort, a.schema_file, url)
     with open(a.system_prompt_file, encoding="utf-8") as f:
         prompt = f.read().rstrip("\n") + "\n\n"

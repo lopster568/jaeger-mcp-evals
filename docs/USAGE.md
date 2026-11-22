@@ -7,7 +7,7 @@ See README.md, fixture/FIXTURE.md, docs/RECORD.md (recorded keys) and docs/TUNIN
 Python 3.11+, bash, git, Docker with Compose v2 and one agent client
 (Clients below), here or on a remote host over ssh (clone this repo there, fixture/FIXTURE.md).
 Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.env` (copy of
-`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings for `make measure` and the Codex command.
+`fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings (`GOOSE_PROVIDER`, `GOOSE_MODEL`: read by `make measure`, `make smoke` and as the grader's fallback) and the Codex command.
 
 > [!WARNING]
 > Every trial is one paid agent run: 20 for 10 per arm with two arms.
@@ -22,7 +22,7 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 ## The experiment file
 
 `harness/experiments/<name>.json` is the complete configuration of a batch; copy one for your
-own runs. Every key is required except `run.client_version`; unknown keys are refused. Below is `skill-callee-down-cli55.json`,
+own runs. Every key is required except `run.client_version` and `run.bill_api_key`; unknown keys are refused. Below is `skill-callee-down-cli55.json`,
 verbatim except that the long `hypothesis` is elided:
 
 ```json
@@ -52,13 +52,15 @@ verbatim except that the long `hypothesis` is elided:
 }
 ```
 
+This is the `cli` shape; a `goose` file sets `"client": "goose"` with `run.provider` and `run.model` (see `harness/experiments/smoke-paymentfailure.json`, which `make smoke` copies that way).
+
 | Key | Values | Meaning |
 |---|---|---|
 | `name`, `version`, `scenario`, `hypothesis` | string, `2`, a `harness/scenarios/` name, text | records land in `records/<name>/`; the hypothesis states what the thresholds test |
 | `run.client`, `run.provider` | `goose` `cli` `codex`; `anthropic` `openrouter` or `null` | Clients below; provider is required for goose, null for the others |
 | `run.model`, `run.effort` | full id; `low` `medium` `high` `xhigh` `max` | the id is sent unchanged; an alias is warned, not pinned |
 | `run.max_turns`, `run.max_budget_usd` | positive integer, positive number | CLI turns (cli), Goose turns (goose), tool calls (codex); budget has no effect with goose or codex |
-| `run.n_per_arm`, `run.seed`, `run.client_version` | integer, integer or `null`, optional string | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only) |
+| `run.n_per_arm`, `run.seed`, `run.client_version`, `run.bill_api_key` | integer, integer or `null`, optional string, optional boolean | trials per arm; `null` draws and records a seed; when set, the batch refuses unless the client reports that version (exact re-runs only); `true` (client `cli` only) makes the cli agent and the cli grader bill `ANTHROPIC_API_KEY` instead of the login |
 | `arms.<arm>` | `prompt`, `image`, `tools` | a `harness/prompts/<prompt>.txt` name; the Jaeger image it needs; `false` removes the MCP server |
 | `baseline_arm`, `thresholds`, `status` | arm or `null`; object; text | what `judge.py` compares against; see Thresholds; a batch refuses while `status` contains `DRAFT` |
 
@@ -68,7 +70,7 @@ verbatim except that the long `hypothesis` is elided:
 ### Clients
 
 - `goose`, the default for `make measure`: Goose v1.57.0 via `harness/goose_client.py`, in the image the Jaeger AI Assistant demo pins (`IMAGE` in that file, recorded as `goose_image`), started through the demo's `goose-without-extensions.sh` (`harness/goose/`), one container per trial, removed when the trial ends or is stopped. Needs Docker, the image (pre-flight prints the `docker pull` line), `run.provider` `anthropic` or `openrouter` and that provider's key (`ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`) in fixture.env; the key reaches only this client, by name. `make measure` takes provider and model from `GOOSE_PROVIDER` and `GOOSE_MODEL`, and `--client cli` runs it on the Claude Code CLI instead (`bash harness/measure.sh <checkout> <scenario> --client cli`). `run.effort` is sent as `GOOSE_THINKING_EFFORT` (`xhigh` is Goose's alias of `max`). Goose's own `load_skill` tool (two built-in skills, no network) is allowed and each call is listed under Client limits, since on a skill experiment it can stand in for Jaeger's `read_skill`. Goose calls Jaeger's shared MCP endpoint, as the other clients do; the demo's gateway path (a chat turn through `/api/ai/chat` with the UI tools) is not measured. On Docker Desktop (macOS, Windows) the container's host network is the Docker VM's, so the client drops `--network host` and sends a loopback MCP host to `host.docker.internal`; keep `FIXTURE_HOST=localhost` there.
-- `cli`: the logged-in `claude`, no API key in its environment. Every published result ran on it.
+- `cli`: the logged-in `claude`, no API key in its environment unless `run.bill_api_key` is true (then `ANTHROPIC_API_KEY` is billed). Every published result ran on it.
 - `codex`: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
 
 ## Run a batch
@@ -112,26 +114,25 @@ A batch aborts before the flag flips on:
 | Cause | Detail |
 |---|---|
 | No arm matches | only arms whose `image` equals `docker inspect jaeger` run; run other images as separate batches |
-| Description mismatch | an arm whose image record has a `descriptions` key must serve every `tools/list` description exactly as that file under `harness/experiments/descriptions/`; absent or null is recorded only |
 | Instructions mismatch | an arm whose image record has an `instructions` key must serve the MCP `instructions` string equal (trimmed) to that file under `harness/experiments/instructions/`; absent or null is recorded only (`instructions_sha256` in the manifest) |
 | Failed gate | leak scan, readiness, oracle (docs/SCENARIOS.md) or sandbox probe; `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
 
 ## Pins, cost and what to attach
 
 - Agent model: `run.model`, by full id. With the `cli` client the batch stops after a trial whose stream reports another model (`model_asserted` in scores.jsonl), and the pair is discarded.
-- Client version: optional `run.client_version`, for an exact re-run of a published result. Pre-flight aborts before anything is touched only when the experiment file sets it and `claude --version` reports another version; `make measure` does not write it. Without it the version is recorded and `judge.py` refuses a pair whose arms differ.
+- Client version: optional `run.client_version`, for an exact re-run of a published result. Pre-flight aborts before anything is touched only when the experiment file sets it and the chosen client (`claude`, `codex` or the Goose image) reports another version; `make measure` does not write it. Without it the version is recorded and `judge.py` refuses a pair whose arms differ.
 - The harness does not pin the CLI, it checks it. Every Claude CLI call it makes (trials, the sandbox probe, the grader) runs with `ENABLE_TOOL_SEARCH=false` and `DISABLE_AUTOUPDATER=1`; stage 1 prints the installed version; `judge.py` refuses a pair whose trials ran on different client versions (exit 2, both versions named) and, for batches that recorded none, says "client version not recorded" and judges. Keep each pair on one client.
 - Before spending, stage 1 prints `expected cost about X USD per arm of n trials (recorded max Y per trial, cap Z)`, X being n times the recorded median, from the recorded trials of the scenario on the model (`records/**/scores.jsonl`), or `expected cost unknown`. It WARNs, without stopping, when the recorded max is at least half of `run.max_budget_usd`: such a trial can be cut off and return no verdict. There is no turn warning: the CLI's `num_turns` is not what `--max-turns` counts (a trial recorded 40 turns under `--max-turns 30` and ended success). Multiply by the number of arms the batch runs.
-- Grader: `GRADER_CLIENT` in `fixture.env`, `goose` (default) or `cli`. `goose` runs `goose run` in the same pinned image as the agent, no extensions, with `GRADER_PROVIDER` and `GRADER_MODEL`, falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`; there is no default model, and pre-flight refuses without a provider, its key and a model. `cli` runs `GRADER_MODEL` (default `claude-fable-5-1`) through `GRADER_BIN` (default `claude`, any command that accepts the Claude Code CLI's `-p` arguments). Stage 1 prints one line naming the agent model and the grader model, as a WARNING when they differ: The grader decides every mechanism score: use the agent's model or a stronger reasoning model. Re-scoring (`verify`, `band`, `judge`) reads grades by the grader the batch's manifest recorded, so changing the setting never leaves an old batch ungraded; grades from different graders are not comparable.
+- Grader: `GRADER_CLIENT` in `fixture.env`, `goose` (default) or `cli`. `goose` runs `goose run` in the same pinned image as the agent, no extensions, with `GRADER_PROVIDER` and `GRADER_MODEL`, falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`; there is no default model, and pre-flight refuses without a provider, its key and a model. `cli` runs `GRADER_MODEL` (default `claude-fable-5-1`, the only grader model validated, and on the cli grader only) through `GRADER_BIN` (default `claude`, any command that accepts the Claude Code CLI's `-p` arguments). Stage 1 prints one line naming the agent model and the grader model, as a WARNING when they differ: The grader decides every mechanism score: use the agent's model or a stronger reasoning model. Re-scoring (`verify`, `band`, `judge`) reads grades by the grader the batch's manifest recorded, so changing the setting never leaves an old batch ungraded; grades from different graders are not comparable.
 - Jaeger: `make measure` runs the Jaeger built from your checkout (main lineage); the fixture itself boots the pinned release quay.io/jaegertracing/jaeger:2.23.0 and no other release is used or tested. `bench.py` reads traces from Jaeger's `/api/v3/traces` endpoint.
 - Cost of the published pair (skill-callee-down-cli55, 10 trials per arm, sum of `cost_usd` in scores.jsonl): baseline 0.77 USD, variant 2.77 USD. Wall time from the first cell start to the last cell end in cells.jsonl: about 4.5 minutes and 8 minutes. The grader adds one call per trial.
 - For a pull request, attach `RESULT.md` (from `judge.py`) and the batch directory `bench.py run` copied to `records/<name>/`.
 
 ## Measure a change
 
-`harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name>`) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `merge-base HEAD upstream/main` (else `origin/main`, else `--base`) as the base, builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial, asks for a y/N, then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
+`harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|cli] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=cli]`) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `--base` as the base when given, else `merge-base HEAD upstream/main` (else `origin/main`), builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial and commits it with the two image records, signed off, asks for a y/N, then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
 
-Cost: 2 x n trials (default 10 per arm, claude-sonnet-5-5), measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial. `--dry-run` checks and prints every step without building, swapping or running.
+Cost: 2 x n trials (default 10 per arm). With `--client cli` the model is claude-sonnet-5-5, measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial; on Goose the cost depends on `GOOSE_MODEL` (stage 1 of `bench.py` prints the expected cost). `--dry-run` checks and prints every step without building, swapping or running.
 
 For a pull request attach `records/<experiment>/RESULT.md` and the two batch directories under `records/<experiment>/`.
 

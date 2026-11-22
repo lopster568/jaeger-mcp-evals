@@ -19,8 +19,9 @@
                                   POST the batch's trajectories to Phoenix (<URL>/v1/traces), after a leak scan
 
 The experiment file (harness/experiments/<name>.json, docs/USAGE.md) is the complete
-configuration of a batch. fixture.env (harness/config.py) holds only where the fixture
-runs and the API keys. Records follow docs/RECORD.md (schema v5).
+configuration of a batch. fixture.env (harness/config.py) holds this machine's settings:
+where the fixture runs, the API keys, the grader and the client binaries. Records follow
+docs/RECORD.md (schema v5).
 
 run exit codes: 0 done (or dry run / first-only), 1 bad experiment file, pre-flight or
 setup failure (nothing ran), 4 aborted after 3 consecutive cell failures, 5 the flag was not
@@ -469,7 +470,7 @@ def oracle(scenario, cfg, out=print):
     text, n = "", 0
     per_trace = {}  # trace id -> output of the calls made for it; "$span_id" expands from it
     try:
-        s = MCPClient(config.mcp_url(cfg), timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
+        s = MCPClient(config.mcp_url(cfg), "jaeger-ai-evals-oracle", timeout=20.0, client_version="1")
         s.initialize()
         # jaeger#10073 renamed search_traces to find_traces; jaeger#10083 made find_traces take only `sql`.
         schemas = {t["name"]: t.get("inputSchema") or {} for t in s.list_tools()}
@@ -508,7 +509,7 @@ def oracle_warning(scenario, version, image, tool_names, message):
     def url(msg):
         body = "scenario: %s (version %s)\njaeger image: %s\nserved tools: %s\noracle: FAIL - %s" % (
             scenario, version, image, ", ".join(sorted(tool_names)), msg)
-        return "https://github.com/lopster568/jaeger-mcp-evals/issues/new?" + urllib.parse.urlencode(
+        return "https://github.com/jaegertracing/jaeger-ai-evals/issues/new?" + urllib.parse.urlencode(
             {"title": "oracle fails on %s: %s" % (image, scenario), "body": body})
     shown, cut = message, message
     while len(url(cut)) > 6000 and cut:  # cut the error text, never the structure
@@ -526,7 +527,7 @@ def store_has_harness(mcp_url, tool_list):
     if "get_services" not in [t["name"] for t in tool_list]:
         return None
     try:
-        c = MCPClient(mcp_url, timeout=20.0, client_name="jaeger-mcp-evals-harness-capture-tools", client_version="1")
+        c = MCPClient(mcp_url, "jaeger-ai-evals-store-check", timeout=20.0, client_version="1")
         c.initialize()
         r = c.call_tool("get_services", {})
     except Exception:  # a transport failure or a reply that is not MCP: the check is skipped, never the run
@@ -627,7 +628,7 @@ def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="
     med, top = statistics.median(costs), costs[-1]
     out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial, cap %g)"
             % (n_per_arm * med, n_per_arm, top, max_budget))]
-    if top >= 0.5 * max_budget:
+    if client == "cli" and top >= 0.5 * max_budget:  # goose and codex get no budget cap
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
     return out
@@ -1127,7 +1128,7 @@ def run(a, cfg):
         return die("experiment status is still DRAFT; set it to CONFIRMED before running it")
     # The file's run block is the only source of these settings.
     vars(a).update(exp["run"], scenario=exp["scenario"], experiment=exp["name"])
-    a.bill_api_key = exp["run"].get("bill_api_key", False)  # cli and grader bill ANTHROPIC_API_KEY, not the plan
+    a.bill_api_key = exp["run"].get("bill_api_key", False)  # the cli agent and a cli grader bill ANTHROPIC_API_KEY, not the plan
     a.max_budget_usd = str(a.max_budget_usd)
     budget = float(a.max_budget_usd)
     a.codex_bin = cfg.get("CODEX_BIN") or "codex"
@@ -1167,7 +1168,7 @@ def run(a, cfg):
 
     # ---- pre-flight (read-only) ----
     pre = {"store_clean": None, "leak": None, "readiness": None, "containers": None, "baseline_traces": None,
-           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None, "client": None,
+           "fixture_leak_baseline": None, "fixture_leak_under_fault": None, "oracle": None, "oracle_message": None,
            "client_version": None, "sandbox_probe": None, "leak_rendered": None, "thrash": None,
            "restarted_before_run": None}
     def goose_docker():
@@ -1206,7 +1207,8 @@ def run(a, cfg):
                            fix="set ANTHROPIC_API_KEY in fixture.env, or set run.bill_api_key to false in the experiment file")
             grade.API_KEY = cfg["ANTHROPIC_API_KEY"]  # environment only: never argv, never a record
             grade.BILLING_FAILED = False
-            log.check(True, "agent and grader bill ANTHROPIC_API_KEY")
+            log.check(True, "agent and grader bill ANTHROPIC_API_KEY" if grade.CLIENT == "cli" else
+                      "agent bills ANTHROPIC_API_KEY (the %s grader bills its provider's key)" % grade.CLIENT)
         elif cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
             log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
     elif a.client == "codex":
@@ -1331,7 +1333,7 @@ def run(a, cfg):
     git = lambda *args: subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True).stdout.strip()
     harness_sha, harness_dirty = git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--", "harness", "fixture"))
 
-    # Tool list the model will see, and the pre-registered description check.
+    # Tool list the model will see.
     # mcp_url (host included) is for the live connection only; mcp_endpoint (host-free)
     # is what gets recorded, since FIXTURE_HOST must never land in records/.
     mcp_url = config.mcp_url(cfg) if any_tools else None
@@ -1339,26 +1341,21 @@ def run(a, cfg):
     tool_list = tools_text = tools_sha = instructions = instructions_sha = None
     desc = {}
     for arm in arms:
-        f = ins = None
+        ins = None
         base = exp["baseline_arm"]
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
-            # A variant image's record (experiments/images/*.json, matched by tag) may name the
-            # descriptions it serves: a file under descriptions/. Absent or null is recorded only.
-            # Its "instructions" key likewise names a file under instructions/ the served MCP
-            # instructions string must equal; absent or null is recorded only.
+            # A variant image's record (experiments/images/*.json, matched by tag) may name a file under
+            # instructions/ the served MCP instructions string must equal; absent or null is recorded only.
             rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
                         if r.get("tag") == image_for[arm]), {})
-            name = rec.get("descriptions")
-            f = os.path.join(HARNESS, "experiments", "descriptions", name) if name else None
-            f = f if f and os.path.isfile(f) else None
             ins = rec.get("instructions")
             ins = os.path.join(HARNESS, "experiments", "instructions", ins) if ins else None
-        desc[arm] = {"file": repo_relpath(f) if f else None, "sha256": sha256_file(f) if f else None,
-                     "check": "compared" if f else "recorded_only" if tools_for[arm] else "no_tools", "path": f,
+        # file and sha256 stay null: the record schema keeps the removed description check's keys
+        desc[arm] = {"file": None, "sha256": None, "check": "recorded_only" if tools_for[arm] else "no_tools",
                      "instructions_path": ins}
     if not any_tools:
-        log.detail("pre-flight: no arm here has tools - no MCP server configured; tools/list capture, description check and oracle skipped")
-        log("  " + paint(DIM, "skip  no arm here has tools: tools/list, description check and oracle"))
+        log.detail("pre-flight: no arm here has tools - no MCP server configured; tools/list capture and oracle skipped")
+        log("  " + paint(DIM, "skip  no arm here has tools: tools/list and oracle"))
     else:
         log.detail("== pre-flight: capture MCP tools/list (%s) ==" % mcp_url)
         try:
@@ -1392,12 +1389,6 @@ def run(a, cfg):
                     return die("ABORT - the fixture is not serving the pre-registered MCP instructions for arm %r (%s)"
                                % (arm, repo_relpath(desc[arm]["instructions_path"])))
                 log.check(True, "arm %s: instructions match %s" % (arm, os.path.basename(desc[arm]["instructions_path"])))
-            if not desc[arm]["path"]:
-                continue
-            log.detail("pre-flight: arm %s: served descriptions against %s" % (arm, desc[arm]["file"]))
-            if tools.report(tool_list, tools.expected_descriptions(load_json(desc[arm]["path"])), log.detail):
-                return die("ABORT - the fixture is not serving the pre-registered tool descriptions for arm %r" % arm)
-            log.check(True, "arm %s: descriptions match %s" % (arm, os.path.basename(desc[arm]["file"])))
 
     log.detail("== pre-flight: leak scan of the rendered prompts, system prompt and served tools/list ==")
     rendered = []
@@ -1564,7 +1555,7 @@ def run(a, cfg):
                 "grader": dict({"client": grade.CLIENT, "model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"]},
                                **({"cli_version": grader_cli} if grade.CLIENT == "cli" else
                                   {"provider": grade.PROVIDER, "image": goose_client.IMAGE}))}
-    # ponytail: arm_pin and tools_description_check keep their one-arm shape (judge.py reads
+    # arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.
     if len(arms) == 1:
         manifest["arm_pin"] = {"arm": arms[0], "expected_image": image_for[arms[0]], "sut_jaeger_image_at_run": image}
@@ -1889,7 +1880,7 @@ def run_cell(a, bdir, c, prompt_for, prompt_file, desc, common, fault, sut, mcp_
     argv = client_argv(a, prompt_file[arm], mcp_path, trial)
     prompt_sha = sha256_file(prompt_file[arm])
     shown = recorded_argv(argv, bdir, trial)
-    if a.client == "cli":  # the codex argv carries file paths, not the texts
+    if a.client == "cli":  # the goose and codex argvs carry file paths, not the texts
         shown[2] = "sha256:" + prompt_sha
         shown[shown.index("--system-prompt") + 1] = "sha256:" + common["system_prompt_sha256"]
     merged = dict(common, run_id="%s/%s" % (common["batch_id"], name), order_index=oi, trial_index=c["trial_index"],
@@ -2344,7 +2335,10 @@ def export(batch_dir, endpoint, cfg, out=print):
                       if isinstance(e, dict)]
             attrs = {"experiment": exp, "batch_id": m["batch_id"], "scenario": m["scenario"], "arm": row["arm"],
                      "trial_index": meta["trial_index"], "model": (meta.get("observed") or {}).get("model") or meta["model_requested"],
-                     "client": meta["client"], "provider": meta.get("provider") or "anthropic", "verdict": row.get("verdict") or "ERROR"}
+                     "client": meta["client"], "provider": meta.get("provider") or {"cli": "anthropic"}.get(meta["client"]),
+                     "verdict": row.get("verdict") or "ERROR"}
+            if attrs["provider"] is None:  # codex: its provider is whatever the codex config or wrapper picks, not recorded
+                del attrs["provider"]
             prompt = read_text(os.path.join(trial, "prompt.txt")) if os.path.exists(os.path.join(trial, "prompt.txt")) else ""
             t0 = int(datetime.strptime(meta["started_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()) * 10**9
             trial_spans = otlp.trace_spans("%s/%s/%s" % (m["scenario"], m["batch_id"], row["dir"]), events, t0,

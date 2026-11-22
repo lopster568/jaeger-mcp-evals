@@ -12,9 +12,8 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 | Temperature | not settable | nothing |
 | Prompt | `arms.<arm>.prompt` | `prompt_name`, `prompt_sha256` |
 | System prompt | `harness/system-prompt.txt` | `system_prompt_sha256` |
-| Tools on or off | `arms.<arm>.tools` | `mcp_endpoint`, `tool_descriptions_check` |
-| Tool descriptions | `arms.<arm>.image` | `tools_list_sha256`, `tool_descriptions_sha256`, `tool_descriptions_check` |
-| Skills | `skill` or `noskill` prompt | `read_skill_attempted`, `read_skill_succeeded` |
+| Tools on or off | `arms.<arm>.tools` | `mcp_endpoint` |
+| Tool descriptions | `arms.<arm>.image` | `tools_list_sha256` |
 | Max turns | `run.max_turns` | `max_turns` |
 | Budget | `run.max_budget_usd` | `max_budget_usd`, `cost_usd` |
 | History and compaction | harness truncates nothing | `history_policy`, `compaction_events` |
@@ -40,4 +39,4 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 - Client `GRADER_CLIENT` (`goose`, the default, or `cli`), model `GRADER_MODEL` (goose: falls back to `GOOSE_MODEL`, no default; cli: default `claude-fable-5-1`), goose provider `GRADER_PROVIDER` (falls back to `GOOSE_PROVIDER`), cli command `GRADER_BIN` (default `claude`), all in `fixture.env`; prompt `harness/grader-prompt.txt`, recorded by sha256.
 - Runs through Goose in the agent's pinned image with no extensions, or through the Claude Code CLI (or a `GRADER_BIN` wrapper taking its `-p` arguments), sandboxed like the agent. The published records were graded by `cli` and `claude-fable-5-1`; a grade from another grader is not comparable.
 - Every label is cached in the batch's `grades.jsonl`. Only the end of `bench.py run` calls the grader, and `verify` fails on a miss. Changing grader, model, prompt or truth changes the key; re-scoring looks up the grader the batch's manifest recorded.
-- Validation: on a blind 94-item set of real and constructed explanations, the grader's labels matched a human labeler on all 21 items the human labeled, and were identical across 3 passes on all 94; human-labeled evidence on near-miss explanations (right place, wrong cause) is still thin. The validation record is kept outside this repository.
+- Validation (the cli grader on `claude-fable-5-1` only; the goose grader and other models are not validated): on a blind 94-item set of real and constructed explanations, the grader's labels matched a human labeler on all 21 items the human labeled, and were identical across 3 passes on all 94; human-labeled evidence on near-miss explanations (right place, wrong cause) is still thin. The validation record is kept outside this repository.

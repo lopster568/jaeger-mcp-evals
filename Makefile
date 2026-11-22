@@ -3,7 +3,7 @@
 
 # Shortcuts for fixture/FIXTURE.md, which stays the manual. Local mode only: the demo runs
 # on this machine. With a remote fixture host, run these targets on that host.
-# On a fixture host with no agent set FIXTURE_HOST_ONLY=1 in fixture.env: preflight skips its claude check, setup the Goose image (FIXTURE.md, Remote host).
+# On a fixture host with no agent set FIXTURE_HOST_ONLY=1 in fixture.env: preflight skips its claude check and setup skips the Goose image pull (FIXTURE.md, Remote host).
 # Settings come from fixture.env, then fixture.env.example; an environment variable wins.
 # The steps live in harness/fixture_cli.py; fixture/preflight.sh runs first, before any Python.
 
@@ -12,7 +12,8 @@
 # Any Python 3.11+ interpreter, e.g. make setup PYTHON=python3.12 (fixture/preflight.sh checks the version)
 PYTHON ?= python3
 CLI := $(PYTHON) harness/fixture_cli.py
-PREFLIGHT := PYTHON=$(PYTHON) bash fixture/preflight.sh
+export PYTHON
+PREFLIGHT := bash fixture/preflight.sh
 
 .PHONY: help setup preflight fixture up phoenix smoke measure down clean test verify
 
@@ -26,7 +27,7 @@ help:
 	@echo "Run"
 	@echo "  make smoke      PAID: dry run, then one agent trial on Goose (GOOSE_PROVIDER, GOOSE_MODEL); CLIENT=cli for the Claude Code CLI (about 50k tokens)"
 	@echo "  $(PYTHON) harness/bench.py run harness/experiments/<name>.json [--dry-run]   PAID without --dry-run"
-	@echo "  make measure JAEGER=<checkout> SCENARIO=<name>   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
+	@echo "  make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=cli]   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
 	@echo "Check"
 	@echo "  make test       offline unit tests"
 	@echo "  make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
@@ -49,8 +50,8 @@ smoke:
 
 # PAID: builds two images, swaps the fixture's jaeger twice and runs 2 x 10 trials; asks first (harness/measure.sh).
 measure:
-	@test -n "$(JAEGER)" -a -n "$(SCENARIO)" || { echo "usage: make measure JAEGER=<jaeger-checkout> SCENARIO=<name>"; exit 2; }
-	@bash harness/measure.sh "$(JAEGER)" "$(SCENARIO)"
+	@test -n "$(JAEGER)" -a -n "$(SCENARIO)" || { echo "usage: make measure JAEGER=<jaeger-checkout> SCENARIO=<name> [CLIENT=cli]"; exit 2; }
+	@bash harness/measure.sh "$(JAEGER)" "$(SCENARIO)" $(if $(CLIENT),--client $(CLIENT))
 
 verify:
 	@$(PYTHON) harness/bench.py verify

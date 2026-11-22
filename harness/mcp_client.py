@@ -45,7 +45,7 @@ def parse_sse(text):
 
 
 class MCPClient:
-    def __init__(self, url, timeout=120.0, client_name="jaeger-mcp-evals-harness", client_version="0"):
+    def __init__(self, url, client_name, timeout=120.0, client_version="0"):
         self.url = url
         self.timeout = timeout
         self.client_info = {"name": client_name, "version": client_version}
@@ -138,7 +138,7 @@ class MCPClient:
 
         Never raises for a tool-level failure: a JSON-RPC error, an isError
         result, or a transport failure all come back as is_error=True with
-        the message as text, so the model sees it and nothing is dropped.
+        the message as text, so the caller reads every failure the same way.
         """
         try:
             msg, _h = self._request("tools/call", {"name": name, "arguments": arguments or {}})

@@ -32,8 +32,8 @@ EXPERIMENT = {
     "run": {"client": "cli", "provider": None, "model": "sonnet", "effort": "xhigh", "max_turns": 30,
             "max_budget_usd": 2, "n_per_arm": 10, "seed": None},
     "arms": {
-        "baseline": {"prompt": "noskill", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": True},
-        "descchange": {"prompt": "noskill", "image": "jaeger-mcp-evals/jaeger:desc-change-abc1234", "tools": True},
+        "baseline": {"prompt": "neutral", "image": "quay.io/jaegertracing/jaeger:2.20.0", "tools": True},
+        "descchange": {"prompt": "neutral", "image": "jaeger-mcp-evals/jaeger:desc-change-abc1234", "tools": True},
     },
     "baseline_arm": "baseline",
     "thresholds": {
@@ -372,7 +372,7 @@ class JudgeTests(unittest.TestCase):
             m = json.load(open(mp))
             for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1"}.items():
                 m.setdefault(k, v)
-            m.setdefault("file_hashes_sha256", {"prompts/noskill.txt": "p1"})
+            m.setdefault("file_hashes_sha256", {"prompts/neutral.txt": "p1"})
             if noimg:
                 m["fixture_overlay_sha256_sans_image"] = noimg[d == self.variant_dir]
             json.dump(m, open(mp, "w"))

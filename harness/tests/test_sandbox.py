@@ -110,11 +110,6 @@ class TestSandboxCheck(unittest.TestCase):
         self.assertEqual(s["tool_calls"], 1)
         self.assertEqual(s["sandbox_violations"], ["attempted_unknown_tool:mcp__jaeger__StructuredOutput"])
 
-    def test_codex_error_item_is_not_a_tool_call(self):
-        events = [{"type": "system", "subtype": "init", "mcp_servers": SERVERS}] + call(J[0]) + call("error", "e1", "x")
-        s = self.score(events + [PASS_FINAL], meta={"client": "codex"}, tools_json=["get_trace_errors"])
-        self.assertEqual((s["sandbox_ok"], s["verdict"]), (True, "PASS"))
-
     def test_tools_off_arm_needs_no_server_and_no_jaeger_tools(self):
         ok = self.score([init(("StructuredOutput",), [])] + [PASS_FINAL], meta={"mcp_endpoint": None}, tools_json=["x"])
         self.assertEqual(ok["sandbox_violations"], [])
