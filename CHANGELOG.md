@@ -1,6 +1,6 @@
 # Scenario changelog
 
-Entries before 2026-11-27 were written in lopster568/jaeger-mcp-evals; its history holds the full log.
+Entries up to the import into this repository (not yet done; it is planned for the import PR) were written in lopster568/jaeger-mcp-evals; its history holds the full log.
 Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS.md, Changelog rule).
 
 ## 2026-09-25
@@ -118,4 +118,6 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 - emailMemoryLeak: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - cartFailure: version 2 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
 - recommendationCacheFailure: version 4 unchanged, notes shortened, scenario sha256 changes, comparable: yes.
-- Fixture: the overlay's four host ports (16686, 8013, 8016, 16006) bind 127.0.0.1; fixture_overlay_sha256 changes; no change in what the agent sees; comparable: yes. A remote fixture is reached through fixture/forward.sh.
+- Fixture: the overlay's four host ports (16686, 8013, 8016, 16006) bind `${FIXTURE_BIND:-127.0.0.1}`, so 127.0.0.1 unless fixture.env sets FIXTURE_BIND; fixture_overlay_sha256 changes; no change in what the agent sees; comparable: yes. A remote fixture is reached through fixture/forward.sh, or directly with FIXTURE_BIND=0.0.0.0 behind a firewall.
+- Harness: the Claude Code CLI client's code (its argv, flag check, sandbox probe, model pin and billing proof) moves from bench.py to `harness/claude_client.py`, beside goose_client.py and codex_client.py, and bench.py reads each client from one table. New manifests hash `claude_client.py` in `file_hashes_sha256`. No record field, score, grade or verify result changes.
+- Experiment file: `run.max_budget_usd` becomes optional for `goose` and `codex`, which enforce no budget, and stays required for `cli`. The file `version` stays 2: every existing file keeps the key and loads unchanged, and a present value is still checked. A batch without it records `max_budget_usd` null in its manifest and meta.json, and stage 1's expected-cost line names no cap. No record, score or verify result changes.

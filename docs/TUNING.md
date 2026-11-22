@@ -38,11 +38,13 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 
 The checks the harness makes on a run besides the per-call tool check in score.py (any tool other than Jaeger's, plus Goose's `load_skill`, scores INVALID on every client). Goose runs in an image pinned by digest with no extensions; for the others the installed version is recorded, and checked only when `run.client_version` is set.
 
+These are the guard keys of each client's entry in `CLIENTS`, `harness/bench.py`.
+
 | Guard | cli | goose | codex |
 |---|---|---|---|
 | Sandbox probe before the flag flips (each arm's argv against a local server) | yes | no | no |
 | Batch stops when the stream reports another model than `run.model` | yes, for a full `claude-` id | no | no |
-| Per-trial budget cap, `run.max_budget_usd` | yes | no | no |
+| Per-trial budget cap, `run.max_budget_usd` | yes (required) | no (optional) | no (optional) |
 | Billing proof, `apiKeySource` in the stream with `run.bill_api_key` | yes | no | no |
 
 ## Mechanism grader

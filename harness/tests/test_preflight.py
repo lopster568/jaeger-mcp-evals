@@ -42,7 +42,7 @@ class Preflight(unittest.TestCase):
             s.bind(("127.0.0.1", 0))
             s.listen()
             port = s.getsockname()[1]
-            for bind in ("", "127.0.0.1:"):  # the overlay binds loopback; a plain host port still parses
+            for bind in ("", "127.0.0.1:", "${FIXTURE_BIND:-127.0.0.1}:"):  # the overlay form, plain and fixed binds parse
                 r = self.run_script(port, jaeger=False, bind=bind)
                 self.assertEqual(r.returncode, 1, bind)
                 self.assertIn("port %d is in use" % port, r.stdout)

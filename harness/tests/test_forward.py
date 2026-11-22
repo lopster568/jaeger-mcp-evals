@@ -31,6 +31,12 @@ class Forward(unittest.TestCase):
         self.assertEqual(bash('PHOENIX=; . %s; fwd_args' % SCRIPT).stdout.split(),
                          ["-L", "127.0.0.3:16686:127.0.0.1:16686", "-L", "127.0.0.3:8016:127.0.0.1:8016"])
 
+    def test_ssh_commands_carry_the_bind(self):
+        """A compose command run over ssh must see the fixture host's bind, or a recreate rebinds loopback."""
+        env = dict(ENV, FIXTURE_SSH_USER="u")
+        self.assertIn("export\\ FIXTURE_BIND=0.0.0.0\\;", bash('. %s; fx_line "docker compose up"' % SCRIPT, dict(env, FIXTURE_BIND="0.0.0.0")).stdout)
+        self.assertNotIn("FIXTURE_BIND", bash('. %s; fx_line "docker compose up"' % SCRIPT, dict(env, FIXTURE_BIND="")).stdout)
+
     def test_non_loopback_host_refused(self):
         r = subprocess.run([SCRIPT, "somevm"], env=dict(ENV, FIXTURE_HOST="10.0.0.5"), capture_output=True, text=True)
         self.assertEqual(r.returncode, 2)
