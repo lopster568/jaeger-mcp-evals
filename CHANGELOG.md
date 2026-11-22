@@ -1,6 +1,6 @@
 # Scenario changelog
 
-Entries before 2026-11-27 were written in lopster568/jaeger-mcp-evals; its history holds the full log.
+Entries up to the import into this repository (not yet done; it is planned for the import PR) were written in lopster568/jaeger-mcp-evals; its history holds the full log.
 Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS.md, Changelog rule).
 
 ## 2026-09-25

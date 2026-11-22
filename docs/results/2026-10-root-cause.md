@@ -6,7 +6,7 @@ The per-trial files are not in the tree. They are at [records/root-cause-2026-10
 
 ## Setup
 
-Script rc_probe.py (a one-off script, not in this repository). CLI 2.1.285, claude-sonnet-5-5 pinned, effort high, API key, harness argv, stub MCP server with main's captured handshake, fresh /tmp working dir per trial (as the full runs), arms alternating in shuffled pairs. All 60 split trials checked: model claude-sonnet-5-5, CLI 2.1.285, cwd /tmp/tmp*, rc 1 (the normal --max-turns exit).
+Script rc_probe.py (a one-off script, in the source repository's record directory linked above, not in this repository). CLI 2.1.285, claude-sonnet-5-5 pinned, effort high, API key, harness argv, stub MCP server with main's captured handshake, fresh /tmp working dir per trial (as the full runs), arms alternating in shuffled pairs. All 60 split trials checked: model claude-sonnet-5-5, CLI 2.1.285, cwd /tmp/tmp*, rc 1 (the normal --max-turns exit).
 
 ## Step 1, split #9262's two search_traces edits (runs-split/, n=20 per arm, first message)
 
@@ -85,6 +85,6 @@ Fisher p = 1.5e-11. All 40 trials: CLI 2.1.285, claude-sonnet-5-5, /tmp cwd, rc 
 - A one-off probe, not a batch pair: no pre-registered threshold and no RESULT.md.
 - Step 4 states its scope as: first message only, one prompt, one model, one CLI. Whether a first-move skill read changes the verdict is not measured here.
 - Step 2 is n=1 on a refused turn, a lead and not a finding.
-- The probe script, rc_probe.py, was published as it ran, with local absolute paths, and its stream.jsonl files are unpublished.
+- The probe script, rc_probe.py, is in the source repository's record directory, as it ran and with local absolute paths; its stream.jsonl files are unpublished.
 
 Spend (CLI-reported, USD): smoke 0.085, split 0.173, fix 0.276, pointer 0.171, fixsplit 0.267, head 0.143.
