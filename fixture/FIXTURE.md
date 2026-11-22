@@ -40,7 +40,7 @@ cp <this repo>/fixture/compose.overlay.yaml <this repo>/fixture/jaeger-config.ym
 cp src/flagd/demo.flagd.json overlay/demo.flagd.json.pristine
 ```
 
-fixture.env names the pristine copy `FIXTURE_PRISTINE_FLAG_FILE`.
+`FIXTURE_PRISTINE_FLAG_FILE`, a constant in harness/config.py, names the pristine copy.
 
 ## Update the overlay
 
@@ -85,7 +85,7 @@ its trajectories there (docs/USAGE.md, Export to Phoenix).
 ## Health checks
 
 ```
-docker ps -q | wc -l                                    # at least MIN_CONTAINERS (default 19)
+docker ps -q | wc -l                                    # at least MIN_CONTAINERS (19, a constant in harness/config.py)
 curl -s http://localhost:16686/jaeger/ui/api/v3/services   # the demo's services, not an empty list
 curl -s -X POST -H 'Content-Type: application/json' -d '{"context":{}}' \
   http://localhost:8016/ofrep/v1/evaluate/flags/paymentFailure   # "variant":"off"
@@ -154,7 +154,7 @@ bash fixture/build-image.sh <jaeger-checkout> <git-ref> <name> --remote   # then
 
 Needs Go and a Jaeger checkout; the ref should be a main-lineage commit (a 2.20.0 build no longer boots on this fixture).
 It builds a static linux/amd64 binary from the ref in a temporary worktree.
-`--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`.
+`--remote` builds `jaeger-mcp-evals/jaeger:<name>-<short sha>` in the fixture's Docker and writes `harness/experiments/images/<name>.json`, a local build record (the `measure-*` ones are git-ignored; the batch manifest records the image).
 It never restarts a running container. Exit codes: 0 built and recorded, 1 refused or a git step failed, 2 local build failed, 3 stopped after the local build, 4 fixture step failed.
 `make measure` runs this for you.
 
@@ -176,7 +176,7 @@ in the health checks becomes `FIXTURE_HOST`.
 ### Remote layout
 
 On the fixture host (clone this repo there too), set `FIXTURE_HOST_ONLY=1` and leave `FIXTURE_SSH_USER` empty in fixture.env, then run `make fixture`, `make up` and optionally `make phoenix`. `FIXTURE_HOST_ONLY=1` skips the claude check in preflight and the Goose image pull, since no agent runs there; `make up` waits on the fixture alone (`MIN_CONTAINERS` running, Jaeger answering) everywhere.
-On the machine that runs the agent client (Goose in Docker with a provider key, or the logged-in Claude Code CLI), set `FIXTURE_HOST` to the host (or to a loopback alias for a port forward), `FIXTURE_SSH_USER` to the ssh user, and `FIXTURE_HOST_ONLY=0`. `bench.py run` and `make smoke` enforce the client checks there; `bench.py run ... --dry-run` is the readiness check for the whole chain.
+On the machine that runs the agent client (Goose in Docker with a provider key, or the logged-in Claude Code CLI), set `FIXTURE_HOST` to a loopback alias such as `127.0.0.3`, `FIXTURE_SSH_USER` to the ssh user, and `FIXTURE_HOST_ONLY=0`. The harness runs ssh to `FIXTURE_SSH_USER@FIXTURE_HOST`, so give the alias a `Host 127.0.0.3` entry with the host's real `HostName` in `~/.ssh/config`. `bench.py run` and `make smoke` enforce the client checks there; `bench.py run ... --dry-run` is the readiness check for the whole chain.
 Both machines need the same `JAEGER_UI_PORT`, `OFREP_PORT` and `PHOENIX_PORT`.
 
-When the host's ports are not reachable directly (no external IP, IAP or bastion), set `FIXTURE_HOST` on the agent machine to a loopback alias such as `127.0.0.3` and run `fixture/forward.sh SSH_TARGET` in its own terminal for the whole batch (`SSH_TARGET` is what `ssh` takes, and may differ from `FIXTURE_HOST`). It forwards `JAEGER_UI_PORT` and `OFREP_PORT` (add `--phoenix` for `PHOENIX_PORT`, which `bench.py export` posts to), restarts `ssh -N` with `ExitOnForwardFailure`, `ServerAliveInterval=15` and `ServerAliveCountMax=8` whenever it exits, logs each restart with a UTC timestamp to stderr, and exits 0 on Ctrl-C. Gate a batch on `fixture/forward.sh --check`, which exits 1 if any port is down. A plain `ssh -fN` forward died mid-batch once and left 4 of 10 trials invalid; The harness does not call flagd's port 8013.
+The overlay binds its four ports to the host's 127.0.0.1 (the demo's own compose files at 1755859a publish jaeger's and flagd's container ports, and others, with no host port, so Docker maps each to a random host port on every interface; those are not narrowed, and the fixture is not loopback-only), so the agent machine reaches them through `fixture/forward.sh SSH_TARGET`, run in its own terminal for the whole batch (`SSH_TARGET` is what `ssh` takes, and may differ from `FIXTURE_HOST`). It forwards `JAEGER_UI_PORT` and `OFREP_PORT` (add `--phoenix` for `PHOENIX_PORT`, which `bench.py export` posts to), restarts `ssh -N` with `ExitOnForwardFailure`, `ServerAliveInterval=15` and `ServerAliveCountMax=8` whenever it exits, logs each restart with a UTC timestamp to stderr, and exits 0 on Ctrl-C. Gate a batch on `fixture/forward.sh --check`, which exits 1 if any port is down. A plain `ssh -fN` forward died mid-batch once and left 4 of 10 trials invalid. The harness does not call flagd's port 8013.

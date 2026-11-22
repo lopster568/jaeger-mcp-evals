@@ -1,16 +1,21 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Fixture settings: fixture.env.example, then fixture.env, then os.environ win."""
+"""Fixture settings: DEFAULTS, then fixture.env.example, then fixture.env, then os.environ win."""
 import json
 import os
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Fixture constants no contributor sets: the flag file a batch edits and its pristine copy (relative to
+# FIXTURE_DEMO_DIR), the Jaeger UI base path, the pre-flight container floor, and tag=commit pairs for jaeger_commit.
+DEFAULTS = {"FIXTURE_FLAG_FILE": "src/flagd/demo.flagd.json", "FIXTURE_PRISTINE_FLAG_FILE": "overlay/demo.flagd.json.pristine",
+            "JAEGER_BASE_PATH": "/jaeger/ui", "MIN_CONTAINERS": "19",
+            "KNOWN_COMMITS": "quay.io/jaegertracing/jaeger:2.23.0=d723f91447f29a345c288f37eb8d1ce7807bc0be"}
 
 
 def load(root=ROOT):
-    cfg = {}
+    cfg = dict(DEFAULTS)
     for name in ("fixture.env.example", "fixture.env"):
         path = os.path.join(root, name)
         if os.path.isfile(path):

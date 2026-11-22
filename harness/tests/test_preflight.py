@@ -24,7 +24,7 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader=""):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind=""):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
                 shim = os.path.join(d, name)
@@ -32,7 +32,7 @@ class Preflight(unittest.TestCase):
                 pathlib.Path(shim).write_text(body)
                 os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
-            pathlib.Path(overlay).write_text('    ports:\n      - "%d:16686"\n' % port)
+            pathlib.Path(overlay).write_text('    ports:\n      - "%s%d:16686"\n' % (bind, port))
             env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
                        FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader)
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
@@ -42,9 +42,10 @@ class Preflight(unittest.TestCase):
             s.bind(("127.0.0.1", 0))
             s.listen()
             port = s.getsockname()[1]
-            r = self.run_script(port, jaeger=False)
-            self.assertEqual(r.returncode, 1)
-            self.assertIn("port %d is in use" % port, r.stdout)
+            for bind in ("", "127.0.0.1:"):  # the overlay binds loopback; a plain host port still parses
+                r = self.run_script(port, jaeger=False, bind=bind)
+                self.assertEqual(r.returncode, 1, bind)
+                self.assertIn("port %d is in use" % port, r.stdout)
             ok = self.run_script(port, jaeger=True)
             self.assertEqual(ok.returncode, 0)
             self.assertEqual(ok.stdout, "")  # silent on success; make prints the Tools line

@@ -103,3 +103,4 @@ All three must be green before a scenario's first pilot batch:
 An edit that changes what PASS means or which trajectories are comparable to
 earlier runs bumps `version` and gets a line in CHANGELOG.md: date, scenario, old
 to new version, one line why, comparable yes or no.
+In jaegertracing/jaeger-ai-evals, `verify` scores batches made before the import against the current scenario file (their `harness_git_sha` is not in this history), so a bump with comparable: no makes verify fail on their trajectories, which is expected.

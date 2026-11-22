@@ -162,10 +162,13 @@ class TestScenarioAtBatchSha(unittest.TestCase):
             self.assertEqual(bench.scenario_at_batch_sha(self._batch("abc123-dirty")), {"version": 2})
         self.assertIn("abc123:harness/scenarios/s.json", run.call_args[0][0])
 
-    def test_unresolvable_sha_falls_back_to_the_current_file(self):
+    def test_unresolvable_sha_falls_back_to_the_current_file_and_says_so_once(self):
+        told = set()
         with mock.patch.object(bench.subprocess, "run", return_value=mock.Mock(returncode=128, stdout="")), \
                 mock.patch("builtins.print") as pr:
-            self.assertIsNone(bench.scenario_at_batch_sha(self._batch("abc123")))
+            self.assertIsNone(bench.scenario_at_batch_sha(self._batch("abc123"), told))
+            self.assertIsNone(bench.scenario_at_batch_sha(self._batch("abc123"), told))
+        self.assertEqual(pr.call_count, 1)
         self.assertIn("using the current file", pr.call_args[0][0])
 
 

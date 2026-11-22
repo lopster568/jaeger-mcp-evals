@@ -7,3 +7,4 @@ runs/
 dist/
 .make.log
 harness/experiments/smoke-goose.json
+harness/experiments/images/measure-*.json

@@ -79,6 +79,7 @@ VERDICT_SCHEMA = os.path.join(HARNESS, "verdict-schema.json")
 CODEX_CLIENT = os.path.join(HARNESS, "codex_client.py")
 GOOSE_CLIENT = os.path.join(HARNESS, "goose_client.py")
 RECORDS = os.path.join(ROOT, "records")
+IMAGE_RECORDS = os.path.join(HARNESS, "experiments", "images")  # written by fixture/build-image.sh; instructions/ is its sibling
 DIST = os.path.join(ROOT, "dist")
 # cli: the Claude Code CLI; codex: the OpenAI Codex CLI; goose: Goose in the AI Assistant demo's pinned image.
 CLIENTS = ("cli", "codex", "goose")
@@ -938,17 +939,22 @@ def sandbox_probe(argv, env, expected, timeout=PROBE_TIMEOUT_S, need_key=False):
     return problems, names
 
 
+def rendered_texts(prompt_file):
+    """The prompt and system prompt texts, trailing newlines stripped as bash's "$(cat f)" does. The leak
+    scan reads them for every client; claude_argv passes them."""
+    return read_text(prompt_file).rstrip("\n"), read_text(SYSTEM_PROMPT).rstrip("\n")
+
+
 def claude_argv(a, prompt_file, mcp_config):
-    """The Claude Code CLI call. Text args are passed like bash's "$(cat f)", which strips
-    trailing newlines."""
-    text = lambda p: read_text(p).rstrip("\n")
-    return ["claude", "-p", text(prompt_file),
+    """The Claude Code CLI call, with the texts of rendered_texts()."""
+    prompt, system = rendered_texts(prompt_file)
+    return ["claude", "-p", prompt,
             "--output-format", "stream-json", "--verbose",
             "--mcp-config", mcp_config, "--strict-mcp-config",
             "--setting-sources", "", "--restricted", "--tools", "",
             "--allowedTools", "mcp__jaeger__*",
-            "--system-prompt", text(SYSTEM_PROMPT),
-            "--json-schema", text(VERDICT_SCHEMA),
+            "--system-prompt", system,
+            "--json-schema", read_text(VERDICT_SCHEMA).rstrip("\n"),
             "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd]
 
 
@@ -1021,7 +1027,7 @@ def api_key_source(stream_path):
 
 
 def jaeger_commit(cfg, image):
-    for p in sorted(glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json"))):
+    for p in sorted(glob.glob(os.path.join(IMAGE_RECORDS, "*.json"))):
         rec = load_json(p)
         if rec.get("tag") == image and rec.get("branch_commit"):
             return rec["branch_commit"]
@@ -1346,10 +1352,10 @@ def run(a, cfg):
         if base and arm != base and tools_for[arm] and image_for[arm] != image_for.get(base):
             # A variant image's record (experiments/images/*.json, matched by tag) may name a file under
             # instructions/ the served MCP instructions string must equal; absent or null is recorded only.
-            rec = next((r for r in map(load_json, glob.glob(os.path.join(HARNESS, "experiments", "images", "*.json")))
+            rec = next((r for r in map(load_json, glob.glob(os.path.join(IMAGE_RECORDS, "*.json")))
                         if r.get("tag") == image_for[arm]), {})
             ins = rec.get("instructions")
-            ins = os.path.join(HARNESS, "experiments", "instructions", ins) if ins else None
+            ins = os.path.join(os.path.dirname(IMAGE_RECORDS), "instructions", ins) if ins else None
         # file and sha256 stay null: the record schema keeps the removed description check's keys
         desc[arm] = {"file": None, "sha256": None, "check": "recorded_only" if tools_for[arm] else "no_tools",
                      "instructions_path": ins}
@@ -1393,9 +1399,9 @@ def run(a, cfg):
     log.detail("== pre-flight: leak scan of the rendered prompts, system prompt and served tools/list ==")
     rendered = []
     for arm in arms:
-        argv = claude_argv(a, prompt_file[arm], "-")
-        rendered.append(("rendered prompt %s" % arm, argv[2]))
-    rendered.append(("rendered system prompt", argv[argv.index("--system-prompt") + 1]))
+        prompt, system = rendered_texts(prompt_file[arm])
+        rendered.append(("rendered prompt %s" % arm, prompt))
+    rendered.append(("rendered system prompt", system))
     if tools_text:
         rendered.append(("served tools/list", TOOLS_ALLOW.sub("", tools_text)))
     if instructions:
@@ -1462,7 +1468,7 @@ def run(a, cfg):
         default_variant = pristine_doc["flags"][flag]["defaultVariant"]
     except (ValueError, KeyError, TypeError):
         return die("ABORT - could not read defaultVariant for %r from the fixture's pristine flag file" % flag,
-                   fix="check FIXTURE_PRISTINE_FLAG_FILE in fixture.env points at the pristine copy (make up creates it)")
+                   fix="check FIXTURE_PRISTINE_FLAG_FILE (harness/config.py, or fixture.env if set there) points at the pristine copy (make up creates it)")
     current = ofrep_variant(cfg, flag)
     if current != default_variant:
         return die("ABORT - OFREP reports %r=%r, default is %r" % (flag, current, default_variant))
@@ -2041,10 +2047,11 @@ def soak(cfg, scenario, samples, interval):
     return 0
 
 
-def scenario_at_batch_sha(d):
+def scenario_at_batch_sha(d, told=None):
     """The scenario JSON as it was at the batch's recorded harness_git_sha (a -dirty suffix is
     stripped: the committed file is the nearest record), so verify scores a batch against the
-    truth it ran. None (score.py loads the current file) if git cannot resolve it; says so."""
+    truth it ran. None (score.py loads the current file) if git cannot resolve it; says so, once
+    per scenario and sha when given a `told` set."""
     mp = os.path.join(d, "meta.json")
     meta = load_json(mp) if os.path.isfile(mp) else {}
     sha, name = str(meta.get("harness_git_sha") or ""), meta.get("scenario")
@@ -2056,7 +2063,10 @@ def scenario_at_batch_sha(d):
     r = subprocess.run(["git", "-C", ROOT, "show", "%s:harness/scenarios/%s.json" % (sha, name)], capture_output=True, text=True)
     if r.returncode == 0:
         return json.loads(r.stdout)
-    print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))
+    told = set() if told is None else told
+    if (name, sha) not in told:
+        told.add((name, sha))
+        print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))
     return None
 
 
@@ -2072,13 +2082,13 @@ def verify(cfg):
             if row.get("dir"):
                 stored[os.path.realpath(os.path.join(b, row["dir"]))] = row.get("verdict")
     cols = ["scenario", "arm", "dir", "verdict", "tool_calls", "call_errors", "steps_to_evidence", "tool_output_chars", "cost", "compaction"]
-    rows, mismatches, invalid, ungraded = [], [], [], []
+    rows, mismatches, invalid, ungraded, told = [], [], [], [], set()
     for p in sorted(glob.glob(os.path.join(runs, "**", "stream.jsonl"), recursive=True)):
         d = os.path.dirname(p)
         mp = os.path.join(d, "meta.json")
         arm = arm_of.get(os.path.realpath(d)) or (load_json(mp).get("arm") if os.path.isfile(mp) else None)
         try:
-            s, _ = score.score(d, scenario=scenario_at_batch_sha(d))
+            s, _ = score.score(d, scenario=scenario_at_batch_sha(d, told))
         except score.Legacy as e:
             rows.append(dict({c: "" for c in cols}, scenario=load_json(mp).get("scenario"), arm=arm,
                              dir=os.path.relpath(d, runs), verdict="%s (%s)" % (stored.get(os.path.realpath(d)) or "no stored score", e)))

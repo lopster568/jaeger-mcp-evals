@@ -36,11 +36,11 @@ One Gotcha bullet in error-root-cause/SKILL.md, and `search_traces` added to its
 +  such as spans getting slower or attribute values that stand out.
 ```
 
-Patch: [harness/experiments/images/skill-callee-down.patch](../../harness/experiments/images/skill-callee-down.patch).
+Patch: [records/inputs/images/skill-callee-down.patch](../../records/inputs/images/skill-callee-down.patch).
 
 ## Pre-registration
 
-The threshold, at least 5 of 10 PASS in the change arm, is in the experiment file both batches ran from ([skill-callee-down-cli55.json](../../harness/experiments/skill-callee-down-cli55.json)). Each batch manifest records that file's sha256 (`d191f507...`), the harness commit it ran at (`a1431de`) and `harness_dirty: false`. That commit was made in a private working clone before the first batch started. In this repository the file first appears in a later commit, so the order cannot be checked from this repository's history alone.
+The threshold, at least 5 of 10 PASS in the change arm, is in the experiment file both batches ran from ([skill-callee-down-cli55.json](../../records/inputs/skill-callee-down-cli55.json)). Each batch manifest records that file's sha256 (`d191f507...`), the harness commit it ran at (`a1431de`) and `harness_dirty: false`. That commit was made in a private working clone before the first batch started. In this repository the file first appears in a later commit, so the order cannot be checked from this repository's history alone.
 
 ## Results
 
@@ -56,7 +56,7 @@ The changed skill makes each trial longer and costlier: a median of 22.5 turns (
 
 ## The same pair on the skill text from Jaeger main
 
-The pair was run again with the error-root-cause skill text from Jaeger main as of commit `b3e66888` (the text last changed in #9263) inside the 2.20.0 binary. This is not main's binary: main has since removed the v1 HTTP API, so a build of main could not serve the harness. Experiment file: [skill-callee-down-mainskill.json](../../harness/experiments/skill-callee-down-mainskill.json); image records: [baseline](../../harness/experiments/images/v2200-mainskill.json), [change](../../harness/experiments/images/v2200-mainskill-callee-down.json). The change is the one described above, applied to main's text; its patch is not in this repository.
+The pair was run again with the error-root-cause skill text from Jaeger main as of commit `b3e66888` (the text last changed in #9263) inside the 2.20.0 binary. This is not main's binary: main has since removed the v1 HTTP API, so a build of main could not serve the harness. Experiment file: [skill-callee-down-mainskill.json](../../records/inputs/skill-callee-down-mainskill.json); image records: [baseline](../../records/inputs/images/v2200-mainskill.json), [change](../../records/inputs/images/v2200-mainskill-callee-down.json). The change is the one described above, applied to main's text; its patch is not in this repository.
 
 Rule from the experiment file: at least 5 of 10 PASS in the change arm, and (decision rule in the hypothesis) the baseline at most 2 of 10. Run on 2026-10-06, same model, client, effort, scenario version and prompt as the table above.
 
@@ -117,6 +117,8 @@ Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixt
 ## Reproduce
 
 1. `make setup` brings up the fixture ([fixture/FIXTURE.md](../../fixture/FIXTURE.md)).
-2. Build the variant image: `git am` the [patch](../../harness/experiments/images/skill-callee-down.patch) onto a Jaeger checkout at v2.20.0, build the image as in FIXTURE.md's "Build a variant" (`fixture/build-image.sh`), and tag it as in [skill-callee-down.json](../../harness/experiments/images/skill-callee-down.json).
-3. `python3 harness/bench.py run harness/experiments/skill-callee-down-cli55.json`
-4. `python3 harness/judge.py <baseline batch> <variant batch>`; `python3 harness/bench.py verify` re-scores the raw trajectories.
+2. Build the variant image: `git am` the [patch](../../records/inputs/images/skill-callee-down.patch) onto a Jaeger checkout at v2.20.0, build the image as in FIXTURE.md's "Build a variant" (`fixture/build-image.sh`), and tag it as in [skill-callee-down.json](../../records/inputs/images/skill-callee-down.json).
+3. `python3 harness/bench.py run records/inputs/skill-callee-down-cli55.json` (build-image.sh writes a fresh image record under `harness/experiments/images/`, where bench.py looks image records up)
+4. `python3 harness/judge.py <baseline batch> <variant batch>`
+
+Re-scoring the published batches needs their raw trajectories, which are not published.
