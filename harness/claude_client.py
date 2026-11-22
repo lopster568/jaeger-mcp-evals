@@ -8,17 +8,13 @@ bench.py runs `claude -p` itself and reads its stdout as stream.jsonl, the event
 import http.server
 import json
 import os
+import pathlib
 import re
 import subprocess
 import tempfile
 import threading
 
 import grade
-
-
-def read_text(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return f.read()
 
 
 def claude_argv(a, prompt, system, schema, mcp_config):
@@ -30,7 +26,7 @@ def claude_argv(a, prompt, system, schema, mcp_config):
             "--allowedTools", "mcp__jaeger__*",
             "--system-prompt", system,
             "--json-schema", schema,
-            "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", a.max_budget_usd]
+            "--model", a.model, "--effort", a.effort, "--max-turns", str(a.max_turns), "--max-budget-usd", str(a.max_budget_usd)]
 
 
 def redact_argv(argv, prompt, system, schema=None):
@@ -165,7 +161,7 @@ def probe_fix(version, unexpected):
 
 def api_key_source(stream_path):
     """The stream init event's apiKeySource ("ANTHROPIC_API_KEY" when the key billed the trial), else None."""
-    for line in read_text(stream_path).splitlines() if os.path.isfile(stream_path) else []:
+    for line in pathlib.Path(stream_path).read_text(encoding="utf-8", errors="replace").splitlines() if os.path.isfile(stream_path) else []:
         try:
             e = json.loads(line)
         except ValueError:

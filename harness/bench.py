@@ -981,18 +981,18 @@ def observe(stream_path):
 # and reads its proof from the stream.
 NO_GUARDS = {"sandbox_probe": None, "probe_fix": None, "model_pin": None, "budget_cap": False, "billing": None}
 CLIENTS = {
-    "goose": dict(NO_GUARDS, argv=goose_argv, preflight=goose_preflight, label="goose client",
+    "goose": dict(NO_GUARDS, argv=goose_argv, preflight=goose_preflight,
                   version_cmd=lambda a: ["docker", "run", "--rm", "--entrypoint", "goose", goose_client.IMAGE, "--version"],
                   no_version=("the Goose image reported no version (docker run --entrypoint goose ... --version); nothing was touched",
                               "docker run --rm --entrypoint goose %s --version" % goose_client.IMAGE),
                   env=goose_env, events_on="out_dir", graceful_stop=True, redact_argv=None, docker=True,
                   manifest={"goose_image": goose_client.IMAGE}, providers=goose_client.KEYS),
-    "cli": dict(argv=cli_argv, preflight=claude_client.preflight, label="claude CLI",
+    "cli": dict(argv=cli_argv, preflight=claude_client.preflight,
                 version_cmd=lambda a: ["claude", "--version"], no_version=None, env=claude_client.env,
                 events_on="stdout", graceful_stop=False, redact_argv=claude_client.redact_argv, docker=False,
                 manifest={}, providers=None, sandbox_probe=claude_client.sandbox_probe, probe_fix=claude_client.probe_fix,
                 model_pin=claude_client.is_full_model_id, budget_cap=True, billing=claude_client.api_key_source),
-    "codex": dict(NO_GUARDS, argv=codex_argv, preflight=codex_preflight, label="codex client",
+    "codex": dict(NO_GUARDS, argv=codex_argv, preflight=codex_preflight,
                   version_cmd=lambda a: [a.codex_bin, "--version"], no_version=None, env=lambda a, cfg: grade.child_env(False),
                   events_on="out_dir", graceful_stop=False, redact_argv=None, docker=False, manifest={}, providers=None),
 }
@@ -1112,7 +1112,6 @@ def run(a, cfg):
     vars(a).update(exp["run"], scenario=exp["scenario"], experiment=exp["name"])
     a.bill_api_key = exp["run"].get("bill_api_key", False)  # the cli agent and a cli grader bill ANTHROPIC_API_KEY, not the plan
     budget = exp["run"].get("max_budget_usd")  # None: the client enforces no budget (goose, codex)
-    a.max_budget_usd = None if budget is None else str(budget)
     budget = None if budget is None else float(budget)
     a.codex_bin = cfg.get("CODEX_BIN") or "codex"
     sf = os.path.join(HARNESS, "scenarios", a.scenario + ".json")
@@ -1172,7 +1171,7 @@ def run(a, cfg):
         # "2.1.283 (Claude Code)", "codex-cli 0.153.2", "1.57.0" (goose): the first token starting with a digit
         got = next((t for t in (client_pre or "").split() if t[:1].isdigit()), None)
         pre["client_version"] = "PASS" if got == want else "FAIL"
-        if not log.check(got == want, "%s %s" % (client["label"], want)):
+        if not log.check(got == want, "%s client %s" % (a.client, want)):
             return die("ABORT - run.client_version is %s but the %s client reports %s; nothing was touched"
                        % (want, a.client, got or client_pre or "no version"),
                        fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
@@ -1957,11 +1956,11 @@ def soak(cfg, scenario, samples, interval):
     return 0
 
 
-def scenario_at_batch_sha(d, told=None):
+def scenario_at_batch_sha(d, told):
     """The scenario JSON as it was at the batch's recorded harness_git_sha (a -dirty suffix is
     stripped: the committed file is the nearest record), so verify scores a batch against the
     truth it ran. None (score.py loads the current file) if git cannot resolve it; says so, once
-    per scenario and sha when given a `told` set."""
+    per scenario and sha, remembered in the `told` set."""
     mp = os.path.join(d, "meta.json")
     meta = load_json(mp) if os.path.isfile(mp) else {}
     sha, name = str(meta.get("harness_git_sha") or ""), meta.get("scenario")
@@ -1973,7 +1972,6 @@ def scenario_at_batch_sha(d, told=None):
     r = subprocess.run(["git", "-C", ROOT, "show", "%s:harness/scenarios/%s.json" % (sha, name)], capture_output=True, text=True)
     if r.returncode == 0:
         return json.loads(r.stdout)
-    told = set() if told is None else told
     if (name, sha) not in told:
         told.add((name, sha))
         print("verify: %s: git cannot resolve scenario %s at %r, using the current file" % (d, name, sha))

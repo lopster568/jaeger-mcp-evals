@@ -36,19 +36,15 @@ ALLOW = re.compile(r"^response_flags$", re.I)
 
 
 def scan_trace(t, hits, pats):
-    """t is bench.traces()'s v3 form (OTLP spans) or a v1 trace ({spans, processes})."""
-    procs = {pid: p.get("serviceName", "") for pid, p in t.get("processes", {}).items()}
+    """t is bench.traces()'s v3 form (OTLP spans)."""
     val = lambda v: str(next(iter(v.values()), "")) if isinstance(v, dict) else str(v)  # OTLP {"stringValue": ..}
     for s in t.get("spans", []):
-        svc = s.get("serviceName") or procs.get(s.get("processID"), "")
-        fields = [("service", svc), ("span name", s.get("operationName") or s.get("name", ""))]
-        for x in s.get("tags", []) + s.get("attributes", []):
+        svc = s.get("serviceName", "")
+        fields = [("service", svc), ("span name", s.get("name", ""))]
+        for x in s.get("attributes", []):
             if ALLOW.match(str(x.get("key", ""))):
                 continue
             fields += [("tag key", x.get("key", "")), ("tag value", val(x.get("value", "")))]
-        for l in s.get("logs", []):
-            for y in l.get("fields", []):
-                fields += [("event field", y.get("key", "")), ("event value", str(y.get("value", "")))]
         for e in s.get("events", []):
             fields.append(("event name", e.get("name", "")))
             for y in e.get("attributes", []):
@@ -77,7 +73,7 @@ def report(hits, traces, out=print):
     return 0
 
 
-def scan_live(flags, lookback_s=300, services=SERVICES, out=print):
+def scan_live(flags, lookback_s=300, out=print):
     """Sample recent traces from the fixture's Jaeger and report; exit-code semantics as main."""
     import bench  # here, not at the top: bench imports this module
     pats, hits, traces = patterns(flags), {}, 0
@@ -91,7 +87,7 @@ def scan_live(flags, lookback_s=300, services=SERVICES, out=print):
         for p in pats:
             if p.search(sname):
                 hits[("listed service", sname, sname)] = hits.get(("listed service", sname, sname), 0) + 1
-    for svc in services:
+    for svc in SERVICES:
         try:
             data = bench.traces(cfg, svc, start, now, 30, 40)
         except Exception:

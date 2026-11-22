@@ -159,7 +159,7 @@ class TestScenarioAtBatchSha(unittest.TestCase):
     def test_loads_the_scenario_at_the_recorded_sha_and_strips_dirty(self):
         with mock.patch.object(bench.subprocess, "run", return_value=mock.Mock(returncode=0, stdout='{"version": 2}')) as run, \
                 mock.patch("builtins.print"):
-            self.assertEqual(bench.scenario_at_batch_sha(self._batch("abc123-dirty")), {"version": 2})
+            self.assertEqual(bench.scenario_at_batch_sha(self._batch("abc123-dirty"), set()), {"version": 2})
         self.assertIn("abc123:harness/scenarios/s.json", run.call_args[0][0])
 
     def test_unresolvable_sha_falls_back_to_the_current_file_and_says_so_once(self):
