@@ -317,7 +317,10 @@ class SmokeFile(unittest.TestCase):
         e = json.loads(pathlib.Path(self.tmp.name, path).read_text())
         base = json.loads((REPO / fc.SMOKE).read_text())
         self.assertFalse({"client", "provider", "model"} & set(base["run"]))
-        self.assertEqual(e["run"], dict(base["run"], **run))
+        want = dict(base["run"], **run)
+        if run["client"] != "cli":
+            del want["max_budget_usd"]  # only the cli enforces it
+        self.assertEqual(e["run"], want)
         self.assertEqual({k: v for k, v in e.items() if k != "run"}, {k: v for k, v in base.items() if k != "run"})
         fc.bench.load_experiment(os.path.join(self.tmp.name, path))
 

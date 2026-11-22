@@ -626,7 +626,7 @@ def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="
         return [(True, "expected cost unknown: no recorded %s trial of %s on %s" % (client, scenario, model))]
     med, top = statistics.median(costs), costs[-1]
     out = [(True, "expected cost about %.2f USD per arm of %d trials (recorded max %.2f per trial%s)"
-            % (n_per_arm * med, n_per_arm, top, "" if max_budget is None else ", cap %g" % max_budget))]
+            % (n_per_arm * med, n_per_arm, top, ", cap %g" % max_budget if CLIENTS[client]["budget_cap"] else ""))]
     if CLIENTS[client]["budget_cap"] and top >= 0.5 * max_budget:
         out.append((False, "a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                            "or expect ERROR trials (recorded max %.2f USD, cap %g)" % (top, max_budget)))
@@ -1060,7 +1060,7 @@ def load_experiment(path):
     check(not (exp["name"] == SMOKE_EXPERIMENT and isinstance(r, dict) and "client" not in r),
           "%s is the make smoke template (no run.client, provider or model); run make smoke, which fills them in" % path)
     keys(r, "run", RUN_KEYS, optional=("max_budget_usd", "client_version", "bill_api_key"))
-    check(r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
+    check(isinstance(r["client"], str) and r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
     providers = CLIENTS[r["client"]]["providers"]
     if providers:
         check(r["provider"] in providers, "run.provider must be one of %s for client %s" % (", ".join(providers), r["client"]))

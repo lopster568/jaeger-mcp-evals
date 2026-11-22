@@ -1008,6 +1008,10 @@ class TestKnobFile(BenchCase):
     def test_provider_must_be_null(self):
         self.refused(lambda d: d["run"].update(client="codex", provider="openai"), "run.provider must be null")
 
+    def test_client_must_be_a_known_string(self):
+        for bad in (["cli"], "claude", None):
+            self.refused(lambda d: d["run"].update(client=bad), "run.client must be one of goose, cli, codex")
+
     def test_goose_needs_a_known_provider(self):
         self.refused(lambda d: d["run"].update(provider=None), "run.provider must be one of anthropic, openrouter for client goose")
 

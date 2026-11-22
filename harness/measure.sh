@@ -77,9 +77,9 @@ done
 import json, os, sys, datetime
 path, name, scenario, n, base, change, bs, hs, dry, client, provider, model = sys.argv[1:]
 run = {"client": client, "provider": provider if client == "goose" else None, "model": model, "effort": "high",
-       "max_turns": 30, "max_budget_usd": 2, "n_per_arm": int(n), "seed": None}
+       "max_turns": 30, "n_per_arm": int(n), "seed": None}
 if client == "cli":
-    run["bill_api_key"] = True  # cli only; the goose client bills the provider's key itself
+    run.update(max_budget_usd=2, bill_api_key=True)  # cli only; goose bills the provider's key itself and has no budget cap
 doc = {
   "name": name, "version": 2, "scenario": scenario,
   "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often %s reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, model if client == "cli" else model + " on Goose", n),

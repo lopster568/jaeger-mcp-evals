@@ -239,6 +239,8 @@ def smoke_file(cfg):
     with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:
         e = json.load(f)
     e["run"] = dict(client=client, provider=provider, model=model, **e["run"])
+    if client != "cli":
+        del e["run"]["max_budget_usd"]  # only the cli enforces it
     with open(os.path.join(ROOT, SMOKE_RUN), "w", encoding="utf-8") as f:
         json.dump(e, f, indent=2)
         f.write("\n")
