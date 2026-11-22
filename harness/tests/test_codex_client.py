@@ -22,15 +22,14 @@ import codex_client  # noqa: E402
 
 
 class TestCodexBatch(BenchCase):
-    RUN = dict(RUN, client="codex", provider=None)
+    RUN = dict(RUN, client="codex", provider=None, model="gpt-t")
     spans = tbb.TestExport.spans
 
     def test_codex_client_scores_through_the_stream(self):
-        codex = {"client": "codex", "model": "gpt-t"}
-        self.assertEqual(self.run_batch(1, "--dry-run", run=codex), 0, self.err)
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("codex gpt-t xhigh", self.err)
         self.assertIn("codex_client.py", self.err)
-        self.assertEqual(self.run_batch(1, run=codex, OPENAI_API_KEY="sk-o", ANTHROPIC_API_KEY="sk-a"), 0, self.err)
+        self.assertEqual(self.run_batch(1, OPENAI_API_KEY="sk-o", ANTHROPIC_API_KEY="sk-a"), 0, self.err)
         b = self.batch_dir()
         self.assertEqual([s["verdict"] for s in bench.read_jsonl(os.path.join(b, "scores.jsonl"))], ["PASS", "PASS"])
         m = load(os.path.join(b, "manifest.json"))
@@ -95,7 +94,7 @@ class TestCodexBatch(BenchCase):
         self.assertTrue(errs)
 
     def test_codex_is_not_probed(self):
-        self.assertEqual(self.run_batch(1, run={"client": "codex", "model": "gpt-t"}), 0, self.err)
+        self.assertEqual(self.run_batch(1), 0, self.err)
         self.assertIsNone(load(os.path.join(self.batch_dir(), "preflight.json"))["sandbox_probe"])
         self.assertFalse(os.path.exists(os.path.join(self.home, "probe-calls.jsonl")))
 

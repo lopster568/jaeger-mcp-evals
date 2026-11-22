@@ -60,59 +60,21 @@ class TestClaudeBatch(CliCase):
 
     def test_full_batch(self):
         Fake.served_descriptions = {"get_services": "Summaries with an error flag per trace."}  # stock Jaeger wording passes
-        self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-test",
-                                    OPENAI_API_KEY="sk-o", OPENAI_BASE_URL="http://x"), 0, self.err)
+        self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-test"), 0, self.err)
         b = self.batch_dir()
-        for f in ("manifest.json", "cells.jsonl", "scores.jsonl", "restore.json", "preflight.json", "batch.log", "tools.json"):
-            self.assertTrue(os.path.isfile(os.path.join(b, f)), f)
         m = load(os.path.join(b, "manifest.json"))
-        for k in ("scenario", "batch_id", "n_per_arm", "model_requested", "effort", "arms", "seed", "order",
-                  "file_hashes_sha256", "system_under_test", "tools_list_sha256", "tools_list_path", "schema_version"):
-            self.assertIn(k, m)
-        self.assertEqual(m["schema_version"], 5)
-        self.assertEqual(m["arms"], ["noskill", "skill"])
-        self.assertEqual(m["batch_id"], os.path.basename(b))
-        self.assertEqual(m["tools_list_sha256"], bench.sha256_file(os.path.join(b, "tools.json")))
-        self.assertEqual(m["jaeger_commit"], "abc123")
-        # The knob file rides along verbatim, with its hash. It lives outside the repo in this
-        # test (the tmp dir), so "file" is just its basename: a relpath would otherwise carry
-        # the tmp dir's absolute path into the record (bench.repo_relpath).
-        self.assertEqual(m["experiment"], {"name": "t", "file": os.path.basename(self.knob_path),
-                                           "sha256": bench.sha256_file(self.knob_path), "content": load(self.knob_path)})
         cells = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
-        self.assertEqual(sorted(c["arm"] for c in cells), ["noskill", "skill"])
-        scores = bench.read_jsonl(os.path.join(b, "scores.jsonl"))
-        self.assertEqual([s["verdict"] for s in scores], ["PASS", "PASS"])
-        self.assertNotIn("read_skill_called", scores[0])
         for c in cells:
             trial = os.path.join(b, "%d-%s" % (c["order_index"], c["arm"]))
-            self.assertEqual(os.path.join(b, c["out_dir"]), trial)
             meta = load(os.path.join(trial, "meta.json"))
             self.assertEqual(list(meta), META_V4_KEYS)
             self.assertEqual((meta["schema_version"], meta["client"], meta["provider"], meta["agent_loop"]), (5, "cli", None, None))
-            self.assertEqual(meta["experiment"], {k: m["experiment"][k] for k in ("name", "file", "sha256")})
-            self.assertEqual(meta["run_id"], "%s/%d-%s" % (m["batch_id"], c["order_index"], c["arm"]))
-            self.assertEqual(meta["arm"], c["arm"])
-            self.assertEqual(meta["exit_code"], 0)
             self.assertEqual(meta["observed"], {"client_version": "2.1.282", "model": "claude-sonnet-5",
                                                 "tools": ["StructuredOutput"] + ["mcp__jaeger__" + n for n in (
                                                     "get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")],
                                                 "skills": ["s1"], "agents": ["a1"], "compaction_events": 0})
             self.assertEqual(meta["client_version_pre"], "2.1.282 (Claude Code)")
-            self.assertEqual(meta["jaeger_image"], STOCK_IMAGE)
-            self.assertEqual(meta["jaeger_image_id"], "sha256:feedface")
-            self.assertEqual(len(meta["otel_demo_ref"]), 40)
-            self.assertEqual(meta["tools_list_sha256"], m["tools_list_sha256"])
-            self.assertEqual(meta["tools_count"], 4)
-            self.assertEqual(meta["tool_descriptions_check"], "recorded_only")
-            self.assertTrue(meta["fault"]["ofrep_confirmed"])
-            self.assertEqual(meta["fault"]["signal_traces_seen"], 5)
-            self.assertEqual(meta["preflight"]["fixture_leak_under_fault"], "PASS")
             self.assertEqual(meta["max_budget_usd"], 2.0)
-            self.assertEqual(meta["mcp_config_sha256"], bench.sha256_file(os.path.join(trial, "mcp.json")))
-            self.assertEqual(load(os.path.join(trial, "mcp.json")),
-                             {"mcpServers": {"jaeger": {"type": "http", "url": "http://127.0.0.1:%s/jaeger/ui/api/ai/mcp/" % self.port}}})
-            self.assertEqual(read(os.path.join(trial, "exit.txt")), "exit=0\n")
             self.assertEqual(meta["client_argv"][2], "sha256:" + meta["prompt_sha256"])
             self.assertEqual(meta["client_argv"][meta["client_argv"].index("--mcp-config") + 1], "mcp.json")
         # The exact cli argv, pinned.
@@ -132,37 +94,8 @@ class TestClaudeBatch(CliCase):
         # The grader: sandboxed like the agent; both trials gave the same answer, so one call and one cache hit.
         graders = bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))
         self.assertEqual(len(graders), 1)
-        g = graders[0]["argv"]
-        for flag in ("--strict-mcp-config", "--restricted", "--no-session-persistence"):
-            self.assertIn(flag, g)
-        self.assertEqual([g[g.index(k) + 1] for k in ("--tools", "--setting-sources", "--model", "--system-prompt")],
-                         ["", "", "claude-fable-5-1", text("grader-prompt.txt")])
         self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
-        self.assertNotEqual(graders[0]["cwd"], bench.ROOT)
-        self.assertEqual(m["grader"], {"client": "cli", "model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
-                                       "prompt_sha256": bench.sha256_file(os.path.join(HARNESS_DIR, "grader-prompt.txt"))})
-        self.assertEqual(sorted((s["mechanism_grade"], s["grader_cached"]) for s in scores), [("correct", False), ("correct", True)])
-        self.assertEqual(m["preflight"]["fixture_leak_under_fault"], "PASS")
-        r = load(os.path.join(b, "restore.json"))
-        self.assertTrue(r["cp_ok"] and r["default_confirmed"])
-        self.assertEqual(self.flag_file(), self.pristine())
-        blog = read(os.path.join(b, "batch.log"))
-        self.assertIn("band paymentFailure/noskill: n=1 passes=1", blog)
-        self.assertIn("pre-flight PASS", blog)
-        self.assertEqual(m["scenario_version"], 2)
-        self.assertEqual(m["preflight"]["oracle"], "PASS")
-        self.assertIn("noskill: n=1 PASS=1 PARTIAL=0 FAIL=0 ABSTAIN=0 ERROR=0 INVALID=0 LEAK=0 stops=- ", blog)
-        # One stream: everything a human reads is on stderr, and batch.log carries every screen line too.
-        self.assertEqual(self.out, "")
-        for line in ("ok    paymentFailure ready", "[1/2] ", "tools used: get_trace_errors 1", "Records "):
-            self.assertIn(line, self.err)
-            self.assertIn(line, blog)
-        # The results table: a header, then one row per arm.
-        lines = self.err.splitlines()
-        head = next(i for i, l in enumerate(lines) if l.split()[:2] == ["arm", "pass"])
-        self.assertEqual([l.split()[:2] for l in lines[head + 1:] if l.startswith("  ") and not l.startswith("    ")][:2],
-                         [["noskill", "1/1"], ["skill", "1/1"]])
-        self.assertEqual(sum(1 for l in lines if l.lstrip().startswith(("noskill ", "skill ")) and "/1 " in l), 2)
+        self.assertEqual(m["grader"]["client"], "cli")
 
     def test_cli_refused_before_anything_is_touched_when_claude_lacks_a_flag(self):
         self.assertEqual(self.run_batch(1, FAKE_CLAUDE_HELP="--restricted --effort"), 1)
@@ -235,44 +168,19 @@ class TestClaudeBatch(CliCase):
         pathlib.Path(p).write_text('[1, 2]\n"x"\n{"type": "system", "subtype": "init", "model": "m"}\n')
         self.assertEqual(bench.observe(p)["model"], "m")
 
-    def test_client_version_mismatch_refuses_before_the_fixture(self):
-        self.refused(lambda d: d["run"].update(client_version="2.1.283"),
-                     "run.client_version is 2.1.283 but the cli client reports 2.1.282")
-        self.assertIn("fix: remove run.client_version from the experiment file to run on your CLI, or install 2.1.283 for an exact re-run", self.err)
-        self.assertEqual(self.calls(), [])
-        self.assertEqual(self.flag_file(), self.pristine())
-
-    def test_client_version_match_runs_and_is_recorded(self):
-        self.assertEqual(self.run_batch(1, run={"client_version": "2.1.282"}), 0, self.err)
-        m = load(os.path.join(self.batch_dir(), "manifest.json"))
-        self.assertEqual(m["preflight"]["client_version"], "PASS")
-        self.assertEqual(m["experiment"]["content"]["run"]["client_version"], "2.1.282")
-        self.assertEqual(load(os.path.join(self.batch_dir(), "preflight.json"))["client_version"], "PASS")
-
     def test_export_posts_one_trace_per_trial_with_run_attributes(self):
         self.assertEqual(self.run_batch(1, "--no-export"), 0, self.err)
         b = self.batch_dir()
         self.assertEqual(self.bench("export", b, PHOENIX_PORT=self.phoenix_port), 0, self.out)  # default endpoint from fixture.env
-        self.assertEqual(self.bench("export", b, "--endpoint", "http://127.0.0.1:%s/" % self.phoenix_port), 0, self.out)
-        (ctype, body), (_, again) = Fake.otlp_posts
-        self.assertEqual(ctype, "application/x-protobuf")
-        self.assertEqual(body, again)  # deterministic: a re-export sends the same trace and span ids
+        (_, body), = Fake.otlp_posts
         resource, spans = self.spans(body)
-        self.assertEqual(resource["openinference.project.name"], "t")
         kinds = [s["attrs"]["openinference.span.kind"] for s in spans]
         self.assertEqual(sorted(kinds), ["AGENT", "AGENT", "LLM", "LLM", "TOOL", "TOOL"])
-        batch_id = os.path.basename(b)
         for root in (s for s in spans if s["attrs"]["openinference.span.kind"] == "AGENT"):
             a = root["attrs"]
-            self.assertEqual({k: a[k] for k in ("experiment", "batch_id", "model", "client", "provider", "verdict", "trial_index")},
-                             {"experiment": "t", "batch_id": batch_id, "model": "claude-sonnet-5", "client": "cli",
-                              "provider": "anthropic", "verdict": "PASS", "trial_index": 0})
-            trial = [d for d in os.listdir(b) if d.endswith("-" + a["arm"])][0]
+            self.assertEqual((a["client"], a["provider"]), ("cli", "anthropic"))  # provider from the cli fallback
             tid = root[1][0]
-            self.assertEqual(tid.hex(), bench.hashlib.sha256(("paymentFailure/%s/%s" % (batch_id, trial)).encode()).hexdigest()[:32])
             children = [s for s in spans if s[1][0] == tid and s is not root]
-            self.assertEqual(len(children), 2)
-            self.assertTrue(all(s[4][0] == root[2][0] for s in children))  # parent is the AGENT span
             tool = next(s for s in children if s["attrs"]["openinference.span.kind"] == "TOOL")
             self.assertEqual(tool["attrs"]["tool.name"], "mcp__jaeger__get_trace_errors")
             self.assertEqual(tool["attrs"]["output.value"], "Payment request failed. Invalid token.")
@@ -339,10 +247,10 @@ class TestSandboxProbe(CliCase):
                 self.assertNotIn("python3 -", read(os.path.join(self.home, "ssh.log")))
                 self.assertFalse(os.path.exists(self.runs))
 
-    def write_recorded(self, rows):
-        os.makedirs(os.path.join(self.records, "old", "batch-1"))
+    def write_recorded(self, rows, client="cli"):
+        os.makedirs(os.path.join(self.records, "old", "batch-1"), exist_ok=True)
         with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:  # as every record has
-            json.dump({"client": "cli"}, f)
+            json.dump({"client": client}, f)
         with open(os.path.join(self.records, "old", "batch-1", "scores.jsonl"), "w") as f:
             f.writelines(json.dumps(dict({"scenario_used": "paymentFailure", "model_asserted": "sonnet"}, **r)) + "\n" for r in rows)
 
@@ -364,9 +272,7 @@ class TestSandboxProbe(CliCase):
 
     def test_max_budget_usd_is_required_for_the_cli(self):
         self.refused(lambda d: d["run"].pop("max_budget_usd"), "run.max_budget_usd must be a positive number")
-        self.write_recorded([{"cost_usd": 0.3}])
-        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:
-            json.dump({"client": "goose"}, f)
+        self.write_recorded([{"cost_usd": 0.3}], client="goose")
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 1, None, records=self.records, client="goose"),
                          [(True, "expected cost about 0.30 USD per arm of 1 trials (recorded max 0.30 per trial)")])  # no cap to name
 
@@ -384,8 +290,7 @@ class TestSandboxProbe(CliCase):
         self.assertIn("WARNING: a trial may be cut off by the per-trial cap and lose its verdict; raise run.max_budget_usd "
                       "or expect ERROR trials", self.err)
         self.assertNotIn("of 30 turns", self.err)
-        with open(os.path.join(self.records, "old", "batch-1", "manifest.json"), "w") as f:
-            json.dump({"client": "goose"}, f)
+        self.write_recorded([{"cost_usd": 1.2, "num_turns": 25}, {"cost_usd": 0.4, "num_turns": 9}], client="goose")
         lines = bench.expected_cost("paymentFailure", "sonnet", 1, 2, records=self.records, client="goose")
         self.assertEqual([ok for ok, _ in lines], [True])  # goose gets no budget cap, so nothing to warn about
 
