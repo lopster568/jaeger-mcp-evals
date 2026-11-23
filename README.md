@@ -17,7 +17,7 @@ flowchart LR
 
 | Need | Detail |
 |---|---|
-| Tools | make, Python 3.11 or newer (standard library only), Docker with Docker Compose 2.24 or newer, git, curl; `make preflight` checks all but make, and the ports |
+| Tools | make, Python 3.11 or newer (standard library only), Docker with Docker Compose 2.24 or newer, git, curl; Go (the version in Jaeger's `go.mod`) for `make measure` only; `make preflight` checks all but make, and the ports; install steps for Ubuntu are in [docs/USAGE.md](docs/USAGE.md#before-you-start) |
 | Agent client | `run.client` `goose`, the default: Goose v1.57.0 in the image the Jaeger AI Assistant demo pins, through Docker, with `run.provider` `anthropic` or `openrouter`, `run.model` by full id, and that provider's key in `fixture.env`. The agent sees only Jaeger's MCP tools (plus Goose's `load_skill`, counted); any other tool scores INVALID. The mechanism grader follows the agent client: `GRADER_CLIENT` `goose` (default, same image, `GRADER_PROVIDER` and `GRADER_MODEL` falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`, no default model). The Claude Code CLI (`cli`, which ran every published result, and its grader) and `codex` (experimental) are in [docs/USAGE.md](docs/USAGE.md#other-clients) |
 | Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; boots the pinned release quay.io/jaegertracing/jaeger:2.23.0; `make measure` runs the Jaeger built from your checkout (main lineage); no other release is used or tested |
 | Cost | Goose: depends on provider and model, recorded per trial. Claude CLI, published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant. Plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |
@@ -26,17 +26,18 @@ flowchart LR
 ## Quick Start
 
 ```bash
-cp fixture.env.example fixture.env   # set OPENROUTER_API_KEY; Goose defaults to the Jaeger AI Assistant demo's provider and model
-make setup     # free: install the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
-make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base, on Goose
-make smoke     # paid: one Goose trial end to end; CLIENT=cli runs it on the Claude Code CLI (log in once: claude)
-python3 harness/bench.py run harness/experiments/<name>.json --dry-run  # free: checks everything, prints the plan
-python3 harness/bench.py run harness/experiments/<name>.json            # paid: runs the trials and scores them
-python3 harness/bench.py verify                                         # free: re-scores every run from its raw files
+git clone https://github.com/lopster568/jaeger-mcp-evals && cd jaeger-mcp-evals
+cp fixture.env.example fixture.env   # set OPENROUTER_API_KEY; a free key covers a few smokes a day, make measure needs credits on it or a paid model
+make setup     # free: set up the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
+make smoke     # paid: one trial end to end, proves the setup; CLIENT=cli runs it on the Claude Code CLI (log in once: claude)
+# measure, the main job: JAEGER is your Jaeger clone (git clone https://github.com/jaegertracing/jaeger ~/jaeger) with your change committed on a branch;
+# SCENARIO is a file name in harness/scenarios/ without .json. It builds two images, then asks before spending.
+make measure JAEGER=~/jaeger SCENARIO=paymentFailure   # paid: A/B your commit against its base, on Goose
+python3 harness/bench.py verify      # free: re-score every run from its raw files
 ```
 
 > [!WARNING]
-> `make smoke` and `bench.py run` start paid agent trials. `make smoke` does its own dry run first and waits 5 seconds before spending.
+> `make smoke` and `make measure` start paid agent trials. `make smoke` does its own dry run first and waits 5 seconds before spending.
 
 Jaeger is at http://localhost:16686/jaeger/ui and Phoenix at http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Everything a batch does is set in one checked-in file, `harness/experiments/<name>.json`; command-line flags only choose a dry run, the first cell only, or skipping the Phoenix export (`measure.sh` has its own flags). Below 10 trials per arm a result only ranks the arms.
 

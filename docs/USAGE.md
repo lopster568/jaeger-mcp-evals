@@ -14,7 +14,14 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 
 ## Before you start
 
-1. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `OPENROUTER_API_KEY` in fixture.env (`GOOSE_PROVIDER` and `GOOSE_MODEL` default to the Jaeger AI Assistant demo's `openrouter` and `nvidia/nemotron-3.5-lightning:free`) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=cli` on the Claude Code CLI (`SMOKE_CLIENT` in fixture.env sets the default).
+1. On a fresh Ubuntu, install make and Docker, then log in again so the `docker` group applies (groups are read at login; `exit` the shell or ssh session and come back):
+   ```bash
+   sudo apt-get update && sudo apt-get install -y make git curl
+   curl -fsSL https://get.docker.com | sh
+   sudo usermod -aG docker "$USER"
+   ```
+   `make measure` also needs Go, the version in the `go.mod` of your Jaeger checkout.
+2. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `OPENROUTER_API_KEY` in fixture.env (`GOOSE_PROVIDER` and `GOOSE_MODEL` default to the Jaeger AI Assistant demo's `openrouter` and `nvidia/nemotron-3.5-lightning:free`) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=cli` on the Claude Code CLI (`SMOKE_CLIENT` in fixture.env sets the default). Pre-flight checks that a key is set, not that the provider accepts it or knows the model; the first trial is that check. A free OpenRouter key covers a few smokes a day; `make measure` needs credits on the key or a paid model.
    ```bash
    make setup
    ```
@@ -73,7 +80,7 @@ The `cli` and `codex` shapes are under Other clients.
 
 ### Other clients
 
-- `cli`: the logged-in `claude` (log in once: `claude`) via `harness/claude_client.py`. Every published result ran on it; [records/inputs/skill-callee-down-cli55.json](../records/inputs/skill-callee-down-cli55.json) is the shape: `"client": "cli"`, `"provider": null`, `"model": "claude-sonnet-5-5"`, and optionally `run.client_version` (`"2.1.285"` there) and `run.bill_api_key`. No API key is in its environment unless `run.bill_api_key` is true (client `cli` only): then the cli agent and the cli grader bill `ANTHROPIC_API_KEY` instead of the login. `GRADER_CLIENT=cli` in fixture.env grades on it (Pins, cost and what to attach).
+- `cli` (Claude Code CLI): the logged-in `claude` (install: `curl -fsSL https://claude.ai/install.sh | bash`; it puts `claude` in `~/.local/bin`, so open a new shell or add that directory to PATH; log in once: `claude`) via `harness/claude_client.py`. Every published result ran on it; [records/inputs/skill-callee-down-cli55.json](../records/inputs/skill-callee-down-cli55.json) is the shape: `"client": "cli"`, `"provider": null`, `"model": "claude-sonnet-5-5"`, and optionally `run.client_version` (`"2.1.285"` there) and `run.bill_api_key`. No API key is in its environment unless `run.bill_api_key` is true (client `cli` only): then the cli agent and the cli grader bill `ANTHROPIC_API_KEY` instead of the login. `GRADER_CLIENT=cli` in fixture.env grades on it (Pins, cost and what to attach).
 - `codex`, experimental: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`, `"provider": null`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
 
 ## Run a batch
@@ -85,6 +92,7 @@ The `cli` and `codex` shapes are under Other clients.
    > [!TIP]
    > The dry run is free: a read-only pre-flight that prints the plan and seed, never flips the flag or calls a model.
    The pre-flight prints numbered stages (`[1/4] Agent and grader`, `Scenario`, `Jaeger under test`, `Demo`; a real run adds `[5/6] Fault on` and `[6/6] Evidence`), each with the reason it exists and one `ok`, `FAIL` or `WARN` line per check. A `FAIL` stops the run, comes with a `fix:` line where a first-time runner is likely to land, and is followed by one `bench: ABORT` line. A `WARN` (the scripted evidence check failed) lets the trials go on.
+   Run `smoke-run.json` (written by `make smoke`), a file under `records/inputs/` (`cli` only), or your own copy of an experiment file.
 2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled (a cell still running after 30 minutes is killed and counts as a failed cell), restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json
