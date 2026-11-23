@@ -6,6 +6,6 @@ __pycache__/
 runs/
 dist/
 .make.log
-harness/experiments/smoke-run.json
-harness/experiments/smoke-goose.json
+harness/experiments/smoke-*.json
+!harness/experiments/smoke-paymentfailure.json
 harness/experiments/images/measure-*.json

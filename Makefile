@@ -25,7 +25,7 @@ help:
 	@echo "  make up         pull missing images, start the demo, wait (10 min at most) until it answers"
 	@echo "  make phoenix    start the optional Phoenix trajectory store"
 	@echo "Run"
-	@echo "  make smoke      PAID: dry run, then one agent trial on Goose (GOOSE_PROVIDER, GOOSE_MODEL); CLIENT=cli for the Claude Code CLI (about 50k tokens)"
+	@echo "  make smoke      PAID: dry run, then one agent trial on Goose (GOOSE_PROVIDER, GOOSE_MODEL); CLIENT=cli for the Claude Code CLI (about 50k tokens); CLIENT=codex for Codex (gpt-5.6-terra)"
 	@echo "  $(PYTHON) harness/bench.py run harness/experiments/<name>.json [--dry-run]   PAID without --dry-run"
 	@echo "  make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=cli]   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
 	@echo "Check"
@@ -44,7 +44,7 @@ preflight:
 fixture up phoenix down clean test:
 	@$(CLI) $@
 
-# Makes ONE paid agent call (Goose with GOOSE_PROVIDER and GOOSE_MODEL; CLIENT=cli: Claude Code CLI, claude-sonnet-5-5; effort high, budget cap in the experiment file).
+# Makes ONE paid agent call (Goose with GOOSE_PROVIDER and GOOSE_MODEL; CLIENT=cli: Claude Code CLI, claude-sonnet-5-5; CLIENT=codex: Codex, gpt-5.6-terra; effort high, budget cap in the experiment file).
 smoke:
 	@export FIXTURE_HOST_ONLY=0 $(if $(CLIENT),SMOKE_CLIENT=$(CLIENT)); $(PREFLIGHT) && $(CLI) smoke
 

@@ -57,9 +57,27 @@ class TestGrade(unittest.TestCase):
 
     def test_no_valid_label_raises_and_caches_nothing(self):
         a, b = self.shim({"type": "result", "structured_output": {"label": "maybe", "reason": "x"}})
-        with a, b, self.assertRaises(RuntimeError):
+        with a, b, self.assertRaises(grade.NoLabel):
             grade.grade(self._tmp.name, "truth", "answer")
+        self.assertEqual(self.calls(), 2)  # asked once more, then given up
         self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "grades.jsonl")))
+
+    def test_no_label_is_asked_once_more_and_recorded(self):
+        answers = [grade.NoLabel("grader: no valid label"), {"label": "correct", "reason": "r", "cost_usd": None}]
+        with mock.patch.object(grade, "call_cli", side_effect=answers) as ask:
+            g = grade.grade(self._tmp.name, "truth", "answer")
+        self.assertEqual((ask.call_count, g["label"], g["attempts"]), (2, "correct", 2))
+        with open(os.path.join(self._tmp.name, "grades.jsonl")) as f:
+            self.assertEqual(json.loads(f.read())["attempts"], 2)
+
+    def test_a_label_or_another_error_is_never_asked_again(self):
+        with mock.patch.object(grade, "call_cli", return_value={"label": "incorrect", "reason": "r", "cost_usd": None}) as ask:
+            self.assertEqual(grade.grade(self._tmp.name, "truth", "answer")["attempts"], 1)
+        self.assertEqual(ask.call_count, 1)
+        with mock.patch.object(grade, "call_cli", side_effect=RuntimeError("grader: billing: x")) as ask, \
+                self.assertRaisesRegex(RuntimeError, "billing"):
+            grade.grade(self._tmp.name, "truth", "another answer")
+        self.assertEqual(ask.call_count, 1)
 
     def test_bill_api_key_passes_the_key_in_env_only_and_checks_init(self):
         good = [{"type": "system", "subtype": "init", "apiKeySource": "ANTHROPIC_API_KEY"},

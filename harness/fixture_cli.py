@@ -9,7 +9,7 @@
   fixture_cli.py fixture   clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay
   fixture_cli.py up        pull missing images (and the Goose image), start the demo (and Phoenix, if it exists), wait until it is up
   fixture_cli.py phoenix   start the Phoenix trajectory store and wait until it answers
-  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (SMOKE_CLIENT: goose by default, or cli)
+  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (SMOKE_CLIENT: goose by default, cli or codex)
   fixture_cli.py down      stop the demo containers, keeping their data
   fixture_cli.py clean     remove the demo containers and network
   fixture_cli.py test      the offline unit tests
@@ -41,6 +41,7 @@ LOG = os.path.join(ROOT, ".make.log")
 SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")  # a template: no run.client, provider, model
 SMOKE_RUN = os.path.join("harness", "experiments", "smoke-run.json")  # SMOKE filled in by smoke_file(), git-ignored
 SMOKE_CLI_MODEL = "claude-sonnet-5-5"
+SMOKE_CODEX_MODEL = "gpt-5.6-terra"
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
 # Measured for the cli smoke trial only: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
 # A Goose trial costs what its provider and model charge; bench.py prints its own expected-cost line.
@@ -224,12 +225,13 @@ def goose_needed(cfg):
 
 def smoke_file(cfg):
     """The experiment make smoke dry-runs and runs: SMOKE filled in with Goose's provider and model from
-    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for SMOKE_CLIENT=cli with SMOKE_CLI_MODEL."""
+    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for SMOKE_CLIENT=cli or codex with
+    SMOKE_CLI_MODEL or SMOKE_CODEX_MODEL."""
     client, provider, model = smoke_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
-    if client == "cli":
-        provider, model = None, SMOKE_CLI_MODEL
+    if client in ("cli", "codex"):
+        provider, model = None, SMOKE_CLI_MODEL if client == "cli" else SMOKE_CODEX_MODEL
     elif client != "goose":
-        raise Failed("SMOKE_CLIENT is %r, not goose or cli" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose or cli")])
+        raise Failed("SMOKE_CLIENT is %r, not goose, cli or codex" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose, cli or codex")])
     elif provider not in goose_client.KEYS or not model:
         raise Failed("GOOSE_PROVIDER is %r; it must be anthropic or openrouter" % provider if provider not in goose_client.KEYS
                      else "GOOSE_MODEL is empty in fixture.env",

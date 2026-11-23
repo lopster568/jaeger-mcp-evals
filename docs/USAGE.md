@@ -31,7 +31,7 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 `harness/experiments/<name>.json` is the complete configuration of a batch; copy one for your
 own runs. `smoke-paymentfailure.json` is the exception: a template without `run.client`, `provider` or `model`,
 which `bench.py run` refuses; `make smoke` fills them in (Goose from `GOOSE_PROVIDER` and `GOOSE_MODEL`, or
-`CLIENT=cli` with `claude-sonnet-5-5`) and runs the git-ignored `smoke-run.json` it writes. Every key is required except `run.client_version`, `run.bill_api_key`, and `run.max_budget_usd` for `goose` and `codex`; unknown keys are refused. Below is the
+`CLIENT=cli` with `claude-sonnet-5-5`, or `CLIENT=codex` with `gpt-5.6-terra`) and runs the git-ignored `smoke-run.json` it writes. An experiment named `smoke-*` is a check, not a record: its batch is never copied to `records/` and `verify` skips it. Every key is required except `run.client_version`, `run.bill_api_key`, and `run.max_budget_usd` for `goose` and `codex`; unknown keys are refused. Below is the
 `goose` pair file `make measure` writes, with the long `hypothesis` elided and placeholders in angle brackets:
 
 ```json
@@ -81,7 +81,7 @@ The `cli` and `codex` shapes are under Other clients.
 ### Other clients
 
 - `cli` (Claude Code CLI): the logged-in `claude` (install: `curl -fsSL https://claude.ai/install.sh | bash`; it puts `claude` in `~/.local/bin`, so open a new shell or add that directory to PATH; log in once: `claude`) via `harness/claude_client.py`. Every published result ran on it; [records/inputs/skill-callee-down-cli55.json](../records/inputs/skill-callee-down-cli55.json) is the shape: `"client": "cli"`, `"provider": null`, `"model": "claude-sonnet-5-5"`, and optionally `run.client_version` (`"2.1.285"` there) and `run.bill_api_key`. No API key is in its environment unless `run.bill_api_key` is true (client `cli` only): then the cli agent and the cli grader bill `ANTHROPIC_API_KEY` instead of the login. `GRADER_CLIENT=cli` in fixture.env grades on it (Pins, cost and what to attach).
-- `codex`, experimental: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`, `"provider": null`; MCP only, read-only sandbox, stops after `max_turns` tool calls.
+- `codex`, experimental: `codex` (or `CODEX_BIN`) via `harness/codex_client.py`, `"provider": null`; MCP only, read-only sandbox, stops after `max_turns` tool calls. `make smoke CLIENT=codex` runs one trial on `gpt-5.6-terra` (log in once with `codex login`).
 
 ## Run a batch
 
@@ -97,7 +97,7 @@ The `cli` and `codex` shapes are under Other clients.
    ```bash
    python3 harness/bench.py run harness/experiments/<name>.json
    ```
-3. Verify: re-scores every `stream.jsonl`; fails on a disagreeing verdict, any INVALID or LEAK run, an answer with no cached grade, or a stale `records/INDEX.md` (`run` and `bench.py index` rewrite it).
+3. Verify: re-scores every `stream.jsonl` except those of smoke batches; fails on a disagreeing verdict, any INVALID or LEAK run, an answer with no cached grade, a trial that failed to score in its run (one `ERROR` line: discard that batch), or a stale `records/INDEX.md` (`run` and `bench.py index` rewrite it).
    ```bash
    python3 harness/bench.py verify
    ```
@@ -113,7 +113,8 @@ The `cli` and `codex` shapes are under Other clients.
 > [!WARNING]
 > Step 2 spends money: one agent trial per cell, plus one grader call per new mechanism answer.
 
-`run` exits 0 done; 1 bad file or pre-flight failure; 4 aborted after 3 consecutive cell failures;
+`run` exits 0 done; 1 bad file or pre-flight failure; 4 aborted after 3 consecutive cell failures, or every cell that ran
+failed (the client's own error is printed under each failed trial; a failed cell scores FAIL);
 6 interrupted or incomplete; 7 a trial failed to score (a grader timeout or invalid label; see the error rows in
 `scores.jsonl`), so `measure.sh` stops before judging.
 
@@ -202,7 +203,7 @@ The published results in this repo were measured with this protocol. A new compa
 
 ## Export to Phoenix
 
-1. `bench.py run` does this itself after the batch is scored and restored: it sends each trial in the batch's `scores.jsonl` to Phoenix as one OTLP trace and prints `Phoenix <url>/projects/<id>   project <experiment>: one trace per trial` (the id from Phoenix's `/v1/projects`; if that lookup fails, the base URL and `open the project, one trace per trial`) under the `Batch` line. Default endpoint `http://<FIXTURE_HOST>:<PHOENIX_PORT>`, project named after the experiment. Skip it with `run --no-export`. A dry run or an aborted run never exports. If Phoenix is not running (`make phoenix`) or the export is refused, the run prints one WARN with the batch directory and the command below; the exit code and the `Batch` line are unchanged. `make measure` runs both arms with `--no-export` and exports both batches after the judge, a failure only a warning.
+1. `bench.py run` does this itself after the batch is scored and restored: it sends each trial in the batch's `scores.jsonl` to Phoenix as one OTLP trace and prints `Phoenix <url>/projects/<id>   project <experiment>: one trace per trial` (the id from Phoenix's `/v1/projects`; if that lookup fails, the base URL and `open the project, one trace per trial`) under the `Batch` line. Default endpoint `http://<FIXTURE_HOST>:<PHOENIX_PORT>`, project named after the experiment. Skip it with `run --no-export`. A dry run, a run that exits 1, 5 or 6, and the 3-failure abort never export; a batch whose cells all failed or whose grade failed is exported before it exits 4 or 7, and a failed trial's root span carries the client's error as its status message. If Phoenix is not running (`make phoenix`) or the export is refused, the run prints one WARN with the batch directory and the command below; the exit code and the `Batch` line are unchanged. `make measure` runs both arms with `--no-export` and exports both batches after the judge, a failure only a warning.
    ```bash
    python3 harness/bench.py export <RUNS_DIR>/<scenario>/<batch-id> [--endpoint URL]
    ```

@@ -12,7 +12,8 @@ started_utc + duration_ms and every event's timestamp: the CLI's duration_ms can
 The LLM span runs from the last tool_result before the model's last event to the root's end. Streams
 without those timestamps (older CLIs) fall back to splitting duration_ms evenly across the child spans
 (timestamp.synthetic=true). The root carries the
-prompt and the answer, and tool outputs and the answer are cut to MAX_OUTPUT_BYTES. Ids are sha256-derived from the trace key, so the
+prompt and the answer, and the result event's `error` as its status message; tool outputs and the answer are cut to
+MAX_OUTPUT_BYTES. Ids are sha256-derived from the trace key, so the
 same trial always gets the same trace and span ids.
 
 Protobuf, not OTLP/JSON: Phoenix's /v1/traces answers 415 to application/json. The encoder
@@ -103,9 +104,11 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
         bounds = [(t0_ns + i * seg, t0_ns + (i + 1) * seg) for i in range(len(calls))]
         answer_start = t0_ns + len(calls) * seg
 
-    def span(i, name, s0, s1, attrs, error=False):
+    def span(i, name, s0, s1, attrs, error=False, message=None):
         s = {"traceId": tid, "spanId": sid(i), "name": name, "kind": 1, "startTimeUnixNano": str(s0),
              "endTimeUnixNano": str(s1), "attributes": attrs, "status": {"code": 2 if error else 1}}
+        if message:
+            s["status"]["message"] = truncate(str(message))
         if i:
             s["parentSpanId"] = sid(0)
         return s
@@ -116,7 +119,7 @@ def trace_spans(key, events, t0_ns, root_attrs, prompt=""):
     # root has token counts but no llm.model_name, so Phoenix prices only the LLM spans (no double count)
     spans = [span(0, "agent-run", start, end, [kv("openinference.span.kind", "AGENT"), kv("input.value", truncate(prompt)),
                                                kv("output.value", truncate(final_text))] + root_attrs + total
-                  + ([] if real else [kv("timestamp.synthetic", "true")]), bool(result.get("is_error")))]
+                  + ([] if real else [kv("timestamp.synthetic", "true")]), bool(result.get("is_error")), result.get("error"))]
     for i, c in enumerate(calls, 1):
         spans.append(span(i, c["name"], *bounds[i - 1],
                           [kv("openinference.span.kind", "TOOL"), kv("tool.name", c["name"]),
@@ -162,7 +165,8 @@ def _span(s):
     b += _varint(7 << 3 | 1) + struct.pack("<Q", int(s["startTimeUnixNano"]))
     b += _varint(8 << 3 | 1) + struct.pack("<Q", int(s["endTimeUnixNano"]))
     b += b"".join(_len(9, _kv(a)) for a in s["attributes"])
-    return b + _len(15, _varint(3 << 3) + _varint(s["status"]["code"]))
+    status = _str(2, s["status"]["message"]) if s["status"].get("message") else b""
+    return b + _len(15, status + _varint(3 << 3) + _varint(s["status"]["code"]))
 
 
 def encode(request):
