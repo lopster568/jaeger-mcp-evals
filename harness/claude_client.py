@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""The Claude Code CLI as an agent client (run.client cli): its argv, its pre-flight and the guards
+"""The Claude Code CLI as an agent client (run.client claude): its argv, its pre-flight and the guards
 only it supports (the sandbox probe, the model pin, the per-trial budget cap, plan-versus-key billing).
 bench.py runs `claude -p` itself and reads its stdout as stream.jsonl, the event shape every client writes.
 """
@@ -58,7 +58,7 @@ def is_full_model_id(m):
 
 def preflight(a, cfg, log):
     """The installed claude accepts the harness's flags, and billing is set as the experiment asks: None, or (message, fix)."""
-    log.detail("== pre-flight: cli client (claude flags) ==")
+    log.detail("== pre-flight: claude client (claude flags) ==")
     found = claude_missing_flags()
     if found is None:
         return ("claude is not on PATH",
@@ -75,10 +75,10 @@ def preflight(a, cfg, log):
                     "set ANTHROPIC_API_KEY in fixture.env, or set run.bill_api_key to false in the experiment file")
         grade.API_KEY = cfg["ANTHROPIC_API_KEY"]  # environment only: never argv, never a record
         grade.BILLING_FAILED = False
-        log.check(True, "agent and grader bill ANTHROPIC_API_KEY" if grade.CLIENT == "cli" else
+        log.check(True, "agent and grader bill ANTHROPIC_API_KEY" if grade.CLIENT == "claude" else
                   "agent bills ANTHROPIC_API_KEY (the %s grader bills its provider's key)" % grade.CLIENT)
     elif cfg.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
-        log.sub("ANTHROPIC_API_KEY is set; the cli client runs on the logged-in plan and ignores it")
+        log.sub("ANTHROPIC_API_KEY is set; the claude client runs on the logged-in plan and ignores it")
     return None
 
 

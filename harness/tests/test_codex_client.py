@@ -93,6 +93,14 @@ class TestCodexBatch(BenchCase):
         self.assertIsNone(codex_client.extract_json(json.dumps(dict(verdict, confidence="certain")), schema))
         self.assertIsNone(codex_client.extract_json("not json", schema))
 
+    def test_codex_needs_codex_code_mode_host_beside_it(self):
+        os.remove(os.path.join(self.binp, "codex-code-mode-host"))
+        path = self.binp + os.pathsep + "/usr/bin" + os.pathsep + "/bin"  # no host on the real PATH either
+        self.assertEqual(self.run_batch(1, "--dry-run", PATH=path), 1)
+        self.assertIn("codex-code-mode-host is not installed beside %s" % self.binp, self.err)
+        self.assertIn("install codex-code-mode-host from the same Codex release as codex", self.err)
+        self.assertFalse(os.path.exists(self.runs))
+
     def test_codex_is_not_probed(self):
         self.assertEqual(self.run_batch(1), 0, self.err)
         self.assertIsNone(load(os.path.join(self.batch_dir(), "preflight.json"))["sandbox_probe"])

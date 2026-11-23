@@ -50,7 +50,7 @@ VARIANT_IMAGE = "jaeger-mcp-evals/jaeger:main-d22c65b9"
 STOCK_IMAGE = "quay.io/jaegertracing/jaeger:2.20.0"
 RUN = {"client": "goose", "provider": "anthropic", "model": "sonnet", "effort": "xhigh", "max_turns": 30, "max_budget_usd": 2,
        "n_per_arm": 1, "seed": None}
-CLI = {"client": "cli", "provider": None}  # run=CLI: the Claude Code CLI adapter (test_claude_client.py)
+CLI = {"client": "claude", "provider": None}  # run=CLI: the Claude Code CLI adapter (test_claude_client.py)
 
 
 def arm(prompt, image=STOCK_IMAGE, tools=True, **extra):
@@ -364,6 +364,7 @@ class BenchCase(unittest.TestCase):
         os.makedirs(os.path.join(self.demo, "src", "flagd"))
         os.makedirs(os.path.join(self.demo, "overlay"))
         os.makedirs(binp)
+        self.binp = binp
         for rel in ("src/flagd/demo.flagd.json", "overlay/demo.flagd.json.pristine"):
             pathlib.Path(self.demo, rel).write_text(json.dumps(FLAGS, indent=2) + "\n")
         pathlib.Path(self.demo, ".env.override").write_text("X=1\n")
@@ -371,7 +372,8 @@ class BenchCase(unittest.TestCase):
         subprocess.run(git + ["init", "-q"], check=True)
         subprocess.run(git + ["add", "-A"], check=True)
         subprocess.run(git + ["commit", "-qm", "demo"], check=True)
-        for name, text in (("ssh", SSH), ("docker", DOCKER), ("vmstat", VMSTAT), ("claude", CLAUDE), ("codex", CODEX)):
+        for name, text in (("ssh", SSH), ("docker", DOCKER), ("vmstat", VMSTAT), ("claude", CLAUDE), ("codex", CODEX),
+                           ("codex-code-mode-host", "#!/bin/sh\n")):
             p = os.path.join(binp, name)
             pathlib.Path(p).write_text(text.replace("@FLAGS@", " ".join(claude_client.CLAUDE_FLAGS)))
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
@@ -384,7 +386,8 @@ class BenchCase(unittest.TestCase):
                     "FIXTURE_HOST": "127.0.0.1", "FIXTURE_SSH_USER": "tester", "FIXTURE_DEMO_DIR": "otel-demo-3.0.0",
                     "JAEGER_UI_PORT": self.port, "OFREP_PORT": self.port, "JAEGER_BASE_PATH": "/jaeger/ui",
                     "RUNS_DIR": self.runs, "MIN_CONTAINERS": "19", "KNOWN_COMMITS": "2.20.0=abc123",
-                    "CLAUDECODE": "1", "CODEX_BIN": "codex", "PHOENIX_PORT": "1",  # port 1: no Phoenix unless a test starts one
+                    "CLAUDECODE": "1", "CODEX_BIN": "codex", "GRADER_CLIENT": "claude",  # explicit: bench.run re-resolves an empty one
+                    "PHOENIX_PORT": "1",  # port 1: no Phoenix unless a test starts one
                     "ANTHROPIC_API_KEY": "sk-goose-test", "FAKE_GOOSE": write_goose(os.path.join(t, "goose-pass"), GOOSE_PASS)}
 
     def tearDown(self):
@@ -448,6 +451,8 @@ class TestBatch(BenchCase):
         self.assertEqual(self.run_batch(1, ANTHROPIC_API_KEY="sk-goose-secret-123",
                                         OPENAI_API_KEY="sk-o", OPENAI_BASE_URL="http://x"), 0, self.err)
         b = self.batch_dir()
+        self.assertIn("graded after the restore", self.err)  # the live row; no trial is graded before the restore
+        self.assertNotIn("UNGRADED", self.err)
         for f in ("manifest.json", "cells.jsonl", "scores.jsonl", "restore.json", "preflight.json", "batch.log", "tools.json"):
             self.assertTrue(os.path.isfile(os.path.join(b, f)), f)
         m = load(os.path.join(b, "manifest.json"))
@@ -524,7 +529,7 @@ class TestBatch(BenchCase):
         self.assertEqual([g[g.index(k) + 1] for k in ("--tools", "--setting-sources", "--model", "--system-prompt")],
                          ["", "", "claude-fable-5-1", text("grader-prompt.txt")])
         self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
-        self.assertEqual(m["grader"], {"client": "cli", "model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
+        self.assertEqual(m["grader"], {"client": "claude", "model": "claude-fable-5-1", "cli_version": "2.1.282 (Claude Code)",
                                        "prompt_sha256": bench.sha256_file(os.path.join(HARNESS_DIR, "grader-prompt.txt"))})
         self.assertEqual(sorted((s["mechanism_grade"], s["grader_cached"]) for s in scores), [("correct", False), ("correct", True)])
         r = load(os.path.join(b, "restore.json"))
@@ -1075,8 +1080,8 @@ class TestKnobFile(BenchCase):
         self.refused(lambda d: d["run"].update(client="codex", provider="openai"), "run.provider must be null")
 
     def test_client_must_be_a_known_string(self):
-        for bad in (["cli"], "claude", None):
-            self.refused(lambda d: d["run"].update(client=bad), "run.client must be one of goose, cli, codex")
+        for bad in (["cli"], "gemini", None):
+            self.refused(lambda d: d["run"].update(client=bad), "run.client must be one of goose, claude, codex (cli is read as claude)")
 
     def test_goose_needs_a_known_provider(self):
         self.refused(lambda d: d["run"].update(provider=None), "run.provider must be one of anthropic, openrouter for client goose")
@@ -1094,11 +1099,11 @@ class TestKnobFile(BenchCase):
         self.assertIsNone(load(os.path.join(b, "manifest.json"))["max_budget_usd"])
         self.assertEqual([load(m)["max_budget_usd"] for m in glob.glob(os.path.join(b, "*-*", "meta.json"))], [None, None])
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 1, None, records=self.records),
-                         [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
+                         [(True, "expected cost unknown: no recorded claude trial of paymentFailure on sonnet")])
 
-    def test_bill_api_key_only_for_cli(self):
+    def test_bill_api_key_only_for_claude(self):
         self.refused(lambda d: d["run"].update(bill_api_key=True),
-                     "run.bill_api_key must be true or false, and true only for client cli")
+                     "run.bill_api_key must be true or false, and true only for client claude")
 
     def test_draft_refused(self):
         self.refused(lambda d: d.update(status="DRAFT"), "DRAFT")
@@ -1690,6 +1695,23 @@ class TestGooseGrader(BenchCase):
         # an agent client that runs no container: the grader checks docker and the image itself
         self.assertEqual(self.run_batch(1, "--dry-run", run=CLI, ANTHROPIC_API_KEY="k", FAKE_NO_GOOSE_IMAGE="1"), 1)
         self.assertIn("fix: docker pull " + bench.goose_client.IMAGE, self.err)
+
+    def test_an_empty_grader_client_follows_the_agent(self):
+        for k in ("CLIENT", "PROVIDER", "GRADER_MODEL"):  # bench.run re-resolves these: put them back after the test
+            patcher = mock.patch.object(bench.grade, k, getattr(bench.grade, k))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.goose_grader(model="gm-1")  # what the import-time default looks like
+        self.assertEqual(self.run_batch(1, "--dry-run", run=CLI, GRADER_CLIENT="", ANTHROPIC_API_KEY="k"), 0, self.err)
+        self.assertEqual((bench.grade.CLIENT, bench.grade.GRADER_MODEL), ("claude", "claude-fable-5-1"))
+        self.assertIn("grader claude-fable-5-1", self.err)
+        codex = dict(client="codex", provider=None, model="gpt-t")
+        self.assertEqual(self.run_batch(1, "--dry-run", run=codex, GRADER_CLIENT="", OPENROUTER_API_KEY="k"), 0, self.err)
+        self.assertEqual(bench.grade.CLIENT, "goose")
+        self.assertIn("(codex has no grader client)", self.err)
+        self.goose_grader(model="gm-1")  # an explicit GRADER_CLIENT wins over the agent
+        self.assertEqual(self.run_batch(1, "--dry-run", run=CLI, GRADER_CLIENT="goose", ANTHROPIC_API_KEY="k"), 0, self.err)
+        self.assertEqual((bench.grade.CLIENT, bench.grade.GRADER_MODEL), ("goose", "gm-1"))
 
     def test_the_model_line_is_a_warning_only_when_the_models_differ(self):
         self.goose_grader(model="gm-1")

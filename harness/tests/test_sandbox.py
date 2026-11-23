@@ -86,6 +86,10 @@ class TestSandboxCheck(unittest.TestCase):
         s = self.score([init(J)] + call(J[0]) + [PASS_FINAL])
         self.assertEqual(s["sandbox_violations"], ["init_tool_missing:StructuredOutput"])
 
+    def test_claude_init_must_list_structured_output(self):
+        s = self.score([init(J)] + call(J[0]) + [PASS_FINAL], meta={"client": "claude"})
+        self.assertEqual(s["sandbox_violations"], ["init_tool_missing:StructuredOutput"])
+
     def test_mcp_servers_must_be_exactly_jaeger(self):
         for servers, want in (([], "mcp_servers:"), (SERVERS + [{"name": "fs"}], "mcp_servers:jaeger,fs"),
                               ([{"name": "other"}], "mcp_servers:other")):

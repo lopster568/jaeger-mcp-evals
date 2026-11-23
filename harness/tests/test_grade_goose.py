@@ -19,7 +19,7 @@ from unittest import mock
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 sys.path.insert(0, os.path.join(HARNESS_DIR, "tests"))
-import fake_grader  # noqa: E402,F401  (pins the cli grader; tests here patch what they need)
+import fake_grader  # noqa: E402,F401  (pins the claude grader; tests here patch what they need)
 import goose_client  # noqa: E402
 import grade  # noqa: E402
 import score  # noqa: E402
@@ -144,7 +144,12 @@ class GooseGrader(unittest.TestCase):
         self.assertEqual(grade.settings({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "g"}), ("goose", "openrouter", "g"))
         self.assertEqual(grade.settings({"GOOSE_PROVIDER": "openrouter", "GRADER_PROVIDER": "anthropic", "GOOSE_MODEL": "g", "GRADER_MODEL": "m"}),
                          ("goose", "anthropic", "m"))
-        self.assertEqual(grade.settings({"GRADER_CLIENT": "cli", "GOOSE_MODEL": "g"}), ("cli", "", "claude-fable-5-1"))
+        self.assertEqual(grade.settings({"GRADER_CLIENT": "cli", "GOOSE_MODEL": "g"}), ("claude", "", "claude-fable-5-1"))  # the alias
+        self.assertEqual(grade.settings({"GRADER_CLIENT": "claude", "GOOSE_MODEL": "g"}), ("claude", "", "claude-fable-5-1"))
+        # given the agent's client, an empty GRADER_CLIENT follows it
+        self.assertEqual(grade.settings({"GRADER_CLIENT": "", "GOOSE_MODEL": "g"}, "claude"), ("claude", "", "claude-fable-5-1"))
+        self.assertEqual(grade.settings({"GRADER_CLIENT": "", "GOOSE_MODEL": "g"}, "codex"), ("goose", "", "g"))
+        self.assertEqual(grade.settings({"GRADER_CLIENT": "goose", "GOOSE_MODEL": "g"}, "claude"), ("goose", "", "g"))
 
     def write_batch(self, grader, model="claude-fable-5-1"):
         """A batch whose manifest recorded `grader` and whose grades.jsonl holds one row under that grader's key."""
@@ -158,7 +163,7 @@ class GooseGrader(unittest.TestCase):
     def test_rescore_reads_the_manifests_grader_not_the_setting(self):
         old = {"model": "claude-fable-5-1", "prompt_sha256": "x", "cli_version": "2.1.282"}  # no client: written before GRADER_CLIENT
         self.write_batch(old)
-        self.assertEqual(grade.batch_grader(self.batch), {"client": "cli", "provider": None, "model": "claude-fable-5-1"})
+        self.assertEqual(grade.batch_grader(self.batch), {"client": "claude", "provider": None, "model": "claude-fable-5-1"})
         hit = grade.grade(self.batch, "t", "a", call=False)  # the setting is goose; the batch is cli
         self.assertEqual((hit["label"], hit["cached"]), ("correct", True))
         self.assertIsNone(grade.grade(self.batch, "t", "another answer", call=False))

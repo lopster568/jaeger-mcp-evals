@@ -19,7 +19,7 @@ from unittest import mock
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
 import grade  # noqa: E402
-import fake_grader  # noqa: E402,F401  (pins the cli grader)
+import fake_grader  # noqa: E402,F401  (pins the claude grader)
 
 SHIM = """#!/usr/bin/env python3
 import json, os, sys
@@ -142,15 +142,24 @@ class TestGrade(unittest.TestCase):
         self.assertIsNone(seen["input"])
         self.assertEqual(seen["argv"][1:3], ["-p", grade.user_prompt("t", "short")])
 
+    def test_claude_and_cli_share_a_cache_key(self):
+        who = {"provider": None, "model": "m"}
+        self.assertEqual(grade.cache_key("t", "x", dict(who, client="claude")), grade.cache_key("t", "x", dict(who, client="cli")))
+        batch = os.path.join(self._tmp.name, "b")
+        os.makedirs(batch)
+        with open(os.path.join(batch, "manifest.json"), "w") as f:
+            json.dump({"grader": {"model": "m"}}, f)  # written before GRADER_CLIENT: no client
+        self.assertEqual(grade.batch_grader(batch)["client"], "claude")
+
     def test_grader_model_and_bin_are_settings(self):
         try:
-            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "cli", "GRADER_MODEL": "m-x", "GRADER_BIN": "/w/claude-wrap"}):
+            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "claude", "GRADER_MODEL": "m-x", "GRADER_BIN": "/w/claude-wrap"}):
                 importlib.reload(grade)
                 self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("m-x", "/w/claude-wrap"))
         finally:
-            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "cli"}):
+            with mock.patch.dict(os.environ, {"GRADER_CLIENT": "cli"}):  # the old name still reloads as claude
                 importlib.reload(grade)
-        self.assertEqual((grade.GRADER_MODEL, grade.CLAUDE), ("claude-fable-5-1", "claude"))
+        self.assertEqual((grade.CLIENT, grade.GRADER_MODEL, grade.CLAUDE), ("claude", "claude-fable-5-1", "claude"))
 
 
 if __name__ == "__main__":

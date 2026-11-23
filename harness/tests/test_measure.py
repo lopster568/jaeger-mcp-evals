@@ -33,7 +33,8 @@ class Measure(unittest.TestCase):
         self.addCleanup(lambda: self.pair.unlink(missing_ok=True))
 
     def measure(self, *args, **env):
-        env = dict(os.environ, **dict({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model-x", "OPENROUTER_API_KEY": "k"}, **env))
+        env = dict(os.environ, **dict({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model-x", "OPENROUTER_API_KEY": "k",
+                                                         "CLIENT": "goose"}, **env))  # a local fixture.env may set CLIENT; empty would refuse
         return subprocess.run([shutil.which("bash"), MEASURE, self.repo, "cartFailure", *args], capture_output=True, text=True, cwd=ROOT, env=env)
 
     def test_scripts_parse(self):
@@ -57,8 +58,8 @@ class Measure(unittest.TestCase):
         self.assertIn("judge.py", tail[0])
         self.assertEqual([l.split("bench.py ")[-1] for l in tail[1:]], ["export <baseline batch dir>", "export <variant batch dir>"])
 
-    def planned_pair(self, *args):
-        out = self.measure("--dry-run", *args).stdout
+    def planned_pair(self, *args, **env):
+        out = self.measure("--dry-run", *args, **env).stdout
         text = out.split("would write %s:\n" % self.pair, 1)[1]
         return json.JSONDecoder().raw_decode(text)[0]
 
@@ -67,9 +68,53 @@ class Measure(unittest.TestCase):
         self.assertEqual((run["client"], run["provider"], run["model"]), ("goose", "openrouter", "vendor/model-x"))
         self.assertNotIn("bill_api_key", run)
 
-    def test_client_cli_runs_the_claude_cli_on_the_api_key(self):
-        run = self.planned_pair("--client", "cli")["run"]
-        self.assertEqual((run["client"], run["provider"], run["model"], run["bill_api_key"]), ("cli", None, "claude-sonnet-5-5", True))
+    def test_client_claude_runs_the_claude_cli_on_the_api_key(self):
+        run = self.planned_pair("--client", "claude", ANTHROPIC_API_KEY="k")["run"]
+        self.assertEqual((run["client"], run["provider"], run["model"], run["bill_api_key"]), ("claude", None, "claude-sonnet-5-5", True))
+        self.assertEqual(self.planned_pair("--client", "cli", ANTHROPIC_API_KEY="k")["run"], run)  # the old name, the same file
+
+    def test_client_from_the_environment_without_a_flag(self):
+        self.assertEqual(self.planned_pair(CLIENT="claude", ANTHROPIC_API_KEY="k")["run"]["client"], "claude")
+        self.assertEqual(self.planned_pair(CLIENT="claude", ANTHROPIC_API_KEY="k", CLAUDE_MODEL="claude-x")["run"]["model"], "claude-x")
+        self.assertEqual(self.planned_pair("--client", "goose", CLIENT="claude")["run"]["client"], "goose")  # the flag wins
+
+    def test_client_claude_needs_the_api_key_before_any_build(self):
+        r = self.measure("--dry-run", "--client", "claude", ANTHROPIC_API_KEY="")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("ANTHROPIC_API_KEY is empty; measure on claude bills the API key, not your claude.ai login", r.stderr)
+        self.assertNotIn("build-image.sh", r.stdout)
+        self.assertFalse(self.pair.exists())
+
+    def test_client_codex_runs_codex_with_no_budget_cap(self):
+        out = self.measure("--dry-run", "--client", "codex").stdout
+        run = json.JSONDecoder().raw_decode(out.split("would write %s:\n" % self.pair, 1)[1])[0]["run"]
+        self.assertEqual((run["client"], run["provider"], run["model"]), ("codex", None, "gpt-5.6-terra"))
+        self.assertNotIn("max_budget_usd", run)
+        self.assertIn("counts against your Codex login", out)
+        self.assertEqual(self.measure("--dry-run", "--client", "codex", CODEX_MODEL="").returncode, 2)
+
+    def test_an_unknown_client_names_what_was_typed(self):
+        r = self.measure("--dry-run", "--client", "bogus")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--client is 'bogus', not goose, claude or codex", r.stderr)
+        r = self.measure("--dry-run", CLIENT="bogus")
+        self.assertIn("CLIENT is 'bogus', not goose, claude or codex", r.stderr)
+        self.assertIn("CLIENT is '', not goose", self.measure("--dry-run", CLIENT="").stderr)
+
+    def test_an_unknown_scenario_lists_the_scenarios(self):
+        env = dict(os.environ, GOOSE_PROVIDER="openrouter", GOOSE_MODEL="m", OPENROUTER_API_KEY="k", CLIENT="goose")
+        r = subprocess.run([shutil.which("bash"), MEASURE, self.repo, "nope", "--dry-run"], capture_output=True, text=True, cwd=ROOT, env=env)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no such scenario: nope; scenarios: ", r.stderr)
+        self.assertIn(" paymentFailure", r.stderr)
+
+    def test_an_existing_cli_pair_file_matches_a_claude_request(self):
+        doc = self.planned_pair("--client", "claude", ANTHROPIC_API_KEY="k")
+        doc["run"]["client"] = "cli"  # written by measure.sh before 2026-11-23
+        self.pair.write_text(json.dumps(doc))
+        r = self.measure("--dry-run", "--client", "claude", ANTHROPIC_API_KEY="k")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("exists and matches, keeping it", r.stdout)
 
     def test_goose_settings_required(self):
         for env, said in (({"GOOSE_MODEL": ""}, "GOOSE_MODEL is empty"), ({"GOOSE_PROVIDER": ""}, "GOOSE_PROVIDER must be")):

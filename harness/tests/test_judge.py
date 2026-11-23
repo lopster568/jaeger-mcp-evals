@@ -322,8 +322,13 @@ class JudgeTests(unittest.TestCase):
         json.dump(m, open(mp, "w"))
         self.assertEqual(judge_mod.judge(self.baseline_dir, self.variant_dir)[1], 0)
 
-    def _cross_pair(self, variant_edit=None, noimg=None, **kw):
+    def _cross_pair(self, variant_edit=None, noimg=None, baseline_edit=None, **kw):
         write_manifest(self.baseline_dir, arm_pin="baseline", sha256="aaa")
+        if baseline_edit:
+            mp = os.path.join(self.baseline_dir, "manifest.json")
+            m = json.load(open(mp))
+            baseline_edit(m)
+            json.dump(m, open(mp, "w"))
         write_scores(self.baseline_dir, baseline_rows())
         write_manifest(self.variant_dir, arm_pin="descchange", sha256="bbb")
         if variant_edit:
@@ -381,9 +386,18 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("model_requested ('sonnet' vs 'opus')", lines[0])
 
+    def test_cli_and_claude_judge_as_one_client(self):
+        """A pre-2026-11-23 batch (client cli, grader without a client) against a new one (claude, grader claude)."""
+        grader = {"cli_version": "2.1.1", "model": "gm", "prompt_sha256": "g1"}
+        lines, code = self._cross_pair(lambda m: m.update(client="claude", grader=dict(grader, client="claude")),
+                                       baseline_edit=lambda m: m.update(client="cli", grader=dict(grader)), noimg=("o1", "o1"))
+        self.assertEqual(code, 0, lines[0])
+        self.assertIn("CROSS-EXPERIMENT", lines[0])
+
     def test_a_different_grader_refuses_and_old_manifests_still_match(self):
         old = {"cli_version": "2.1.1", "model": "gm", "prompt_sha256": "g1"}  # recorded before the goose grader: no client
-        for grader, refused in ((dict(old), False), (dict(old, client="cli"), False), (dict(old, model="other"), True),
+        for grader, refused in ((dict(old), False), (dict(old, client="cli"), False), (dict(old, client="claude"), False),
+                                (dict(old, model="other"), True),
                                 (dict(old, client="goose", provider="openrouter"), True)):
             lines, code = self._cross_pair(lambda m, g=grader: m.update(grader=g), noimg=("o1", "o1"))
             self.assertEqual(code, 2 if refused else 0, lines[0])

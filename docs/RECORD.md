@@ -44,7 +44,7 @@ Written before the fault flip and rewritten after the leak scan. It repeats the 
 
 - `order` (the shuffled cell list), `n_per_arm`, `arms`, `file_hashes_sha256` (harness files, scenario, each prompt), `tools_list_path`.
 - `arm_pin` (expected and running image) and `tools_description_check` (mode, file, hash; mode `recorded_only` or `no_tools`, file and hash null since 2026-11-21), with one arm.
-- `grader` (`client`, `model`, `prompt_sha256`, and `provider` and `image` for goose or `cli_version` for cli; absent `client` means cli) and `scenario_version` (the scenario file's `version`).
+- `grader` (`client`, `model`, `prompt_sha256`, and `provider` and `image` for goose or `cli_version` for claude; absent `client` means claude, the Claude Code CLI; older records say `cli`) and `scenario_version` (the scenario file's `version`).
 - `goose_image`, client goose only: the pinned image the trials ran in, by digest.
 - `experiment.content`, the experiment file verbatim; judge.py reads it with `experiment.sha256` and `arm_pin`.
 

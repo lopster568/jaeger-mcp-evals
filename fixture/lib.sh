@@ -18,6 +18,7 @@ for f in "$ROOT/fixture.env" "$ROOT/fixture.env.example"; do
     fi
   done < "$f"
 done
+norm_client() { [ "$1" = cli ] && echo claude || echo "$1"; }  # cli, the old name, is claude
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 TARGET="$FIXTURE_SSH_USER@$FIXTURE_HOST"
 # shellcheck disable=SC2034  # read by the scripts that source this file

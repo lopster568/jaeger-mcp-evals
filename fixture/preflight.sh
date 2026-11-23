@@ -12,10 +12,13 @@ fail() { echo "preflight: $1"; exit 1; }
 
 # FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Compose and the demo's
 # ports are that host's, checked there by its own make up. This machine still runs Goose and the Goose grader in
-# Docker, so it needs docker unless the agent client (SMOKE_CLIENT) is cli or codex and GRADER_CLIENT is cli, or it
-# has no agent.
+# Docker, so it needs docker unless neither the agent client (CLIENT) nor the grader is goose, or it has no agent.
+# The grader is GRADER_CLIENT, or when that is empty the agent's own client if it is claude, else goose; cli reads as claude.
+C=$(norm_client "${CLIENT:-goose}")
+GR=$(norm_client "${GRADER_CLIENT:-}")
+[ -n "$GR" ] || { [ "$C" = claude ] && GR=claude || GR=goose; }
 REMOTE=; [ -n "$FIXTURE_SSH_USER" ] && REMOTE=1
-if [ -z "$REMOTE" ] || { [ "$FIXTURE_HOST_ONLY" != 1 ] && { { [ "$SMOKE_CLIENT" != cli ] && [ "$SMOKE_CLIENT" != codex ]; } || [ "$GRADER_CLIENT" != cli ]; }; }; then
+if [ -z "$REMOTE" ] || { [ "$FIXTURE_HOST_ONLY" != 1 ] && { [ "$C" = goose ] || [ "$GR" = goose ]; }; }; then
   command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop (the goose client and grader run in it)"
   info=$(docker info 2>&1 >/dev/null) || case $info in
     *"permission denied"*) fail "docker is installed but this user cannot use it (permission denied); run: sudo usermod -aG docker \$USER, then log out and in again" ;;
@@ -31,17 +34,17 @@ if [ -z "$REMOTE" ]; then
 fi
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
-# claude is needed only for run.client cli and GRADER_CLIENT=cli (empty means goose): a failure for the grader, a note for SMOKE_CLIENT=cli.
+# claude is needed only for CLIENT=claude and the claude grader: a failure for the grader, a note when only the agent is claude.
 if [ "$FIXTURE_HOST_ONLY" != 1 ]; then
   if command -v claude >/dev/null && env -u ANTHROPIC_API_KEY claude auth status >/dev/null 2>&1; then :
-  elif [ "$GRADER_CLIENT" = cli ]; then
+  elif [ "$GR" = claude ]; then
     if ! command -v claude >/dev/null; then
-      [ -x "$HOME/.local/bin/claude" ] && fail "claude is installed in ~/.local/bin but that is not on your PATH; open a new shell or add it to PATH (GRADER_CLIENT=cli needs it)"
-      fail "claude (the Claude Code CLI) is not installed; GRADER_CLIENT=cli needs it"
+      [ -x "$HOME/.local/bin/claude" ] && fail "claude is installed in ~/.local/bin but that is not on your PATH; open a new shell or add it to PATH (the claude grader needs it)"
+      fail "claude (the Claude Code CLI) is not installed; the claude grader needs it"
     fi
-    fail "claude is not logged in; run claude, then /login (GRADER_CLIENT=cli uses this login)"
-  elif [ "$SMOKE_CLIENT" = cli ]; then
-    echo "preflight: note: claude (the Claude Code CLI) not found or not logged in: needed for SMOKE_CLIENT=cli and run.client cli"
+    fail "claude is not logged in; run claude, then /login (the claude grader uses this login)"
+  elif [ "$C" = claude ]; then
+    echo "preflight: note: claude (the Claude Code CLI) not found or not logged in: needed for CLIENT=claude and the claude grader"
   fi
 fi
 PY="${PYTHON:-python3}"
