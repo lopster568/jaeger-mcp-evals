@@ -23,8 +23,8 @@ configuration of a batch. fixture.env (harness/config.py) holds this machine's s
 where the fixture runs, the API keys, the grader and the client binaries. Records follow
 docs/RECORD.md (schema v5).
 
-run exit codes: 0 done (or dry run / first-only), 1 bad experiment file, pre-flight or
-setup failure (nothing ran), 4 aborted after 3 consecutive cell failures, 5 the flag was not
+run exit codes: 0 done (or dry run, or first-only with its cell not failed), 1 bad experiment file, pre-flight or
+setup failure (nothing ran), 4 aborted after 3 consecutive cell failures or every cell that ran failed, 5 the flag was not
 confirmed back at its default after the restore (check the fixture by hand; wins
 over every other code), 6 interrupted (SIGINT, SIGTERM or SIGHUP) or fewer cells
 ran than planned, 7 a trial failed to score (grader or scoring error; the batch ran).
@@ -973,6 +973,21 @@ def observe(stream_path):
             "compaction_events": compactions}
 
 
+def client_error(trial):
+    """Why a failed cell's client stopped, as it said it: the final stream event's `error`, else the last non-empty
+    line of stderr.txt; at most 200 characters, "" when neither says anything."""
+    def last(name):
+        try:
+            return next((l.strip() for l in reversed(read_text(os.path.join(trial, name)).splitlines()) if l.strip()), "")
+        except OSError:
+            return ""
+    try:
+        why = json.loads(last("stream.jsonl") or "{}").get("error") or ""
+    except (ValueError, AttributeError):
+        why = ""
+    return str(why or last("stderr.txt"))[:200]
+
+
 # What run() and its pre-flight read from each agent client, so neither names one. Goose is the reference path;
 # the Claude Code CLI (claude_client.py) and Codex are adapters.
 #   argv(a, prompt_file, mcp_config, trial); preflight(a, cfg, log) -> None or (message, fix); version_cmd(a);
@@ -1536,7 +1551,7 @@ def run(a, cfg):
         log("  %s/" % shown(bdir))
         log("    batch.log preflight.json manifest.json tools.json cells.jsonl restore.json scores.jsonl")
         log("    <order_index>-<arm>/{prompt.txt,system-prompt.txt,mcp.json,meta.json,stream.jsonl,stderr.txt,exit.txt}")
-        if a.experiment != SMOKE_EXPERIMENT:  # keep_records copies nothing for the smoke batch
+        if not is_smoke(a.experiment):  # keep_records copies nothing for a smoke batch
             log("  copied to %s/: %s" % (shown(os.path.join(RECORDS, a.experiment, batch_id)), " ".join(RECORD_FILES)))
         log("\nbench: DRY RUN complete, nothing on the fixture or under RUNS_DIR was written")
         return 0
@@ -1674,6 +1689,8 @@ def run(a, cfg):
             log(label + paint(VERDICT_COLOR.get(verdict, "0"), verdict.ljust(7)) + "  " + calls.rjust(5) + "  "
                 + paint(DIM, dur(rec["wall_time_s"]).rjust(6)) + ("  " + paint(DIM, note) if note else ""))
             if rec["failed"]:
+                if why := client_error(os.path.join(bdir, rec["out_dir"])):
+                    log(" " * len(label) + paint(DIM, why))
                 log.detail("bench: cell FAILED (exit=%s), consecutive_fails=%d" % (rec["trial_exit_code"], fails))
             if fails >= 3:
                 log(paint(BOLD_RED, "bench: ABORTING remaining cells - 3 consecutive failures"))
@@ -1750,14 +1767,20 @@ def run(a, cfg):
     if interrupted or (not a.first_only and st["ran"] < len(plan)):
         log(paint(YELLOW, "bench: ran %d of %d planned cells; batch INCOMPLETE" % (st["ran"], len(plan))))
         return 6
-    failed = sum("error" in s for s in rows)
+    if not a.no_export:  # before the exits below: a refused trial or a failed grade is the trace most worth reading
+        export_batch(bdir, a.experiment, cfg, log)
+    if cells and all(c["failed"] for c in cells):  # 1- and 2-cell batches never reach the 3-failure abort
+        log(paint(BOLD_RED, "bench: every cell that ran failed (the client's error is under each trial); fix the cause and re-run"))
+        return 4
+    failed = [s for s in rows if "error" in s]
     if failed:  # judge.py counts such a row in n and never as PASS, so the pair would read worse than it is
-        log(paint(BOLD_RED, "bench: %d of %d trials failed to score (see the error rows in %s); fix the cause and re-run the batch before judging"
-                  % (failed, len(rows), shown(os.path.join(bdir, "scores.jsonl")))))
+        log(paint(BOLD_RED, "bench: %d of %d trials failed to score (see the error rows in %s)"
+                  % (len(failed), len(rows), shown(os.path.join(bdir, "scores.jsonl")))))
+        for s in failed:
+            log("  %s  %s" % (s["dir"], paint(DIM, s["error"])))
+        log("  run it again; if it repeats set GRADER_MODEL in fixture.env (docs/TUNING.md, Mechanism grader), then re-run the batch before judging")
         return 7
     log.detail("bench: batch complete: %s" % bdir)
-    if not a.no_export:
-        export_batch(bdir, a.experiment, cfg, log)
     return 0
 
 
@@ -1912,13 +1935,20 @@ def restore(cfg, bdir, restore_cmd, flag, default_variant, log):
 RECORD_FILES = ("manifest.json", "preflight.json", "cells.jsonl", "scores.jsonl", "restore.json")
 
 
-SMOKE_EXPERIMENT = "smoke-paymentfailure"  # harness/experiments/, run by make smoke
+SMOKE_EXPERIMENT = "smoke-paymentfailure"  # harness/experiments/, the template make smoke fills in
+
+
+def is_smoke(name):
+    """A smoke batch (make smoke, or any experiment named smoke-*) checks that the setup works; it is not a record."""
+    return name.startswith("smoke-")
 
 
 def keep_records(bdir, experiment, log):
     """Copy the batch-level records into the repository; trajectories stay under RUNS_DIR.
-    The smoke batch (make smoke) is a check that the fixture works, not a record."""
-    if experiment == SMOKE_EXPERIMENT:
+    A smoke batch is a check that the fixture works, not a record: only its Batch line is printed."""
+    if is_smoke(experiment):
+        log("")
+        log(paint(BOLD_CYAN, "Batch  ") + " " + shown(bdir) + "   " + paint(DIM, "(full log: batch.log; a smoke batch is not a record)"))
         return
     dest = os.path.join(RECORDS, experiment, os.path.basename(bdir))
     os.makedirs(dest, exist_ok=True)
@@ -2000,19 +2030,33 @@ def scenario_at_batch_sha(d, told):
 
 def verify(cfg):
     runs = runs_root(cfg)
-    arm_of, stored = {}, {}
+    arm_of, stored, errors, smoke = {}, {}, {}, set()
     for cf in glob.glob(os.path.join(runs, "**", "cells.jsonl"), recursive=True):
         b = os.path.dirname(cf)
+        mp = os.path.join(b, "manifest.json")
+        if os.path.isfile(mp) and is_smoke(str((load_json(mp).get("experiment") or {}).get("name") or "")):
+            smoke.add(b)
+            continue
         for rec in read_jsonl(cf):
             if rec.get("out_dir"):
                 arm_of[os.path.realpath(os.path.join(b, rec["out_dir"]))] = rec.get("arm")
         for row in read_jsonl(os.path.join(b, "scores.jsonl")):
             if row.get("dir"):
                 stored[os.path.realpath(os.path.join(b, row["dir"]))] = row.get("verdict")
+                if "error" in row:
+                    errors[os.path.realpath(os.path.join(b, row["dir"]))] = row["error"]
     cols = ["scenario", "arm", "dir", "verdict", "tool_calls", "call_errors", "steps_to_evidence", "tool_output_chars", "cost", "compaction"]
-    rows, mismatches, invalid, ungraded, told = [], [], [], [], set()
+    if smoke:
+        print("verify: skipped %d smoke batch(es): a check that the setup works, not a record" % len(smoke))
+    rows, mismatches, invalid, ungraded, failed, told = [], [], [], [], [], set()
     for p in sorted(glob.glob(os.path.join(runs, "**", "stream.jsonl"), recursive=True)):
         d = os.path.dirname(p)
+        if os.path.dirname(d) in smoke:
+            continue
+        if os.path.realpath(d) in errors:  # never scored, so neither a mismatch nor ungraded
+            failed.append("verify: ERROR %s: failed to score in its run (%s); discard the batch"
+                          % (os.path.relpath(d, runs), errors[os.path.realpath(d)]))
+            continue
         mp = os.path.join(d, "meta.json")
         arm = arm_of.get(os.path.realpath(d)) or (load_json(mp).get("arm") if os.path.isfile(mp) else None)
         try:
@@ -2047,7 +2091,7 @@ def verify(cfg):
                       % (r["dir"], r["compaction"]))
     else:
         print("verify: no stream.jsonl under %s (RUNS_DIR)" % runs)
-    for line in mismatches + invalid + ungraded:
+    for line in mismatches + invalid + ungraded + failed:
         print(line)
     idx = os.path.join(RECORDS, "INDEX.md")
     current = read_text(idx) if os.path.isfile(idx) else ""
@@ -2061,7 +2105,9 @@ def verify(cfg):
               "result from their batch stands" % len(invalid))
     if ungraded:
         print("verify: FAIL - %d run(s) have no cached mechanism grade" % len(ungraded))
-    if stale or mismatches or invalid or ungraded:
+    if failed:
+        print("verify: FAIL - %d run(s) failed to score in their batch run; discard those batches" % len(failed))
+    if stale or mismatches or invalid or ungraded or failed:
         return 1
     print("verify: %s matches the batch records" % idx)
     return 0
@@ -2283,7 +2329,8 @@ def export(batch_dir, endpoint, cfg, out=print):
                                            [otlp.kv(k, v) for k, v in attrs.items()] + [otlp.kv("metadata", json.dumps(attrs))],
                                            prompt)
             text = "\n".join([s["name"] for s in trial_spans] +  # raw values: JSON escapes could hide a word boundary
-                              [str(next(iter(a["value"].values()))) for s in trial_spans for a in s["attributes"]])
+                              [str(next(iter(a["value"].values()))) for s in trial_spans for a in s["attributes"]] +
+                              [s["status"].get("message", "") for s in trial_spans])
             found += ["%s: %s (%d)" % (row["dir"], name, len(r.findall(text))) for name, r in rx if r.search(text)]
             spans += trial_spans
     except (OSError, ValueError, KeyError) as e:

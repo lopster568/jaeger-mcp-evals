@@ -44,6 +44,8 @@ open(os.environ["SHIM_LOG"], "a").write(json.dumps({"argv": a, "recipe": rd("rec
     "key": os.environ.get("ANTHROPIC_API_KEY"), "openrouter": os.environ.get("OPENROUTER_API_KEY")}) + "\\n")
 for line in open(os.environ["SHIM_EVENTS"]):
     print(line, end="")
+if os.path.exists(os.environ["SHIM_EVENTS"] + ".next"):  # the next call answers differently
+    os.replace(os.environ["SHIM_EVENTS"] + ".next", os.environ["SHIM_EVENTS"])
 """
 
 
@@ -108,13 +110,27 @@ class GooseGrader(unittest.TestCase):
         self.assertNotIn(KEY, written)
 
     def test_no_label_raises_and_caches_nothing(self):
-        for events in ([{"type": "complete"}],
-                       [msg("m1", "assistant", request("t1", "recipe__final_output", {"label": "maybe", "reason": "x"})),
-                        msg("m2", "user", response("t1", "ok")), {"type": "complete"}]):
+        for events, said in (([{"type": "complete"}], ""),
+                             ([msg("m1", "assistant", request("t1", "recipe__final_output", {"label": "maybe", "reason": "x"})),
+                               msg("m2", "user", response("t1", "ok")), {"type": "complete"}], ""),
+                             ([msg("m1", "assistant", {"type": "text", "text": "The cause is a bad token."}), {"type": "complete"}],
+                              ": The cause is a bad token."),
+                             ([{"type": "error", "error": "Rate limit exceeded: free-models-per-day"}],
+                              ": Rate limit exceeded: free-models-per-day")):
             self.events_are(events)
-            with self.assertRaisesRegex(RuntimeError, "no valid label"):
+            with self.assertRaises(grade.NoLabel) as e:
                 grade.grade(self.batch, "t", "a")
+            self.assertEqual(str(e.exception), "grader: the grader returned no structured answer (goose anthropic gm-1, exit 0)" + said)
+        self.assertEqual(len([r for r in self.shim_log() if "argv" in r]), 8)  # each asked twice
         self.assertFalse(os.path.exists(os.path.join(self.batch, "grades.jsonl")))
+
+    def test_no_label_then_a_label_is_graded_on_the_second_call(self):
+        self.events_are([{"type": "complete"}])
+        pathlib.Path(self.events + ".next").write_text("".join(json.dumps(e) + "\n" for e in FINAL))
+        g = grade.grade(self.batch, "t", "a")
+        self.assertEqual((g["label"], g["attempts"]), ("correct", 2))
+        self.assertEqual(len([r for r in self.shim_log() if "argv" in r]), 2)
+        self.assertEqual(json.loads(pathlib.Path(self.batch, "grades.jsonl").read_text())["attempts"], 2)
 
     def test_keys(self):
         who = {"client": "cli", "provider": None, "model": "claude-fable-5-1"}

@@ -357,6 +357,15 @@ class SmokeFile(unittest.TestCase):
         self.filled({"SMOKE_CLIENT": "cli", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
                     client="cli", provider=None, model="claude-sonnet-5-5")
 
+    def test_codex_option_fills_in_codex(self):
+        self.filled({"SMOKE_CLIENT": "codex", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
+                    client="codex", provider=None, model=fc.SMOKE_CODEX_MODEL)
+
+    def test_unknown_client_names_all_three(self):
+        with self.assertRaises(fc.Failed) as e:
+            fc.smoke_file({"SMOKE_CLIENT": "claude"})
+        self.assertEqual(e.exception.text, "SMOKE_CLIENT is 'claude', not goose, cli or codex")
+
     def test_bench_refuses_the_template(self):
         with self.assertRaisesRegex(ValueError, "is the make smoke template .*; run make smoke, which fills them in"):
             fc.bench.load_experiment(str(REPO / fc.SMOKE))

@@ -15,7 +15,7 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | `cells.jsonl` | batch dir | one line per cell: order, arm, timings, exit code, `failed`, `interrupted` | yes |
 | `scores.jsonl` | batch dir | one scored line per cell | yes |
 | `restore.json` | batch dir | flag restore: `restored_utc`, `cp_ok`, `default_variant`, `variant_after_restore`, `default_confirmed` | yes |
-| `grades.jsonl` | batch dir | one line per grader call, `{label, reason, key, client, provider, model, prompt_sha256}` (client and provider absent on rows written before 2026-11-21); score.py reads it first | no |
+| `grades.jsonl` | batch dir | one line per graded answer, `{label, reason, key, client, provider, model, prompt_sha256, attempts}` (client and provider absent on rows written before 2026-11-21; `attempts`, 1 or 2 when the first call returned no label, absent before 2026-11-23); score.py reads it first | no |
 | `RESULT.md` | `records/<experiment>/` | judge.py's answer for a judged pair, naming both batches; a re-run overwrites it | yes |
 | `INDEX.md` | `records/` | results table and batch list; regenerated after each run and judge | yes |
 

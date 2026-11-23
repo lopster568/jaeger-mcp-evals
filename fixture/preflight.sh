@@ -12,9 +12,10 @@ fail() { echo "preflight: $1"; exit 1; }
 
 # FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Compose and the demo's
 # ports are that host's, checked there by its own make up. This machine still runs Goose and the Goose grader in
-# Docker, so it needs docker unless the agent client (SMOKE_CLIENT) and GRADER_CLIENT are both cli, or it has no agent.
+# Docker, so it needs docker unless the agent client (SMOKE_CLIENT) is cli or codex and GRADER_CLIENT is cli, or it
+# has no agent.
 REMOTE=; [ -n "$FIXTURE_SSH_USER" ] && REMOTE=1
-if [ -z "$REMOTE" ] || { [ "$FIXTURE_HOST_ONLY" != 1 ] && { [ "$SMOKE_CLIENT" != cli ] || [ "$GRADER_CLIENT" != cli ]; }; }; then
+if [ -z "$REMOTE" ] || { [ "$FIXTURE_HOST_ONLY" != 1 ] && { { [ "$SMOKE_CLIENT" != cli ] && [ "$SMOKE_CLIENT" != codex ]; } || [ "$GRADER_CLIENT" != cli ]; }; }; then
   command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop (the goose client and grader run in it)"
   info=$(docker info 2>&1 >/dev/null) || case $info in
     *"permission denied"*) fail "docker is installed but this user cannot use it (permission denied); run: sudo usermod -aG docker \$USER, then log out and in again" ;;

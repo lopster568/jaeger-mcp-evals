@@ -162,6 +162,32 @@ class TestInvalidCounted(unittest.TestCase):
         self.assertIn("init_tool_extra:Bash", out.getvalue())
         self.assertIn("verify: FAIL - 1 run(s) INVALID", out.getvalue())
 
+    def test_verify_skips_a_smoke_batch_and_names_a_failed_grade_elsewhere(self):
+        def verify(name):
+            with tempfile.TemporaryDirectory() as runs, tempfile.TemporaryDirectory() as records:
+                b = make_batch(runs, [[init()] + call(J[0]) + [PASS_FINAL]])
+                os.remove(os.path.join(b, "grades.jsonl"))  # the grade failed, so nothing was cached
+                with open(os.path.join(b, "manifest.json"), "w") as f:
+                    json.dump({"scenario": "paymentFailure", "schema_version": 5, "experiment": {"name": name}}, f)
+                with open(os.path.join(b, "scores.jsonl"), "w") as f:
+                    f.write(json.dumps({"dir": "0-noskill", "arm": "noskill", "error": "grader: no structured answer"}) + "\n")
+                with open(os.path.join(records, "INDEX.md"), "w") as f:
+                    f.write(bench.index_text(records))
+                out = io.StringIO()
+                with mock.patch.dict(os.environ, {"RUNS_DIR": runs}), mock.patch.object(bench, "RECORDS", records), \
+                        contextlib.redirect_stdout(out):
+                    return bench.main(["verify"]), out.getvalue()
+
+        rc, out = verify("smoke-paymentfailure")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("verify: skipped 1 smoke batch(es)", out)
+        rc, out = verify("t")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("verify: ERROR runs/paymentFailure/batch-20260928T000000Z/0-noskill: failed to score in its run "
+                      "(grader: no structured answer); discard the batch", out)
+        self.assertNotIn("MISMATCH", out)
+        self.assertNotIn("UNGRADED", out)
+
     def test_judge_counts_invalid_and_never_as_pass(self):
         m = judge.arm_metrics([{"arm": "a", "verdict": "INVALID"}, {"arm": "a", "verdict": "PASS"}], "a", [])
         self.assertEqual((m["n"], m["pass_count"], m["invalid"]), (2, 1, 1))

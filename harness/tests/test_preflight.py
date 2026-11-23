@@ -81,6 +81,8 @@ class Preflight(unittest.TestCase):
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="goose").returncode, 1)
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="goose", grader="cli").returncode, 1)
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="cli").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="codex", grader="cli").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="codex", grader="goose").returncode, 1)
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, host_only="1").returncode, 0)  # no agent here
 
     def test_compose_must_be_2_24_or_newer_locally(self):

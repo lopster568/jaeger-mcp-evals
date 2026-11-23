@@ -187,6 +187,9 @@ def to_stream(goose_events, stderr_text, model, client_version, with_tools=True,
     elif complete is None or returncode is None:  # stopped or crashed before Goose exited: never a success
         subtype = "error_during_execution"
         err = "goose stopped before it finished" if returncode is None else "goose exited %s without a complete event" % returncode
+        said = next((l.strip() for l in reversed((stderr_text or "").splitlines()) if l.strip()), "")
+        if returncode is not None and said:  # the provider's refusal is often only on stderr
+            err += ": " + said[:200]
     elif structured is None and last_text.strip() == MAX_TURNS_MESSAGE:
         subtype = "error_max_turns"
     else:

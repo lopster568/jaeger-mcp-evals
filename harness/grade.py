@@ -59,6 +59,10 @@ BILLING_FAILED = False  # set by the first billing error: no later grader call m
 TIMEOUT_S = 300
 
 
+class NoLabel(RuntimeError):
+    """The grader answered but gave no valid label: the one failure grade() asks again for."""
+
+
 def prompt_text():
     with open(PROMPT, encoding="utf-8") as f:
         return f.read()
@@ -145,7 +149,7 @@ def call_cli(truth, text):
             raise ValueError(ans["label"])
         return {"label": ans["label"], "reason": str(ans["reason"]), "cost_usd": out.get("total_cost_usd")}
     except (ValueError, KeyError, TypeError, IndexError, StopIteration) as e:
-        raise RuntimeError("grader: no valid label (exit %s): %r" % (p.returncode, e))
+        raise NoLabel("grader: no valid label (exit %s): %r" % (p.returncode, e))
 
 
 def call_goose(truth, text):
@@ -188,15 +192,18 @@ def call_goose(truth, text):
         if ans["label"] not in LABELS:
             raise ValueError(ans["label"])
         return {"label": ans["label"], "reason": str(ans["reason"]), "cost_usd": result.get("total_cost_usd")}
-    except (ValueError, KeyError, TypeError) as e:
-        raise RuntimeError("grader: no valid label (exit %s): %r %s" % (rc, e, result.get("error") or ""))
+    except (ValueError, KeyError, TypeError):
+        said = result.get("error") or str(result.get("result") or "").strip()[:200]
+        raise NoLabel("grader: the grader returned no structured answer (goose %s %s, exit %s)%s"
+                      % (PROVIDER, GRADER_MODEL, rc, ": " + said if said else ""))
 
 
 def grade(batch_dir, truth, text, call=True):
     """The cached label for (truth, text), else one grader call (call=True) appended to the cache, else None.
     call=True is bench.py run, which writes the current identity to the manifest first; call=False looks up the grader
-    the batch's manifest recorded. Returns {"label", "reason", "cost_usd", "model", "prompt_sha256", "cached"};
-    cost_usd is None on rows cached before 2026-11-17."""
+    the batch's manifest recorded. A call that returns no label is made once more; a label is never asked again.
+    Returns {"label", "reason", "cost_usd", "model", "prompt_sha256", "attempts", "cached"}; cost_usd is None on rows
+    cached before 2026-11-17, attempts absent on rows cached before 2026-11-23."""
     who = current() if call else batch_grader(batch_dir) or current()
     key, path = cache_key(truth, text, who), os.path.join(batch_dir, "grades.jsonl")
     if os.path.isfile(path):
@@ -207,8 +214,13 @@ def grade(batch_dir, truth, text, call=True):
                     return dict(row, cached=True)
     if not call:
         return None
-    row = dict((call_cli if CLIENT == "cli" else call_goose)(truth, text), key=key, client=CLIENT,
-               provider=who["provider"], model=GRADER_MODEL, prompt_sha256=prompt_sha())
+    ask = call_cli if CLIENT == "cli" else call_goose
+    try:
+        got, attempts = ask(truth, text), 1
+    except NoLabel:
+        got, attempts = ask(truth, text), 2
+    row = dict(got, key=key, client=CLIENT, provider=who["provider"], model=GRADER_MODEL, prompt_sha256=prompt_sha(),
+               attempts=attempts)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
     return dict(row, cached=False)

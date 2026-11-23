@@ -184,6 +184,12 @@ class TestMapping(Scored):
         r = goose_client.to_stream([], "", "m", "1", returncode=None)[-1]
         self.assertEqual((r["subtype"], r["error"]), ("error_during_execution", "goose stopped before it finished"))
 
+    def test_an_exit_without_complete_carries_the_last_stderr_line(self):
+        stderr = "starting session\nRate limit exceeded: free-models-per-day. Add 10 credits\n\n"
+        r = goose_client.to_stream([], stderr, "m", "1", returncode=1)[-1]
+        self.assertEqual(r["error"], "goose exited 1 without a complete event: Rate limit exceeded: free-models-per-day. Add 10 credits")
+        self.assertEqual(goose_client.to_stream([], "", "m", "1", returncode=1)[-1]["error"], "goose exited 1 without a complete event")
+
     def test_accepted_answer_without_complete_is_not_a_success(self):
         """A trial stopped after the answer but before Goose's complete event has no usage: never a success."""
         events = [msg("a1", "assistant", request("t1", "recipe__final_output", {"x": 1})),

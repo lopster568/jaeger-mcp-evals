@@ -596,7 +596,7 @@ class TestBatch(BenchCase):
         goose = {"client": "goose", "provider": "anthropic", "model": "m"}
         with mock.patch.object(bench, "CELL_TIMEOUT_S", 0.5):
             self.assertEqual(self.run_batch(1, run=goose, arms={"noskill": arm("neutral")}, ANTHROPIC_API_KEY="k",
-                                            FAKE_GOOSE_HANG="1"), 0, self.err)
+                                            FAKE_GOOSE_HANG="1"), 4, self.err)  # its one cell failed
         b = self.batch_dir()
         [c] = bench.read_jsonl(os.path.join(b, "cells.jsonl"))
         self.assertEqual((c["failed"], c["trial_exit_code"]), (True, 124))
@@ -750,6 +750,26 @@ class TestBatch(BenchCase):
         self.assertIn("2 of 2 trials failed to score", self.err)
         rows = bench.read_jsonl(os.path.join(self.batch_dir(), "scores.jsonl"))
         self.assertTrue(rows and all("grader timeout" in r["error"] for r in rows))
+        for r in rows:  # each error row is listed under the line, with its cause
+            self.assertIn("  %s  grader timeout" % r["dir"], self.err)
+        self.assertIn("run it again; if it repeats set GRADER_MODEL in fixture.env (docs/TUNING.md, Mechanism grader)", self.err)
+        self.assertIn("WARN  Phoenix not running", self.err)  # the export was attempted before the exit (PHOENIX_PORT=1)
+
+    def test_a_one_cell_batch_whose_client_failed_says_why_and_exits_4(self):
+        refused = write_goose(os.path.join(self._tmp.name, "refused"), [], "Rate limit exceeded: free-models-per-day. Add 10 credits\n")
+        self.assertEqual(self.run_batch(1, arms={"noskill": arm("neutral")}, FAKE_GOOSE=refused, PHOENIX_PORT=self.phoenix_port),
+                         4, self.err)
+        lines = self.err.splitlines()
+        row = next(i for i, l in enumerate(lines) if "[1/1] noskill #0" in l)
+        self.assertIn("ERROR", lines[row])
+        self.assertEqual(lines[row + 1].strip(),
+                         "goose exited 0 without a complete event: Rate limit exceeded: free-models-per-day. Add 10 credits")
+        self.assertIn("bench: every cell that ran failed", self.err)
+        self.assertEqual(self.flag_file(), self.pristine())
+        (_, body), = Fake.otlp_posts  # exported before the exit, the reason on the root span's status
+        status = [pb(pb(sp)[15][0]) for sp in pb(pb(pb(body)[1][0])[2][0])[2] if not pb(sp).get(4)]  # no parent: the root
+        self.assertEqual([(st[3], st[2][0].decode()) for st in status],
+                         [([2], "goose exited 0 without a complete event: Rate limit exceeded: free-models-per-day. Add 10 credits")])
 
     def test_unconfirmed_restore_exits_5(self):
         self.assertEqual(self.run_batch(1, FAKE_FAIL_RESTORE="1"), 5, self.err)
@@ -1120,10 +1140,12 @@ class TestRecords(BenchCase):
         return dirs[0]
 
     def test_smoke_batch_is_not_a_record(self):
-        log = mock.MagicMock()
-        bench.keep_records(self.runs, bench.SMOKE_EXPERIMENT, log)
-        self.assertFalse(os.path.exists(self.records))
-        log.assert_not_called()
+        for name in (bench.SMOKE_EXPERIMENT, "smoke-codex"):
+            shutil.rmtree(self.runs, ignore_errors=True)
+            self.assertEqual(self.bench("run", self.knob({"noskill": arm("neutral")}, name=name)), 0, self.err)
+            self.assertFalse(os.path.exists(self.records))  # nothing copied, no INDEX.md written
+            self.assertEqual(re.findall(r"(?m)^Batch +([^ ]+)", bench.ANSI.sub("", self.err)), [bench.shown(self.batch_dir())])
+        self.assertFalse(bench.is_smoke("t") or bench.is_smoke("release-smoke-x"))
 
     def test_batch_line_is_what_measure_sh_parses(self):
         """measure.sh reads the batch dir with sed -n 's/^Batch  *\\([^ ]*\\).*/\\1/p' from the screen log."""
@@ -1461,6 +1483,17 @@ class TestOtlpSpans(unittest.TestCase):
         spans = bench.otlp.trace_spans("k", self.events(stamped=False), 10**9, [])
         self.assertEqual(self.attrs(spans[0])["timestamp.synthetic"], "true")
         self.assertEqual([int(s["endTimeUnixNano"]) - int(s["startTimeUnixNano"]) for s in spans[1:]], [3 * 10**9] * 3)
+
+    def test_root_status_carries_the_clients_error_and_nothing_otherwise(self):
+        ok = bench.otlp.trace_spans("k", self.events(), 0, [])
+        self.assertEqual(ok[0]["status"], {"code": 1})
+        failed = self.events()
+        failed[-1] = dict(failed[-1], is_error=True, error="Rate limit exceeded")
+        root = bench.otlp.trace_spans("k", failed, 0, [])[0]
+        self.assertEqual(root["status"], {"code": 2, "message": "Rate limit exceeded"})
+        status = pb(pb(bench.otlp._span(root))[15][0])
+        self.assertEqual((status[2], status[3]), ([b"Rate limit exceeded"], [2]))
+        self.assertNotIn(2, pb(pb(bench.otlp._span(ok[0]))[15][0]))  # no message field: a clean trial encodes as before
 
     def test_root_carries_prompt_and_answer_truncated(self):
         a = self.attrs(bench.otlp.trace_spans("k", self.events(), 0, [], "p" * 20000)[0])
