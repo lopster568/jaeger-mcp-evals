@@ -63,7 +63,7 @@ docker compose --env-file .env --env-file .env.override \
 
 No `--remove-orphans`: whether it removes a running Phoenix container (profile `store`, not active here) depends on the Compose version, and removing the store silently is worse than leaving an orphan.
 
-The same flags with `down` stop it, but `down` empties Jaeger's store, so avoid it between batches. Give the load generator a few minutes to fill Jaeger.
+`make down` stops the containers (`docker compose stop`), and Jaeger's in-memory store is lost, so avoid it between batches; `make clean` removes the containers and network. Give the load generator a few minutes to fill Jaeger.
 
 ## Trajectory store (optional)
 
@@ -160,7 +160,7 @@ It never restarts a running container. Exit codes: 0 built and recorded, 1 refus
 
 ## Gotchas
 
-- After a Docker restart the stack may stay down despite `restart: unless-stopped`; check the container count and rerun `up -d` (wait a minute if the engine is still starting).
+- After a Docker restart the stack may stay down despite `restart: unless-stopped`; check the container count and run `make up` (wait a minute if the engine is still starting).
 - After a host reboot run `make up`: it restarts the demo and, when its container exists, Phoenix.
 - flagd can hang at its memory cap (the demo's 75M; the overlay raises it to 200M): OFREP accepts connections but never answers, and `docker stats` shows flagd at high CPU near its limit. Recreate only flagd: `... up -d --no-deps --force-recreate flagd`.
 - Jaeger's Dockerfile needs `--build-arg debug_image=...` even for `--target release`; build-image.sh passes it.

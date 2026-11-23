@@ -99,7 +99,7 @@ The `claude` and `codex` shapes are under Other clients.
    ```
 3. Verify: re-scores every `stream.jsonl` except those of smoke batches; fails on a disagreeing verdict, any INVALID or LEAK run, an answer with no cached grade, a trial that failed to score in its run (one `ERROR` line: discard that batch), or a stale `records/INDEX.md` (`run` and `bench.py index` rewrite it).
    ```bash
-   python3 harness/bench.py verify
+   make verify
    ```
 4. Judge the baseline and variant batches (`$RUNS_DIR` or `records/` copies): PASS or FAIL per threshold, then `EXPERIMENT PASS` or `EXPERIMENT FAIL`; writes `records/<name>/RESULT.md`.
    ```bash
@@ -146,11 +146,42 @@ The oracle (docs/SCENARIOS.md) runs after the flag flips and only warns; it neve
 
 `harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|claude|codex] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=] [N=] [BASE=] [DRY=1] [YES=1]`: the same options in upper case) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `--base` as the base when given, else `merge-base HEAD upstream/main` (else `origin/main`), builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial, asks for a y/N, commits the file signed off (on N nothing is committed; the two image records stay local, and each batch's manifest records the image tag, id and Jaeger commit), then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
 
-Cost: 2 x n trials (default 10 per arm). With `--client claude` the model is `CLAUDE_MODEL` (claude-sonnet-5-5), measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial; on Goose the cost depends on `GOOSE_MODEL` (stage 1 of `bench.py` prints the expected cost). `--dry-run` checks and prints every step without building, swapping or running. The builds need Go on this machine (the version in Jaeger's go.mod). Each build prints a start line and an end line and keeps the rest in `/tmp/variant-build-<name>-<sha>/build.log`, shown (last 20 lines) when a build fails; a successful build removes that directory and the fixture's `~/variant-build/<name>`.
+Cost: 2 x n trials (default 10 per arm). With `--client claude` the model is `CLAUDE_MODEL` (claude-sonnet-5-5), measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial; on Goose the cost depends on `GOOSE_MODEL` (stage 1 of `bench.py` prints the expected cost). `--dry-run` checks and prints every step without building, swapping or running. With `claude`, `make measure` bills `ANTHROPIC_API_KEY`, not your claude.ai login, while `make smoke` uses the login. An unknown scenario name prints the list of scenarios. The builds need Go on this machine (the version in Jaeger's go.mod). Each build prints a start line and an end line and keeps the rest in `/tmp/variant-build-<name>-<sha>/build.log`, shown (last 20 lines) when a build fails; a successful build removes that directory and the fixture's `~/variant-build/<name>`.
 
 Each build leaves an image on the fixture. List them with `docker image ls jaeger-mcp-evals/jaeger` and remove one with `docker image rm <tag>` (not the one the fixture runs).
 
 For a pull request attach `records/<experiment>/RESULT.md` and the two batch directories under `records/<experiment>/`.
+
+## Stop and restart
+
+- `make down` stops the containers and keeps them. Jaeger's store is in memory, so its traces are lost; Phoenix keeps its own. Avoid it between the two batches of a pair.
+- `make clean` removes the demo containers and network. Volumes and images stay.
+- After `make down` or a reboot, run `make up`, then give the load generator a few minutes to refill Jaeger before a batch.
+
+## Review a result
+
+`make measure` ends by judging the pair and writing `records/<experiment>/RESULT.md`. Read it from the top: the header names the experiment, both batch ids and both Jaeger commits; the block under it has one line per threshold, a `direction:` line, and `EXPERIMENT PASS` or `EXPERIMENT FAIL`. The direction line reads `direction: variant 7/10 vs baseline 3/10: better`. It says `better` or `worse` when Fisher's p clears the threshold, else `no significant difference at n=10`. Exit code 0 is a judged PASS, 1 a FAIL. Below 10 trials per arm it only ranks the arms. `records/INDEX.md` lists every recorded batch, with the client and model each one recorded.
+
+`make verify` re-scores only the runs under your `RUNS_DIR`. Do not run `judge.py` on the batches attached to a pull request unless you mean to: it rewrites `RESULT.md` and `INDEX.md`.
+
+## Where results land
+
+| Place | Holds | In git |
+|---|---|---|
+| `runs/` (`RUNS_DIR`) | every batch in full: `stream.jsonl`, `stderr.txt`, one directory per cell | no |
+| `records/<experiment>/` | the records of each batch (manifest, cells, scores), and `RESULT.md` | yes |
+| `records/INDEX.md` | one row per recorded batch | yes |
+
+`make run` and `make measure` copy each batch's records from `runs/` to `records/<experiment>/` and rewrite `records/INDEX.md`; commit both with your pull request. `make measure` also commits its pair file. `make smoke` never writes `records/`. `judge.py` rewrites `RESULT.md` and `INDEX.md` under `records/` by design: `RESULT.md` is the current answer for that experiment. Records written before 2026-11-23 say `cli`; it is read as `claude`.
+
+## Glossary
+
+- Arm: one side of the comparison, the baseline or the variant, each with its own Jaeger image.
+- Trial: one agent run on one scenario, with one scored verdict.
+- Batch: the trials of one arm in one run, in `runs/<scenario>/batch-<UTC>/`.
+- Pair file: the experiment file `make measure` writes before any trial, naming both images; it is committed first.
+- Grader: the model call that reads the agent's mechanism answer and labels it correct, incorrect or unclear.
+- Client: the program that runs the agent: `goose`, `claude` (Claude Code) or `codex`.
 
 ## Protocol
 
