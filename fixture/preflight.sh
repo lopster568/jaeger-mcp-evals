@@ -10,11 +10,20 @@ OVERLAY="${OVERLAY:-$ROOT/fixture/compose.overlay.yaml}"
 . "$ROOT/fixture/lib.sh"  # FIXTURE_HOST_ONLY=1 (fixture.env or environment): a fixture host with no agent, so no agent client check
 fail() { echo "preflight: $1"; exit 1; }
 
-# FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Docker and the demo's
-# ports are that host's, checked there by its own make up; this machine runs only the agent.
+# FIXTURE_SSH_USER set: the fixture runs on another host (FIXTURE.md, Remote layout), so Compose and the demo's
+# ports are that host's, checked there by its own make up. This machine still runs Goose and the Goose grader in
+# Docker, so it needs docker unless the agent client (SMOKE_CLIENT) and GRADER_CLIENT are both cli, or it has no agent.
 REMOTE=; [ -n "$FIXTURE_SSH_USER" ] && REMOTE=1
-[ -n "$REMOTE" ] || command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop"
-[ -n "$REMOTE" ] || docker compose version 2>/dev/null | grep -q 'v\?[2-9]\.' || fail "docker compose v2 is missing or docker does not run; install the Docker Compose plugin or start Docker"
+if [ -z "$REMOTE" ] || { [ "$FIXTURE_HOST_ONLY" != 1 ] && { [ "$SMOKE_CLIENT" != cli ] || [ "$GRADER_CLIENT" != cli ]; }; }; then
+  command -v docker >/dev/null || fail "docker is not installed; install Docker Engine or Docker Desktop (the goose client and grader run in it)"
+fi
+if [ -z "$REMOTE" ]; then
+  # the overlay's !override needs Compose 2.24 or newer
+  cv=$(docker compose version --short 2>/dev/null || docker compose version 2>/dev/null)
+  cv=$(printf '%s' "$cv" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+  [ -n "$cv" ] || fail "docker compose v2 is missing or docker does not run; install Docker Compose 2.24 or newer or start Docker"
+  { [ "${cv%%.*}" -gt 2 ] || { [ "${cv%%.*}" -eq 2 ] && [ "${cv#*.}" -ge 24 ]; }; } || fail "docker compose $cv is too old; the overlay needs Docker Compose 2.24 or newer"
+fi
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
 # claude is needed only for run.client cli and GRADER_CLIENT=cli (empty means goose): a failure, else one note.

@@ -370,7 +370,8 @@ class JudgeTests(unittest.TestCase):
         for d in (self.baseline_dir, self.variant_dir):  # shared fields the cross check reads
             mp = os.path.join(d, "manifest.json")
             m = json.load(open(mp))
-            for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1"}.items():
+            for k, v in {"model_requested": "sonnet", "n_per_arm": 10, "scenario_sha256": "s1",
+                              "grader": {"cli_version": "2.1.1", "model": "gm", "prompt_sha256": "g1"}}.items():
                 m.setdefault(k, v)
             m.setdefault("file_hashes_sha256", {"prompts/neutral.txt": "p1"})
             if noimg:
@@ -414,6 +415,27 @@ class JudgeTests(unittest.TestCase):
         lines, code = self._cross_pair(lambda m: m.update(model_requested="opus"), noimg=("o1", "o1"))
         self.assertEqual(code, 2)
         self.assertIn("model_requested ('sonnet' vs 'opus')", lines[0])
+
+    def test_a_different_grader_refuses_and_old_manifests_still_match(self):
+        old = {"cli_version": "2.1.1", "model": "gm", "prompt_sha256": "g1"}  # recorded before the goose grader: no client
+        for grader, refused in ((dict(old), False), (dict(old, client="cli"), False), (dict(old, model="other"), True),
+                                (dict(old, client="goose", provider="openrouter"), True)):
+            lines, code = self._cross_pair(lambda m, g=grader: m.update(grader=g), noimg=("o1", "o1"))
+            self.assertEqual(code, 2 if refused else 0, lines[0])
+            if refused:
+                self.assertIn("grader (", lines[0])
+        # one experiment file, the same arms: the grader is compared there too
+        write_manifest(self.baseline_dir, arm_pin="baseline")
+        write_scores(self.baseline_dir, baseline_rows())
+        write_manifest(self.variant_dir, arm_pin="descchange")
+        mp = os.path.join(self.variant_dir, "manifest.json")
+        m = json.load(open(mp))
+        m["grader"] = dict(old, model="other")
+        json.dump(m, open(mp, "w"))
+        write_scores(self.variant_dir, descchange_rows_all_thresholds_met())
+        lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+        self.assertEqual(code, 2)
+        self.assertIn("one experiment file but their manifests differ on: grader", lines[0])
 
 
 if __name__ == "__main__":

@@ -63,14 +63,17 @@ def build_recipe(prompt, instructions, schema, url, param=None):
     return text
 
 
+def is_loopback(host):
+    try:
+        return host == "localhost" or ipaddress.ip_address(host or "").is_loopback
+    except ValueError:
+        return False
+
+
 def container_url(url, desktop):
     """On Docker Desktop the container's host network is the VM's, so a loopback host becomes host.docker.internal."""
     u = urllib.parse.urlsplit(url)
-    try:
-        loopback = u.hostname == "localhost" or ipaddress.ip_address(u.hostname or "").is_loopback
-    except ValueError:
-        loopback = False
-    if not (desktop and loopback):
+    if not (desktop and is_loopback(u.hostname)):
         return url
     return u._replace(netloc="host.docker.internal" + (":%d" % u.port if u.port else "")).geturl()
 
@@ -231,7 +234,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.provider not in KEYS:
         ap.error("--provider must be one of %s" % ", ".join(KEYS))
-    signal.signal(signal.SIGTERM, _stop)  # bench.py stops a cell with SIGTERM: the container must still go
+    for sig in (signal.SIGTERM, signal.SIGHUP):  # bench.py stops a cell with SIGTERM: the container must still go
+        signal.signal(sig, _stop)
     url = config.mcp_config_url(a.mcp_config, "jaeger")
     desktop = docker_desktop()
     read = lambda p: open(p, encoding="utf-8").read()
@@ -259,7 +263,7 @@ def main(argv=None):
         except OSError as e:
             err.write("goose_client: could not start docker: %s\n" % e)
         finally:
-            for s in (signal.SIGTERM, signal.SIGINT):  # a second signal must not skip the removal
+            for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):  # a second signal must not skip the removal
                 signal.signal(s, signal.SIG_IGN)
             remove_container(name)
         err.seek(0)

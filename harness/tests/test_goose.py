@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HARNESS_DIR)
@@ -274,6 +275,12 @@ esac
 
 class TestCleanup(unittest.TestCase):
     def test_sigterm_removes_the_container(self):
+        self.stop_with(signal.SIGTERM)
+
+    def test_sighup_removes_the_container(self):
+        self.stop_with(signal.SIGHUP)
+
+    def stop_with(self, sig):
         with tempfile.TemporaryDirectory() as t:
             binp, out, log = os.path.join(t, "bin"), os.path.join(t, "batch-x", "0-a"), os.path.join(t, "docker.log")
             os.makedirs(binp)
@@ -293,7 +300,7 @@ class TestCleanup(unittest.TestCase):
                 if os.path.exists(log) and "run --rm" in pathlib.Path(log).read_text():
                     break
                 time.sleep(0.1)
-            proc.send_signal(signal.SIGTERM)
+            proc.send_signal(sig)
             proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 1)
             calls = pathlib.Path(log).read_text().splitlines()
@@ -302,6 +309,23 @@ class TestCleanup(unittest.TestCase):
             self.assertIn("-v %s:/work:ro" % os.path.join(os.path.realpath(out), "goose"), run.replace(t, os.path.realpath(t)))
             final = bench.read_jsonl(os.path.join(out, "stream.jsonl"))[-1]
             self.assertEqual((final["subtype"], final["error"]), ("error_during_execution", "goose stopped before it finished"))
+
+
+class GoosePreflightHost(unittest.TestCase):
+    def refusal(self, host, desktop):
+        cfg = {"FIXTURE_HOST": host, "JAEGER_UI_PORT": "16686", "JAEGER_BASE_PATH": "/jaeger/ui", "OPENROUTER_API_KEY": "k"}
+        a = type("A", (), {"provider": "openrouter"})()
+        with mock.patch.object(bench, "goose_docker", return_value=None), \
+                mock.patch.object(goose_client, "docker_desktop", return_value=desktop):
+            return bench.goose_preflight(a, cfg, mock.Mock())
+
+    def test_a_loopback_alias_is_refused_on_docker_desktop_only(self):
+        message, fix = self.refusal("127.0.0.3", True)
+        self.assertIn("127.0.0.3", message)
+        self.assertIn("FIXTURE_HOST=127.0.0.1", fix)
+        self.assertIsNone(self.refusal("127.0.0.3", False))
+        for host in ("127.0.0.1", "localhost", "10.0.0.5", "fixture.example.test"):
+            self.assertIsNone(self.refusal(host, True), host)
 
 
 if __name__ == "__main__":

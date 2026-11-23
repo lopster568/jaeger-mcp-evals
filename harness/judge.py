@@ -131,8 +131,8 @@ def _versions(manifest, rows):
 
 CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",
                 "client", "provider", "model_requested", "effort", "max_turns", "max_budget_usd", "n_per_arm",
-                "fixture_overlay_sha256", "system_prompt_sha256"]
-SAME_RUN_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256", "system_prompt_sha256"]
+                "fixture_overlay_sha256", "system_prompt_sha256", "grader"]
+SAME_RUN_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256", "system_prompt_sha256", "grader"]
 
 
 OVERLAY, OVERLAY_NOIMG = "fixture_overlay_sha256", "fixture_overlay_sha256_sans_image"
@@ -143,7 +143,10 @@ def _cross_values(m, fields=CROSS_FIELDS):
     exp = m["experiment"]["content"]
     arm = (m.get("arm_pin") or {}).get("arm") or next(iter(exp["arms"]))
     prompt = exp["arms"][arm]["prompt"]
-    v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256")}
+    v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256", "grader")}
+    g = m.get("grader") or {}  # manifests from before the goose grader have no client: they were cli
+    if "grader" in fields:
+        v["grader"] = (g.get("client") or "cli", g.get("provider"), g.get("model"), g.get("prompt_sha256"))
     v["prompt name"] = prompt
     v["prompt sha256"] = (m.get("file_hashes_sha256") or {}).get("prompts/%s.txt" % prompt)
     return v

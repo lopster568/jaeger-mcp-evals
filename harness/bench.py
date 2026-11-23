@@ -924,6 +924,11 @@ def goose_preflight(a, cfg, log):
     bad = goose_docker(log)
     if bad:
         return bad
+    host = urllib.parse.urlsplit(config.mcp_url(cfg)).hostname
+    if host not in ("127.0.0.1", "localhost") and goose_client.is_loopback(host) and goose_client.docker_desktop():
+        return ("FIXTURE_HOST %s is loopback, but Docker Desktop reaches the host only as host.docker.internal, which "
+                "serves 127.0.0.1; the Goose container would connect to nothing" % host,
+                "set FIXTURE_HOST=127.0.0.1 with forward.sh binding 127.0.0.1, or use the FIXTURE_BIND=0.0.0.0 direct route")
     key = goose_client.KEYS[a.provider]
     if not cfg.get(key):
         return "run.provider is %s but %s is empty in fixture.env; nothing was touched" % (a.provider, key), "set %s in fixture.env" % key

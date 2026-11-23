@@ -92,6 +92,13 @@ class GooseGrader(unittest.TestCase):
         self.assertEqual((row["client"], row["provider"], row["model"]), ("goose", "anthropic", "gm-1"))
         self.assertEqual([x["rm"] for x in self.shim_log() if "rm" in x], [r["argv"][r["argv"].index("--name") + 1]])
 
+    def test_the_work_dir_is_made_readable_whatever_the_umask(self):
+        chmods = []
+        real = os.chmod
+        with mock.patch.object(grade.os, "chmod", lambda p, m: (chmods.append((os.path.basename(p), m)), real(p, m))):
+            grade.grade(self.batch, "t", "a")
+        self.assertIn(("goose", 0o755), chmods)
+
     def test_provider_key_is_by_name_only(self):
         grade.grade(self.batch, "t", "a")
         r = next(r for r in self.shim_log() if "argv" in r)
