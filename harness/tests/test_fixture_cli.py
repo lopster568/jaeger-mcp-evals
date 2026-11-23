@@ -55,6 +55,9 @@ GIT = """#!/bin/bash
 CLAUDE = """#!/bin/bash
 echo "2.1.300 (Claude Code)"
 """
+CODEX = """#!/bin/bash
+echo "codex-cli 0.159.0"
+"""
 
 # Real bench.py run --dry-run output tails (Log.check and die() formats), screen lines on a pipe.
 TOOLS = """Pre-flight
@@ -129,7 +132,7 @@ class Blockers(unittest.TestCase):
                 ("bench: docker is not on PATH; the goose client and the goose grader run Goose in a container", "docker is not installed, and the Goose client runs in a container", "install Docker Engine or Docker Desktop"),
                 ("bench: run.provider is openrouter but OPENROUTER_API_KEY is empty in fixture.env; nothing was touched", "the provider's API key is empty in fixture.env", "set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in fixture.env"),
                 ("bench: the grader model is empty; nothing was touched", "the grader model is empty", "set GRADER_MODEL or GOOSE_MODEL in fixture.env"),
-                ("bench: GRADER_CLIENT is 'x', not goose or cli; nothing was touched", "GRADER_CLIENT is not goose or cli", "set GRADER_CLIENT in fixture.env")):
+                ("bench: GRADER_CLIENT is 'x', not goose or claude; nothing was touched", "GRADER_CLIENT is not goose or claude", "set GRADER_CLIENT in fixture.env")):
             text, report = fc.blocker(bench_line)
             self.assertEqual(text, short)
             self.assertEqual(fc.preflight_failed(cfg, text, report, fc.SMOKE_RUN).tries[0][0], fix)
@@ -173,7 +176,7 @@ class Setup(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         t = pathlib.Path(self.tmp.name)
         (t / "bin").mkdir()
-        for name, text in (("docker", DOCKER), ("git", GIT), ("claude", CLAUDE)):
+        for name, text in (("docker", DOCKER), ("git", GIT), ("claude", CLAUDE), ("codex", CODEX)):
             (t / "bin" / name).write_text(text)
             (t / "bin" / name).chmod(0o755)
         (t / "root").mkdir()
@@ -191,7 +194,7 @@ class Setup(unittest.TestCase):
                     "FIXTURE_HOST": "localhost", "FIXTURE_DEMO_DIR": str(t / "demo"),
                     "PHOENIX_PORT": str(self.srv.server_address[1]), "JAEGER_UI_PORT": str(self.srv.server_address[1]),
                     "JAEGER_BASE_PATH": "", "MIN_CONTAINERS": "3", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model:free",
-                    "OPENROUTER_API_KEY": "k", "SMOKE_CLIENT": "", "GRADER_CLIENT": "goose"}
+                    "OPENROUTER_API_KEY": "k", "CLIENT": "goose", "GRADER_CLIENT": "goose", "CODEX_BIN": "codex"}
 
     def tearDown(self):
         self.srv.shutdown()
@@ -210,7 +213,7 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         lines = text.splitlines()
         self.assertEqual(lines[0], "jaeger-ai-evals setup")
-        self.assertRegex(lines[1], r"^ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+, goose openrouter vendor/model:free, OPENROUTER_API_KEY set, claude 2\.1\.300$")
+        self.assertRegex(lines[1], r"^ok    Tools        docker 29\.8, compose 5\.6, python 3\.\d+, goose openrouter vendor/model:free, OPENROUTER_API_KEY set$")  # claude is shimmed and installed: not shown for a goose agent and grader
         self.assertEqual(lines[2], "ok    Demo         OpenTelemetry Demo 3.0.0 cloned, overlay installed, 0s")
         self.assertIn("ok    Images       2 pulled, 1 present, 0s", lines)
         self.assertIn("ok    Containers   3 started, flagd recreated, 0s", lines)
@@ -238,12 +241,39 @@ class Setup(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertNotIn("Goose image", text)
 
-    def test_cli_smoke_and_grader_need_no_goose_image(self):
-        rc, text = self.setup_run(SMOKE_CLIENT="cli", GRADER_CLIENT="cli")
+    def test_claude_smoke_and_grader_need_no_goose_image(self):
+        rc, text = self.setup_run(CLIENT="claude", GRADER_CLIENT="claude")
         self.assertEqual(rc, 0, text)
         self.assertNotIn("Goose image", text)
         self.assertIn("claude 2.1.300", text)
         self.assertTrue(text.splitlines()[-1].endswith("one agent trial, about 50k tokens"), text)
+
+    def test_the_grader_follows_the_agent_when_grader_client_is_empty(self):
+        rc, text = self.setup_run(CLIENT="claude", GRADER_CLIENT="")  # a claude agent grades on claude: no Goose image
+        self.assertEqual(rc, 0, text)
+        self.assertNotIn("Goose image", text)
+        rc, text = self.setup_run(CLIENT="codex", GRADER_CLIENT="")  # codex has no grader client: goose grades
+        self.assertEqual(rc, 0, text)
+        self.assertIn("Goose image", text)
+
+    def test_cli_is_read_as_claude_for_the_tools_line_and_the_goose_image(self):
+        rc, text = self.setup_run(CLIENT="cli", GRADER_CLIENT="cli")
+        self.assertEqual(rc, 0, text)
+        self.assertNotIn("Goose image", text)
+        self.assertIn("claude 2.1.300", text)
+
+    def test_smoke_client_in_the_environment_refuses(self):  # SMOKE_CLIENT=cli make smoke used to run Goose silently
+        rc, text = self.setup_run(SMOKE_CLIENT="cli")
+        self.assertEqual(rc, 1, text)
+        self.assertIn("SMOKE_CLIENT is now CLIENT", text)
+
+    def test_a_codex_smoke_shows_codex_and_not_claude(self):
+        rc, text = self.setup_run(CLIENT="codex", GRADER_CLIENT="goose")
+        self.assertEqual(rc, 0, text)
+        tools = text.splitlines()[1]
+        self.assertIn("codex 0.159.0", tools)
+        self.assertNotIn("claude", tools)
+        self.assertTrue(text.splitlines()[-1].endswith("one agent trial, counts against your Codex login"), text)
 
     def test_goose_contributor_without_claude_or_settings_still_reaches_ready(self):
         with mock.patch("shutil.which", return_value=None):  # no claude anywhere on PATH
@@ -344,27 +374,41 @@ class SmokeFile(unittest.TestCase):
         base = json.loads((REPO / fc.SMOKE).read_text())
         self.assertFalse({"client", "provider", "model"} & set(base["run"]))
         want = dict(base["run"], **run)
-        if run["client"] != "cli":
-            del want["max_budget_usd"]  # only the cli enforces it
+        if run["client"] != "claude":
+            del want["max_budget_usd"]  # only claude enforces it
         self.assertEqual(e["run"], want)
         self.assertEqual({k: v for k, v in e.items() if k != "run"}, {k: v for k, v in base.items() if k != "run"})
         fc.bench.load_experiment(os.path.join(self.tmp.name, path))
 
     def test_goose_default_fills_in_goose(self):
-        self.filled({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m/x:free"}, client="goose", provider="openrouter", model="m/x:free")
+        self.filled({"CLIENT": "goose", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m/x:free"}, client="goose", provider="openrouter", model="m/x:free")
 
-    def test_cli_option_fills_in_the_cli(self):
-        self.filled({"SMOKE_CLIENT": "cli", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
-                    client="cli", provider=None, model="claude-sonnet-5-5")
+    def test_claude_option_fills_in_claude(self):
+        self.filled({"CLIENT": "claude", "CLAUDE_MODEL": "claude-x", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
+                    client="claude", provider=None, model="claude-x")
+        self.filled({"CLIENT": "cli", "CLAUDE_MODEL": "claude-x", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},  # cli is claude
+                    client="claude", provider=None, model="claude-x")
 
     def test_codex_option_fills_in_codex(self):
-        self.filled({"SMOKE_CLIENT": "codex", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
-                    client="codex", provider=None, model=fc.SMOKE_CODEX_MODEL)
+        self.filled({"CLIENT": "codex", "CODEX_MODEL": "gpt-x", "GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "m"},
+                    client="codex", provider=None, model="gpt-x")
+
+    def test_an_empty_model_key_stops_at_once(self):
+        for client in ("claude", "codex"):
+            with self.assertRaises(fc.Failed) as e:
+                fc.smoke_file({"CLIENT": client, client.upper() + "_MODEL": ""})
+            self.assertEqual(e.exception.text, "%s_MODEL is empty" % client.upper())
 
     def test_unknown_client_names_all_three(self):
+        for raw in ("bogus", ""):
+            with self.assertRaises(fc.Failed) as e:
+                fc.smoke_file({"CLIENT": raw})
+            self.assertEqual(e.exception.text, "CLIENT is %r, not goose, claude or codex" % raw)
+
+    def test_stale_smoke_client_refuses(self):
         with self.assertRaises(fc.Failed) as e:
-            fc.smoke_file({"SMOKE_CLIENT": "claude"})
-        self.assertEqual(e.exception.text, "SMOKE_CLIENT is 'claude', not goose, cli or codex")
+            fc.refuse_smoke_client({"SMOKE_CLIENT": "cli", "CLIENT": "goose"})
+        self.assertEqual(e.exception.text, "SMOKE_CLIENT is now CLIENT")
 
     def test_bench_refuses_the_template(self):
         with self.assertRaisesRegex(ValueError, "is the make smoke template .*; run make smoke, which fills them in"):
@@ -376,7 +420,7 @@ class SmokeFile(unittest.TestCase):
                           ({"GOOSE_MODEL": "m"}, "GOOSE_PROVIDER is ''; it must be anthropic or openrouter"),
                           ({"GOOSE_PROVIDER": "openai", "GOOSE_MODEL": "m"}, "GOOSE_PROVIDER is 'openai'; it must be anthropic or openrouter")):
             with self.assertRaises(fc.Failed) as e:
-                fc.smoke_file(cfg)
+                fc.smoke_file(dict(cfg, CLIENT="goose"))
             self.assertEqual(e.exception.text, text)
             self.assertTrue(any("OPENROUTER_API_KEY" in l and "scripts/ai-sidecar" not in l for l in e.exception.block))
             self.assertTrue(any("scripts/ai-sidecar/goose" in l for l in e.exception.block))

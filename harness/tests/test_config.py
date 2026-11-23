@@ -15,7 +15,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "harness"))
 import config  # noqa: E402
 
-KEYS = ("GOOSE_PROVIDER", "GOOSE_MODEL", "GRADER_CLIENT", "RUNS_DIR", "PHOENIX_PORT")
+KEYS = ("GOOSE_PROVIDER", "GOOSE_MODEL", "GRADER_CLIENT", "RUNS_DIR", "PHOENIX_PORT", "CLIENT", "CLAUDE_MODEL", "CODEX_MODEL")
 
 
 class EnvFiles(unittest.TestCase):
@@ -36,15 +36,25 @@ class EnvFiles(unittest.TestCase):
 
     def test_commented_defaults_apply(self):
         py, sh = self.both()
-        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "goose", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
+        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006",
+                "CLIENT": "goose", "CLAUDE_MODEL": "claude-sonnet-5-5", "CODEX_MODEL": "gpt-5.6-terra"}  # GRADER_CLIENT empty: it follows the agent
         self.assertEqual(py, want)
         self.assertEqual(sh, want)
+
+    def test_client_name_and_grader_client(self):
+        self.assertEqual([config.client_name(v) for v in ("cli", "claude", "goose", "codex", "")], ["claude", "claude", "goose", "codex", ""])
+        self.assertEqual(config.grader_client({}, "claude"), "claude")
+        self.assertEqual(config.grader_client({}, "codex"), "goose")
+        self.assertEqual(config.grader_client({"GRADER_CLIENT": ""}, "goose"), "goose")
+        self.assertEqual(config.grader_client({"GRADER_CLIENT": "goose"}, "claude"), "goose")
+        self.assertEqual(config.grader_client({"GRADER_CLIENT": "cli"}, "goose"), "claude")
 
     def test_fixture_env_overrides_and_its_comments_stay_comments(self):
         (self.root / "fixture.env").write_text("GOOSE_PROVIDER=openrouter   # inline comment\n"
                                                "GRADER_CLIENT='cli'\n#RUNS_DIR=elsewhere\n")
         py, sh = self.both()
-        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "cli", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
+        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "cli", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006",
+                "CLIENT": "goose", "CLAUDE_MODEL": "claude-sonnet-5-5", "CODEX_MODEL": "gpt-5.6-terra"}
         self.assertEqual(py, want)
         self.assertEqual(sh, want)
 

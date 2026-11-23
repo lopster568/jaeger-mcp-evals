@@ -37,6 +37,7 @@ import os
 import re
 import sys
 
+import config
 import fixture_leak
 import grade
 
@@ -197,7 +198,7 @@ def jaeger_names(out_dir, meta, init_tools):
 
 def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_tools):
     """Violations of the trial's sandbox, as strings; empty means sandbox_ok. The init event
-    must list exactly the Jaeger tools, plus StructuredOutput for the cli client (codex and goose list
+    must list exactly the Jaeger tools, plus StructuredOutput for the claude client (codex and goose list
     no tools), and exactly one MCP server, jaeger (none for an arm with tools
     off). Every tool_use must name an allowed tool (load_skill too for goose); one the client refused
     (REJECTED) is attempted_unknown_tool, any other executed_unknown_tool."""
@@ -208,7 +209,7 @@ def sandbox_check(init, all_calls, results_by_id, allowed_jaeger, client, with_t
     if "tools" in init and allowed_jaeger is not None:
         got = set(init["tools"] or [])
         out += ["init_tool_extra:%s" % t for t in sorted(got - allowed)]
-        out += ["init_tool_missing:%s" % t for t in sorted((allowed_jaeger - got) | ({VERDICT_TOOL} - got if client == "cli" else set()))]
+        out += ["init_tool_missing:%s" % t for t in sorted((allowed_jaeger - got) | ({VERDICT_TOOL} - got if client == "claude" else set()))]
     servers = [m.get("name") for m in init.get("mcp_servers") or [] if isinstance(m, dict)]
     if servers != (["jaeger"] if with_tools else []):
         out.append("mcp_servers:%s" % ",".join(map(str, servers)))
@@ -308,7 +309,7 @@ def score(out_dir, call_grader=False, scenario=None):
     # Goose's load_skill can stand in for Jaeger's read_skill on a skill experiment, so each arm shows its count.
     n_loads = non_jaeger_tool_calls.count(GOOSE_SKILL_TOOL)
     skill_loads = ["load_skill calls %d" % n_loads] if n_loads else []
-    sandbox_violations = sandbox_check(init, all_calls, results_by_id, allowed_jaeger, meta.get("client"), tools_on(meta))
+    sandbox_violations = sandbox_check(init, all_calls, results_by_id, allowed_jaeger, config.client_name(meta.get("client")), tools_on(meta))
     results = [results_by_id[c["id"]] for c in calls if c["id"] in results_by_id]
 
     # A read_skill call can come back is_error or near empty (a directory named instead of a

@@ -7,7 +7,7 @@
 One pinned model with one pinned prompt (grader-prompt.txt, by sha256) labels the pair correct,
 incorrect or unclear, through Goose in the pinned image (setting GRADER_CLIENT goose, the default;
 GRADER_PROVIDER and GRADER_MODEL, falling back to GOOSE_PROVIDER and GOOSE_MODEL, no default model)
-or through the Claude Code CLI (GRADER_CLIENT cli; GRADER_MODEL default claude-fable-5-1, command
+or through the Claude Code CLI (GRADER_CLIENT claude, read from "cli" in old records; GRADER_MODEL default claude-fable-5-1, command
 GRADER_BIN default claude). Both are sandboxed like the agent: no tools, no MCP servers, no session,
 a temp cwd, the provider key by name only. Every label is cached in <batch>/grades.jsonl, keyed by
 sha256 of the grader's identity, prompt sha256, truth and text, so re-scoring reads the cache and
@@ -27,11 +27,12 @@ HARNESS = os.path.dirname(os.path.abspath(__file__))
 _CFG = config.load()
 
 
-def settings(cfg):
-    """(client, provider, model) from fixture.env's settings; goose has no default model."""
-    client = cfg.get("GRADER_CLIENT") or "goose"
+def settings(cfg, agent=None):
+    """(client, provider, model) from fixture.env's settings; goose has no default model. With the agent's client the
+    grader follows it when GRADER_CLIENT is empty (config.grader_client)."""
+    client = config.grader_client(cfg, agent) if agent else config.client_name(cfg.get("GRADER_CLIENT") or "goose")
     return (client, cfg.get("GRADER_PROVIDER") or cfg.get("GOOSE_PROVIDER") or "",
-            cfg.get("GRADER_MODEL") or ("claude-fable-5-1" if client == "cli" else cfg.get("GOOSE_MODEL") or ""))
+            cfg.get("GRADER_MODEL") or ("claude-fable-5-1" if client == "claude" else cfg.get("GOOSE_MODEL") or ""))
 
 
 CLIENT, PROVIDER, GRADER_MODEL = settings(_CFG)  # see fixture.env.example
@@ -74,12 +75,12 @@ def prompt_sha():
 
 def current():
     """The grader identity of the current setting."""
-    return {"client": CLIENT, "provider": None if CLIENT == "cli" else PROVIDER, "model": GRADER_MODEL}
+    return {"client": CLIENT, "provider": None if CLIENT == "claude" else PROVIDER, "model": GRADER_MODEL}
 
 
 def batch_grader(batch_dir):
-    """The grader identity the batch's manifest recorded; a manifest without a client is a cli batch (written before
-    GRADER_CLIENT). None when the batch has no manifest or its manifest names no grader model."""
+    """The grader identity the batch's manifest recorded; a manifest without a client is a claude batch (written before
+    GRADER_CLIENT; "cli" is read as claude). None when the batch has no manifest or its manifest names no grader model."""
     try:
         with open(os.path.join(batch_dir, "manifest.json"), encoding="utf-8") as f:
             g = json.load(f).get("grader") or {}
@@ -87,13 +88,13 @@ def batch_grader(batch_dir):
         return None
     if not g.get("model"):
         return None
-    return {"client": g.get("client") or "cli", "provider": g.get("provider"), "model": g.get("model")}
+    return {"client": config.recorded_client(g.get("client")), "provider": g.get("provider"), "model": g.get("model")}
 
 
 def cache_key(truth, text, who=None):
-    """cli keys are unchanged since before GRADER_CLIENT; a goose key also holds client and provider."""
+    """claude (once cli) keys are unchanged since before GRADER_CLIENT; a goose key also holds client and provider."""
     who = who or current()
-    head = [who["model"]] if who["client"] == "cli" else [who["client"], who["provider"], who["model"]]
+    head = [who["model"]] if config.client_name(who["client"]) == "claude" else [who["client"], who["provider"], who["model"]]
     return hashlib.sha256(json.dumps(head + [prompt_sha(), truth, text]).encode("utf-8")).hexdigest()
 
 
@@ -214,7 +215,7 @@ def grade(batch_dir, truth, text, call=True):
                     return dict(row, cached=True)
     if not call:
         return None
-    ask = call_cli if CLIENT == "cli" else call_goose
+    ask = call_cli if CLIENT == "claude" else call_goose
     try:
         got, attempts = ask(truth, text), 1
     except NoLabel:

@@ -89,7 +89,7 @@ TRACE_POLL_MAX, TRACE_POLL_SLEEP, TRACE_MIN_COUNT = 48, 10, 3
 # cells took 236 s.
 CELL_TIMEOUT_S = 1800
 BASELINE_LOOKBACK_S = 600
-HISTORY_POLICY = {"cli": {"harness_truncation": "none", "cli_autocompact": "default"},
+HISTORY_POLICY = {"claude": {"harness_truncation": "none", "cli_autocompact": "default"},
                   "codex": {"harness_truncation": "none", "cli_autocompact": "unknown"},
                   "goose": {"harness_truncation": "none", "cli_autocompact": "default"}}
 NOT_RECORDED = "not recorded"
@@ -612,10 +612,10 @@ def passes_to_read(scored):
 
 def batch_client(bdir):
     m = os.path.join(bdir, "manifest.json")
-    return load_json(m).get("client", "cli") if os.path.isfile(m) else None  # no manifest: no known client
+    return config.recorded_client(load_json(m).get("client")) if os.path.isfile(m) else None  # no manifest: no known client
 
 
-def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="cli"):
+def expected_cost(scenario, model, n_per_arm, max_budget, records=None, client="claude"):
     """Pre-flight lines about spend, from the recorded trials of this scenario on this model and client:
     [(ok, text)], ok False for a WARNING. Nothing here stops a run."""
     rows = [r for f in glob.glob(os.path.join(records or RECORDS, "**", "scores.jsonl"), recursive=True)
@@ -906,7 +906,7 @@ def goose_docker(log):
     docker = lambda *args: subprocess.run(["docker", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
     if not shutil.which("docker"):
         return ("docker is not on PATH; the goose client and the goose grader run Goose in a container",
-                "install Docker, or pick another run.client and set GRADER_CLIENT=cli")
+                "install Docker, or pick another run.client and set GRADER_CLIENT=claude")
     try:
         r = docker("info", "--format", "{{.OperatingSystem}}")
     except subprocess.TimeoutExpired:
@@ -949,6 +949,13 @@ def codex_preflight(a, cfg, log):
         return ("%s is not on PATH; install the OpenAI Codex CLI (or the wrapper named by CODEX_BIN) and "
                 "log in, or pick another run.client" % a.codex_bin), None
     log.check(True, "%s on PATH" % a.codex_bin)
+    # Codex runs no MCP tool without codex-code-mode-host: it must sit beside codex or be on PATH
+    codex_dir = os.path.dirname(os.path.realpath(shutil.which(a.codex_bin)))
+    if not (shutil.which("codex-code-mode-host") or os.path.isfile(os.path.join(codex_dir, "codex-code-mode-host"))):
+        return ("codex-code-mode-host is not installed beside %s; Codex runs no MCP tool without it and the trial abstains"
+                % codex_dir, "install codex-code-mode-host from the same Codex release as codex (asset "
+                "codex-code-mode-host-<target>.tar.gz) next to the codex binary")
+    log.check(True, "codex-code-mode-host found")
     return None
 
 
@@ -1007,7 +1014,7 @@ CLIENTS = {
                               "docker run --rm --entrypoint goose %s --version" % goose_client.IMAGE),
                   env=goose_env, events_on="out_dir", graceful_stop=True, redact_argv=None, docker=True,
                   manifest={"goose_image": goose_client.IMAGE}, providers=goose_client.KEYS),
-    "cli": dict(argv=cli_argv, preflight=claude_client.preflight,
+    "claude": dict(argv=cli_argv, preflight=claude_client.preflight,
                 version_cmd=lambda a: ["claude", "--version"], no_version=None, env=claude_client.env,
                 events_on="stdout", graceful_stop=False, redact_argv=claude_client.redact_argv, docker=False,
                 manifest={}, providers=None, sandbox_probe=claude_client.sandbox_probe, probe_fix=claude_client.probe_fix,
@@ -1080,8 +1087,9 @@ def load_experiment(path):
     check(not (exp["name"] == SMOKE_EXPERIMENT and isinstance(r, dict) and "client" not in r),
           "%s is the make smoke template (no run.client, provider or model); run make smoke, which fills them in" % path)
     keys(r, "run", RUN_KEYS, optional=("max_budget_usd", "client_version", "bill_api_key"))
-    check(isinstance(r["client"], str) and r["client"] in CLIENTS, "run.client must be one of %s" % ", ".join(CLIENTS))
-    providers = CLIENTS[r["client"]]["providers"]
+    rc = config.client_name(r["client"]) if isinstance(r["client"], str) else None
+    check(rc in CLIENTS, "run.client must be one of %s (cli is read as claude)" % ", ".join(CLIENTS))
+    providers = CLIENTS[rc]["providers"]
     if providers:
         check(r["provider"] in providers, "run.provider must be one of %s for client %s" % (", ".join(providers), r["client"]))
     else:
@@ -1089,14 +1097,14 @@ def load_experiment(path):
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
     check(r["effort"] in EFFORTS, "run.effort must be one of %s" % ", ".join(EFFORTS))
     check(is_int(r["max_turns"]) and r["max_turns"] > 0, "run.max_turns must be a positive integer")
-    if CLIENTS[r["client"]]["budget_cap"] or "max_budget_usd" in r:  # optional where no client enforces it
+    if CLIENTS[rc]["budget_cap"] or "max_budget_usd" in r:  # optional where no client enforces it
         check(type(r.get("max_budget_usd")) in (int, float) and r["max_budget_usd"] > 0, "run.max_budget_usd must be a positive number")
     check(is_int(r["n_per_arm"]) and r["n_per_arm"] > 0, "run.n_per_arm must be a positive integer")
     check(r["seed"] is None or is_int(r["seed"]), "run.seed must be an integer or null")
     if "client_version" in r:
         check(isinstance(r["client_version"], str) and r["client_version"], "run.client_version must be a non-empty string")
     if "bill_api_key" in r:
-        check(type(r["bill_api_key"]) is bool and (CLIENTS[r["client"]]["billing"] or not r["bill_api_key"]),
+        check(type(r["bill_api_key"]) is bool and (CLIENTS[rc]["billing"] or not r["bill_api_key"]),
               "run.bill_api_key must be true or false, and true only for client %s" % ", ".join(n for n, c in CLIENTS.items() if c["billing"]))
     check(isinstance(exp["arms"], dict) and exp["arms"], "arms must be a non-empty object")
     for name, arm in exp["arms"].items():
@@ -1130,7 +1138,10 @@ def run(a, cfg):
         return die("experiment status is still DRAFT; set it to CONFIRMED before running it")
     # The file's run block is the only source of these settings.
     vars(a).update(exp["run"], scenario=exp["scenario"], experiment=exp["name"])
-    a.bill_api_key = exp["run"].get("bill_api_key", False)  # the cli agent and a cli grader bill ANTHROPIC_API_KEY, not the plan
+    a.client = config.client_name(a.client)
+    if not cfg.get("GRADER_CLIENT"):  # the grader follows the agent; an explicit GRADER_CLIENT wins
+        grade.CLIENT, grade.PROVIDER, grade.GRADER_MODEL = grade.settings(cfg, a.client)
+    a.bill_api_key = exp["run"].get("bill_api_key", False)  # the claude agent and a claude grader bill ANTHROPIC_API_KEY, not the plan
     budget = exp["run"].get("max_budget_usd")  # None: the client enforces no budget (goose, codex)
     budget = None if budget is None else float(budget)
     a.codex_bin = cfg.get("CODEX_BIN") or "codex"
@@ -1196,9 +1207,9 @@ def run(a, cfg):
                        % (want, a.client, got or client_pre or "no version"),
                        fix="remove run.client_version from the experiment file to run on your CLI, or install %s for an exact re-run" % want)
     grader_cli = None
-    if grade.CLIENT not in ("goose", "cli"):
-        return die("GRADER_CLIENT is %r, not goose or cli; nothing was touched" % grade.CLIENT, fix="set GRADER_CLIENT in fixture.env")
-    if grade.CLIENT == "cli":
+    if grade.CLIENT not in ("goose", "claude"):
+        return die("GRADER_CLIENT is %r, not goose or claude; nothing was touched" % grade.CLIENT, fix="set GRADER_CLIENT in fixture.env")
+    if grade.CLIENT == "claude":
         try:
             grader_cli = subprocess.run([grade.CLAUDE, "--version"], capture_output=True, text=True,
                                         stdin=subprocess.DEVNULL, timeout=60).stdout.strip() or None
@@ -1206,23 +1217,24 @@ def run(a, cfg):
             pass
         log.detail("pre-flight: grader CLI %s" % grader_cli)
         if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
-            return die("ABORT - the cli mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
-                       fix="install the Claude Code CLI and log in (run `claude` once), or unset GRADER_CLIENT to grade through Goose")
+            return die("ABORT - the claude mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
+                       fix="install the Claude Code CLI and log in (run `claude` once), or set GRADER_CLIENT=goose to grade through Goose")
     else:
         bad = None if client["docker"] else goose_docker(log)
         if bad:
             return die(*bad)
         if grade.PROVIDER not in goose_client.KEYS:
             return die("the grader provider is %r, not %s; nothing was touched" % (grade.PROVIDER, " or ".join(goose_client.KEYS)),
-                       fix="set GRADER_PROVIDER (or GOOSE_PROVIDER) in fixture.env, or GRADER_CLIENT=cli")
+                       fix="set GRADER_PROVIDER (or GOOSE_PROVIDER) in fixture.env, or GRADER_CLIENT=claude")
         gkey = goose_client.KEYS[grade.PROVIDER]
         if not cfg.get(gkey):
             return die("the grader provider is %s but %s is empty in fixture.env; nothing was touched" % (grade.PROVIDER, gkey),
                        fix="set %s in fixture.env" % gkey)
         if not grade.GRADER_MODEL:
             return die("the grader model is empty; nothing was touched",
-                       fix="set GRADER_MODEL (or GOOSE_MODEL) in fixture.env to a full model id of %s, or set GRADER_CLIENT=cli" % grade.PROVIDER)
-        log.check(True, "grader goose %s %s, %s set" % (grade.PROVIDER, grade.GRADER_MODEL, gkey))
+                       fix="set GRADER_MODEL (or GOOSE_MODEL) in fixture.env to a full model id of %s, or set GRADER_CLIENT=claude" % grade.PROVIDER)
+        log.check(True, "grader goose %s %s, %s set%s" % (grade.PROVIDER, grade.GRADER_MODEL, gkey,
+                  " (codex has no grader client)" if a.client == "codex" and not cfg.get("GRADER_CLIENT") else ""))
     line = "agent model %s, grader model %s. %s" % (a.model, grade.GRADER_MODEL, grade.WARNING)
     if a.model == grade.GRADER_MODEL:
         log.check(True, line)
@@ -1502,7 +1514,7 @@ def run(a, cfg):
                 "order": order, "file_hashes_sha256": hashes, "system_under_test": sut, "tools_list_sha256": tools_sha,
                 "instructions_sha256": instructions_sha, "tools_list_path": "tools.json" if tools_text else None,
                 "grader": dict({"client": grade.CLIENT, "model": grade.GRADER_MODEL, "prompt_sha256": hashes["grader-prompt.txt"]},
-                               **({"cli_version": grader_cli} if grade.CLIENT == "cli" else
+                               **({"cli_version": grader_cli} if grade.CLIENT == "claude" else
                                   {"provider": grade.PROVIDER, "image": goose_client.IMAGE}))}
     # arm_pin and tools_description_check keep their one-arm shape (judge.py reads
     # arm_pin); a batch where several experiment arms share one image records them per trial only.
@@ -1686,6 +1698,8 @@ def run(a, cfg):
                 verdict, note = (verdict, "%s, scored %s" % (note, s.get("verdict"))) if rec["failed"] else (s.get("verdict") or "ERROR", "")
             except Exception:
                 note = note if rec["failed"] else "unscorable"
+            if verdict == "UNGRADED":  # no trial is graded before the restore
+                verdict, note = "-", "graded after the restore"
             log(label + paint(VERDICT_COLOR.get(verdict, "0"), verdict.ljust(7)) + "  " + calls.rjust(5) + "  "
                 + paint(DIM, dur(rec["wall_time_s"]).rjust(6)) + ("  " + paint(DIM, note) if note else ""))
             if rec["failed"]:
@@ -2319,7 +2333,7 @@ def export(batch_dir, endpoint, cfg, out=print):
                       if isinstance(e, dict)]
             attrs = {"experiment": exp, "batch_id": m["batch_id"], "scenario": m["scenario"], "arm": row["arm"],
                      "trial_index": meta["trial_index"], "model": (meta.get("observed") or {}).get("model") or meta["model_requested"],
-                     "client": meta["client"], "provider": meta.get("provider") or {"cli": "anthropic"}.get(meta["client"]),
+                     "client": meta["client"], "provider": meta.get("provider") or {"claude": "anthropic"}.get(config.client_name(meta["client"])),
                      "verdict": row.get("verdict") or "ERROR"}
             if attrs["provider"] is None:  # codex: its provider is whatever the codex config or wrapper picks, not recorded
                 del attrs["provider"]

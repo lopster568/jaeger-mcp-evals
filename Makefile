@@ -20,14 +20,14 @@ PREFLIGHT := bash fixture/preflight.sh
 help:
 	@echo "Set up"
 	@echo "  make setup      preflight, fixture, up (and the Goose image) and phoenix: everything free, in order"
-	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.11 and the ports (claude is noted, needed only for the cli client, the Claude Code CLI)"
+	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.11 and the ports (claude is noted, needed when it is the client or the grader)"
 	@echo "  make fixture    clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay"
 	@echo "  make up         pull missing images, start the demo, wait (10 min at most) until it answers"
 	@echo "  make phoenix    start the optional Phoenix trajectory store"
 	@echo "Run"
-	@echo "  make smoke      PAID: dry run, then one agent trial on Goose (GOOSE_PROVIDER, GOOSE_MODEL); CLIENT=cli for the Claude Code CLI (about 50k tokens); CLIENT=codex for Codex (gpt-5.6-terra)"
+	@echo "  make smoke      PAID: dry run, then one agent trial on Goose (GOOSE_PROVIDER, GOOSE_MODEL); CLIENT=claude for Claude Code (CLAUDE_MODEL, about 50k tokens); CLIENT=codex for Codex (CODEX_MODEL, experimental)"
 	@echo "  $(PYTHON) harness/bench.py run harness/experiments/<name>.json [--dry-run]   PAID without --dry-run"
-	@echo "  make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=cli]   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
+	@echo "  make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=claude]   PAID: A/B your Jaeger commit against its base, judge by Fisher p"
 	@echo "Check"
 	@echo "  make test       offline unit tests"
 	@echo "  make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
@@ -44,14 +44,14 @@ preflight:
 fixture up phoenix down clean test:
 	@$(CLI) $@
 
-# Makes ONE paid agent call (Goose with GOOSE_PROVIDER and GOOSE_MODEL; CLIENT=cli: Claude Code CLI, claude-sonnet-5-5; CLIENT=codex: Codex, gpt-5.6-terra; effort high, budget cap in the experiment file).
+# Makes ONE paid agent call (Goose with GOOSE_PROVIDER and GOOSE_MODEL; CLIENT=claude: Claude Code, CLAUDE_MODEL; CLIENT=codex: Codex, CODEX_MODEL; effort high, budget cap in the experiment file).
 smoke:
-	@export FIXTURE_HOST_ONLY=0 $(if $(CLIENT),SMOKE_CLIENT=$(CLIENT)); $(PREFLIGHT) && $(CLI) smoke
+	@export FIXTURE_HOST_ONLY=0 $(if $(CLIENT),CLIENT=$(CLIENT)); $(PREFLIGHT) && $(CLI) smoke
 
 # PAID: builds two images, swaps the fixture's jaeger twice and runs 2 x 10 trials; asks first (harness/measure.sh).
 measure:
-	@test -n "$(JAEGER)" -a -n "$(SCENARIO)" || { echo "usage: make measure JAEGER=<jaeger-checkout> SCENARIO=<name> [CLIENT=cli]"; exit 2; }
-	@bash harness/measure.sh "$(JAEGER)" "$(SCENARIO)" $(if $(CLIENT),--client $(CLIENT))
+	@test -n "$(JAEGER)" -a -n "$(SCENARIO)" || { echo "usage: make measure JAEGER=<jaeger-checkout> SCENARIO=<name> [CLIENT=claude]"; exit 2; }
+	@$(if $(CLIENT),CLIENT=$(CLIENT) )bash harness/measure.sh "$(JAEGER)" "$(SCENARIO)"
 
 verify:
 	@$(PYTHON) harness/bench.py verify

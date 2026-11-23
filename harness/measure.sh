@@ -2,13 +2,13 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-# usage: measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|cli] [--yes] [--dry-run]
+# usage: measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|claude|codex] [--yes] [--dry-run]
 #
 # Measures a Jaeger change: builds the checkout's HEAD and its base, writes a pre-registered pair
 # file, runs the scenario on each image in turn, and judges the pair (Fisher p < 0.05 on PASS).
 # PAID: 2 x n agent trials plus a grader call each. --dry-run builds, swaps and runs nothing.
-# The agent is Goose (GOOSE_PROVIDER and GOOSE_MODEL in fixture.env), or with --client cli the
-# Claude Code CLI on claude-sonnet-5-5 billing ANTHROPIC_API_KEY.
+# The agent is CLIENT from fixture.env (--client overrides it): Goose (GOOSE_PROVIDER and GOOSE_MODEL), claude (the
+# Claude Code CLI on CLAUDE_MODEL, billing ANTHROPIC_API_KEY; cli is read as claude) or codex (CODEX_MODEL, experimental).
 # Exit codes: 0 judged PASS, 1 judged FAIL, 2 refused or a step failed.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -16,13 +16,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../fixture/lib.sh"
 
 die() { echo "measure: $*" >&2; exit 2; }
-USAGE="usage: $0 <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|cli] [--yes] [--dry-run]"
-BASE_REF="" N=10 YES=0 DRY=0 CLIENT=goose POS=()
+USAGE="usage: $0 <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|claude|codex] [--yes] [--dry-run]"
+BASE_REF="" N=10 YES=0 DRY=0 SRC=CLIENT POS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) BASE_REF="${2:-}"; shift ;;
     --n) N="${2:-}"; shift ;;
-    --client) CLIENT="${2:-}"; shift ;;
+    --client) CLIENT="${2:-}"; SRC=--client; shift ;;
     --yes) YES=1 ;;
     --dry-run) DRY=1 ;;
     -*) die "unknown flag: $1 ($USAGE)" ;;
@@ -34,16 +34,23 @@ done
 REPO="$(cd "${POS[0]}" 2>/dev/null && pwd)" || die "no such directory: ${POS[0]}"
 SCENARIO="${POS[1]}"
 case "$N" in ''|*[!0-9]*|0) die "--n must be a positive integer" ;; esac
+CLIENT=${CLIENT-goose}  # fixture.env's CLIENT, already exported by lib.sh; empty is refused below
+CLIENT=$(norm_client "$CLIENT")
 case "$CLIENT" in
-  goose) case "${GOOSE_PROVIDER:-}" in anthropic|openrouter) ;; *) die "GOOSE_PROVIDER must be anthropic or openrouter; fix: set GOOSE_PROVIDER and GOOSE_MODEL in fixture.env, or pass --client cli" ;; esac
-         [ -n "${GOOSE_MODEL:-}" ] || die "GOOSE_MODEL is empty; fix: set it in fixture.env to a full model id of $GOOSE_PROVIDER, or pass --client cli"
+  goose) case "${GOOSE_PROVIDER:-}" in anthropic|openrouter) ;; *) die "GOOSE_PROVIDER must be anthropic or openrouter; fix: set GOOSE_PROVIDER and GOOSE_MODEL in fixture.env, or pass --client claude" ;; esac
+         [ -n "${GOOSE_MODEL:-}" ] || die "GOOSE_MODEL is empty; fix: set it in fixture.env to a full model id of $GOOSE_PROVIDER, or pass --client claude"
          KEYVAR=ANTHROPIC_API_KEY; [ "$GOOSE_PROVIDER" = openrouter ] && KEYVAR=OPENROUTER_API_KEY
-         [ -n "${!KEYVAR:-}" ] || die "$KEYVAR is empty; fix: set it in fixture.env (the key of GOOSE_PROVIDER=$GOOSE_PROVIDER), or pass --client cli"
+         [ -n "${!KEYVAR:-}" ] || die "$KEYVAR is empty; fix: set it in fixture.env (the key of GOOSE_PROVIDER=$GOOSE_PROVIDER), or pass --client claude"
          MODEL=$GOOSE_MODEL ;;
-  cli) MODEL=claude-sonnet-5-5 ;;
-  *) die "--client must be goose or cli" ;;
+  claude) MODEL=${CLAUDE_MODEL:-}; [ -n "$MODEL" ] || die "CLAUDE_MODEL is empty; fix: set it in fixture.env to a full model id"
+          [ -n "${ANTHROPIC_API_KEY:-}" ] || die "ANTHROPIC_API_KEY is empty; measure on claude bills the API key, not your claude.ai login, as every published result did; fix: set ANTHROPIC_API_KEY in fixture.env" ;;
+  codex) MODEL=${CODEX_MODEL:-}; [ -n "$MODEL" ] || die "CODEX_MODEL is empty; fix: set it in fixture.env to a full model id" ;;
+  *) die "$SRC is '$CLIENT', not goose, claude or codex" ;;
 esac
-[ -f "$ROOT/harness/scenarios/$SCENARIO.json" ] || die "no such scenario: $SCENARIO"
+if [ ! -f "$ROOT/harness/scenarios/$SCENARIO.json" ]; then
+  names=""; for f in "$ROOT"/harness/scenarios/*.json; do f=${f##*/}; names="$names ${f%.json}"; done
+  die "no such scenario: $SCENARIO; scenarios:$names"
+fi
 git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || die "not a git repo: $REPO"
 [ -z "$(git -C "$REPO" status --porcelain)" ] || die "$REPO has uncommitted changes; commit them first (the build is from HEAD)"
 
@@ -83,11 +90,11 @@ import json, os, sys, datetime
 path, name, scenario, n, base, change, bs, hs, dry, client, provider, model = sys.argv[1:]
 run = {"client": client, "provider": provider if client == "goose" else None, "model": model, "effort": "high",
        "max_turns": 30, "n_per_arm": int(n), "seed": None}
-if client == "cli":
-    run.update(max_budget_usd=2, bill_api_key=True)  # cli only; goose bills the provider's key itself and has no budget cap
+if client == "claude":
+    run.update(max_budget_usd=2, bill_api_key=True)  # claude only; goose bills the provider's key itself and has no budget cap
 doc = {
   "name": name, "version": 2, "scenario": scenario,
-  "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often %s reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, model if client == "cli" else model + " on Goose", n),
+  "hypothesis": "On %s, Jaeger %s (arm variant) and its base %s (arm baseline) differ in how often %s reaches the cause. Decision rule: two-sided Fisher p < 0.05 on PASS at n=%s/arm." % (scenario, hs, bs, model if client == "claude" else model + (" on Goose" if client == "goose" else " on Codex"), n),
   "run": run,
   "arms": {"baseline": {"prompt": "neutral", "image": base, "tools": True},
            "variant": {"prompt": "neutral", "image": change, "tools": True}},
@@ -100,6 +107,7 @@ if os.path.exists(path):
     def norm(d):
         d = {k: v for k, v in d.items() if k != "status"}
         d["run"] = {k: v for k, v in d["run"].items() if k != "client_version"}
+        d["run"]["client"] = {"cli": "claude"}.get(d["run"]["client"], d["run"]["client"])  # an older pair file says cli
         return d
     if norm(old) != norm(doc):
         sys.exit("measure: %s exists and differs from this request; delete it or change the arguments" % path)
@@ -112,7 +120,8 @@ else:
 PY
 
 echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID"
-if [ "$CLIENT" = cli ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
+if [ "$CLIENT" = claude ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
+elif [ "$CLIENT" = codex ]; then echo "measure: Codex's cost per trial is not measured; it counts against your Codex login, plus one grader call per trial"
 else echo "measure: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
 case "$MODEL" in *:free) echo "measure: WARN $MODEL is a free model; a free OpenRouter key covers a few trials a day, not $((2 * N)); use a key with credits or a paid model" ;; esac
 if [ "$DRY" -eq 0 ] && [ "$YES" -eq 0 ]; then

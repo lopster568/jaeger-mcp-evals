@@ -9,7 +9,7 @@
   fixture_cli.py fixture   clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay
   fixture_cli.py up        pull missing images (and the Goose image), start the demo (and Phoenix, if it exists), wait until it is up
   fixture_cli.py phoenix   start the Phoenix trajectory store and wait until it answers
-  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (SMOKE_CLIENT: goose by default, cli or codex)
+  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (CLIENT: goose by default, claude or codex)
   fixture_cli.py down      stop the demo containers, keeping their data
   fixture_cli.py clean     remove the demo containers and network
   fixture_cli.py test      the offline unit tests
@@ -40,12 +40,11 @@ ROOT = config.ROOT
 LOG = os.path.join(ROOT, ".make.log")
 SMOKE = os.path.join("harness", "experiments", "smoke-paymentfailure.json")  # a template: no run.client, provider, model
 SMOKE_RUN = os.path.join("harness", "experiments", "smoke-run.json")  # SMOKE filled in by smoke_file(), git-ignored
-SMOKE_CLI_MODEL = "claude-sonnet-5-5"
-SMOKE_CODEX_MODEL = "gpt-5.6-terra"
 BENCH = [sys.executable, os.path.join("harness", "bench.py")]
-# Measured for the cli smoke trial only: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
+# Measured for the claude smoke trial only: 45,896 + 1,555 and 49,652 + 1,509 input + output tokens.
 # A Goose trial costs what its provider and model charge; bench.py prints its own expected-cost line.
-SMOKE_SIZES = {"cli": "about 50k tokens", "goose": "cost depends on your provider and model"}
+SMOKE_SIZES = {"claude": "about 50k tokens", "goose": "cost depends on your provider and model",
+               "codex": "counts against your Codex login"}
 DEMO_COMMIT = "1755859a"
 OVERLAY = {"env.override": ".env.override", "compose.overlay.yaml": "overlay/compose.overlay.yaml",
            "jaeger-config.yml": "overlay/jaeger-config.yml",
@@ -198,10 +197,11 @@ def header(cmd):
     out("\n  " + paint("1", "jaeger-ai-evals") + "  " + cmd + "\n" if TTY else "jaeger-ai-evals " + cmd)
 
 
-def first_token(argv):
+def first_token(argv, digit=False):
+    """The first word a command prints ("?" when none); with digit, the first word starting with a digit."""
     try:
-        return (subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.split()
-                or ["?"])[0]
+        words = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.split()
+        return next((w for w in words if w[:1].isdigit() or not digit), "?")
     except (OSError, subprocess.TimeoutExpired):
         return "?"
 
@@ -210,28 +210,39 @@ def host_only(cfg):
     return cfg.get("FIXTURE_HOST_ONLY") == "1"
 
 
-def smoke_client(cfg):
-    return cfg.get("SMOKE_CLIENT") or "goose"
+def refuse_smoke_client(cfg):
+    if "SMOKE_CLIENT" in cfg or "SMOKE_CLIENT" in os.environ:
+        raise Failed("SMOKE_CLIENT is now CLIENT",
+                     tries=[("rename SMOKE_CLIENT to CLIENT in fixture.env or on the make line", "same values; cli is now claude")])
+
+
+def agent_client(cfg):
+    return config.client_name(cfg.get("CLIENT", ""))
 
 
 def smoke_size(cfg):
-    return SMOKE_SIZES.get(smoke_client(cfg), SMOKE_SIZES["goose"])
+    return SMOKE_SIZES.get(agent_client(cfg), SMOKE_SIZES["goose"])
 
 
 def goose_needed(cfg):
     """The Goose image is needed by a goose smoke and by the goose grader (bench.py pre-flight checks both)."""
-    return smoke_client(cfg) == "goose" or cfg.get("GRADER_CLIENT") != "cli"
+    agent = agent_client(cfg)
+    return agent == "goose" or config.grader_client(cfg, agent) == "goose"
 
 
 def smoke_file(cfg):
     """The experiment make smoke dry-runs and runs: SMOKE filled in with Goose's provider and model from
-    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for SMOKE_CLIENT=cli or codex with
-    SMOKE_CLI_MODEL or SMOKE_CODEX_MODEL."""
-    client, provider, model = smoke_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
-    if client in ("cli", "codex"):
-        provider, model = None, SMOKE_CLI_MODEL if client == "cli" else SMOKE_CODEX_MODEL
+    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for CLIENT=claude or codex with
+    CLAUDE_MODEL or CODEX_MODEL."""
+    client, provider, model = agent_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
+    if client in ("claude", "codex"):
+        key = client.upper() + "_MODEL"
+        provider, model = None, cfg.get(key, "")
+        if not model:
+            raise Failed("%s is empty" % key, tries=[("set %s in fixture.env" % key, "a full model id")])
     elif client != "goose":
-        raise Failed("SMOKE_CLIENT is %r, not goose, cli or codex" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose, cli or codex")])
+        raise Failed("CLIENT is %r, not goose, claude or codex" % cfg.get("CLIENT", ""),
+                     tries=[("set CLIENT in fixture.env or make smoke CLIENT=claude", "goose, claude or codex")])
     elif provider not in goose_client.KEYS or not model:
         raise Failed("GOOSE_PROVIDER is %r; it must be anthropic or openrouter" % provider if provider not in goose_client.KEYS
                      else "GOOSE_MODEL is empty in fixture.env",
@@ -239,12 +250,12 @@ def smoke_file(cfg):
                       "the key (ANTHROPIC_API_KEY or OPENROUTER_API_KEY) goes in fixture.env too.",
                       "The Jaeger AI Assistant demo's scripts/ai-sidecar/goose uses the same two settings."],
                      [("set GOOSE_PROVIDER, GOOSE_MODEL and the key in fixture.env", "then run again"),
-                      ("make smoke CLIENT=cli", "or smoke on the Claude Code CLI")])
+                      ("make smoke CLIENT=claude", "or smoke on Claude Code")])
     with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:
         e = json.load(f)
     e["run"] = dict(client=client, provider=provider, model=model, **e["run"])
-    if client != "cli":
-        del e["run"]["max_budget_usd"]  # only the cli enforces it
+    if client != "claude":
+        del e["run"]["max_budget_usd"]  # only the claude client enforces it
     with open(os.path.join(ROOT, SMOKE_RUN), "w", encoding="utf-8") as f:
         json.dump(e, f, indent=2)
         f.write("\n")
@@ -267,14 +278,18 @@ def tools(cfg):
 
 def agent_tools(cfg):
     """The Tools line's agent part: Goose's settings (never the key) when it is the smoke client; claude when
-    installed or used by the cli smoke or grader. Login is not checked here (preflight.sh does)."""
+    used by the claude smoke or grader; codex when it is the smoke client. Login is not checked here (preflight.sh does)."""
     parts, p, key = [], cfg.get("GOOSE_PROVIDER", ""), None
-    if smoke_client(cfg) == "goose":
+    agent = agent_client(cfg)
+    if agent == "goose":
         key = goose_client.KEYS.get(p)
         ok = key and cfg.get("GOOSE_MODEL") and cfg.get(key)
         parts.append("goose %s %s, %s set" % (p, cfg["GOOSE_MODEL"], key) if ok else "goose settings incomplete")
-    if "cli" in (smoke_client(cfg), cfg.get("GRADER_CLIENT")) or shutil.which("claude"):
+    if "claude" in (agent, config.grader_client(cfg, agent)):
         parts.append("claude " + first_token(["claude", "--version"]))
+    if agent == "codex":  # "codex-cli 0.159.0": the first token starting with a digit
+        v = first_token([cfg.get("CODEX_BIN") or "codex", "--version"], digit=True)
+        parts.append("codex " + v)
     return tuple(parts)
 
 
@@ -388,27 +403,27 @@ def containers(d, services):
 
 # A failed smoke dry run's first FAIL, in short form; the first matching row wins.
 SHORT = [
-    (r"claude is not on PATH", "claude is not on PATH (the cli client needs it)"),
+    (r"claude is not on PATH", "claude is not on PATH (the claude client needs it)"),
     (r"not logged in|no model request with a JSON body", "claude is not logged in, or its request never arrived"),
     (r"docker is not on PATH", "docker is not installed, and the Goose client runs in a container"),
     (r"pinned Goose image is not on this machine", "the pinned Goose image is not on this machine"),
     (r"(run\.provider|grader provider) is \w+ but \w+ is empty", "the provider's API key is empty in fixture.env"),
     (r"grader model is empty", "the grader model is empty"),
     (r"grader provider is '", "the grader provider is not anthropic or openrouter"),
-    (r"GRADER_CLIENT is", "GRADER_CLIENT is not goose or cli"),
+    (r"GRADER_CLIENT is", "GRADER_CLIENT is not goose or claude"),
     (r"does not accept", "the Claude Code CLI lacks flags the harness passes"),
     (r"leak|name no fault", "a leak check failed"),
     (r"harness trajectories in Jaeger's store", "Jaeger's store holds exported trajectories; restart the jaeger container"),
 ]
 TRIES = {
-    r"^claude is not on PATH": ("install the Claude Code CLI, run claude, then /login", "only the cli client needs it; the default smoke runs Goose"),
+    r"^claude is not on PATH": ("install the Claude Code CLI, run claude, then /login", "only the claude client needs it; the default smoke runs Goose"),
     r"^claude is": ("claude, then /login", "log the Claude Code CLI in"),
-    r"^docker is not installed": ("install Docker Engine or Docker Desktop", "or GRADER_CLIENT=cli with a cli smoke"),
+    r"^docker is not installed": ("install Docker Engine or Docker Desktop", "or GRADER_CLIENT=claude with CLIENT=claude"),
     r"^the pinned Goose image": ("docker pull " + goose_client.IMAGE, "the image the Goose client and grader run"),
     r"^the provider's API key": ("set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in fixture.env", "the key of GOOSE_PROVIDER (or GRADER_PROVIDER)"),
-    r"^the grader model": ("set GRADER_MODEL or GOOSE_MODEL in fixture.env", "a full model id, or GRADER_CLIENT=cli"),
+    r"^the grader model": ("set GRADER_MODEL or GOOSE_MODEL in fixture.env", "a full model id, or GRADER_CLIENT=claude"),
     r"^the grader provider": ("set GRADER_PROVIDER or GOOSE_PROVIDER in fixture.env", "anthropic or openrouter"),
-    r"^GRADER_CLIENT": ("set GRADER_CLIENT in fixture.env", "goose or cli"),
+    r"^GRADER_CLIENT": ("set GRADER_CLIENT in fixture.env", "goose or claude"),
     r"^the Claude Code CLI": ("claude update", "a CLI that accepts the harness flags"),
     r"containers running": ("cd %s && docker compose ps -a", "which container is not up"),
 }
@@ -497,9 +512,9 @@ def phoenix(cfg, d):
 
 
 def smoke_ready(cfg):
-    """True when make smoke can start: a cli smoke, or a Goose smoke with provider, model and key set."""
+    """True when make smoke can start: a claude or codex smoke, or a Goose smoke with provider, model and key set."""
     key = goose_client.KEYS.get(cfg.get("GOOSE_PROVIDER", ""))
-    return smoke_client(cfg) != "goose" or bool(key and cfg.get("GOOSE_MODEL") and cfg.get(key))
+    return agent_client(cfg) != "goose" or bool(key and cfg.get("GOOSE_MODEL") and cfg.get(key))
 
 
 def footer(cfg, t0):
@@ -599,6 +614,7 @@ def main(argv=None):
         if cmd != "tools":
             header(cmd)
         if cmd in ("setup", "tools", "smoke"):
+            refuse_smoke_client(cfg)
             tools(cfg)
         if cmd == "smoke":
             smoke(cfg)

@@ -14,6 +14,23 @@ DEFAULTS = {"FIXTURE_FLAG_FILE": "src/flagd/demo.flagd.json", "FIXTURE_PRISTINE_
             "KNOWN_COMMITS": "quay.io/jaegertracing/jaeger:2.23.0=d723f91447f29a345c288f37eb8d1ce7807bc0be"}
 
 
+ALIASES = {"cli": "claude"}  # run.client cli, written by every record before 2026-11-23
+
+
+def client_name(v):
+    return ALIASES.get(v, v)
+
+
+def grader_client(cfg, agent):
+    """GRADER_CLIENT when set, else the agent's own client when it can grade (claude), else goose."""
+    return client_name(cfg.get("GRADER_CLIENT") or "") or ("claude" if agent == "claude" else "goose")
+
+
+def recorded_client(v):
+    """A manifest's client or grader client: absent (written before GRADER_CLIENT) means claude; cli is claude."""
+    return client_name(v or "claude")
+
+
 def load(root=ROOT):
     cfg = dict(DEFAULTS)
     for name in ("fixture.env.example", "fixture.env"):

@@ -68,7 +68,7 @@ class TestClaudeBatch(CliCase):
             trial = os.path.join(b, "%d-%s" % (c["order_index"], c["arm"]))
             meta = load(os.path.join(trial, "meta.json"))
             self.assertEqual(list(meta), META_V4_KEYS)
-            self.assertEqual((meta["schema_version"], meta["client"], meta["provider"], meta["agent_loop"]), (5, "cli", None, None))
+            self.assertEqual((meta["schema_version"], meta["client"], meta["provider"], meta["agent_loop"]), (5, "claude", None, None))
             self.assertEqual(meta["observed"], {"client_version": "2.1.282", "model": "claude-sonnet-5",
                                                 "tools": ["StructuredOutput"] + ["mcp__jaeger__" + n for n in (
                                                     "get_critical_path", "get_trace_errors", "get_trace_topology", "get_services")],
@@ -95,7 +95,22 @@ class TestClaudeBatch(CliCase):
         graders = bench.read_jsonl(os.path.join(self.home, "grader-calls.jsonl"))
         self.assertEqual(len(graders), 1)
         self.assertFalse(graders[0]["claudecode"] or graders[0]["api_key"])
-        self.assertEqual(m["grader"]["client"], "cli")
+        self.assertEqual(m["grader"]["client"], "claude")
+
+    def test_a_cli_experiment_file_runs_and_records_claude(self):
+        """run.client cli, as every file under records/inputs says, loads as claude: same history policy, content untouched."""
+        self.knob()
+        doc = load(self.knob_path)
+        doc["run"]["client"] = "cli"
+        pathlib.Path(self.knob_path).write_text(json.dumps(doc))
+        self.assertEqual(self.bench("run", self.knob_path, ANTHROPIC_API_KEY="sk-test"), 0, self.err)
+        b = self.batch_dir()
+        m = load(os.path.join(b, "manifest.json"))
+        self.assertEqual((m["client"], m["history_policy"]), ("claude", {"harness_truncation": "none", "cli_autocompact": "default"}))
+        self.assertEqual(m["experiment"]["content"]["run"]["client"], "cli")  # the record is the file as written
+        self.assertEqual(m["experiment"]["sha256"], bench.sha256_file(self.knob_path))
+        for meta in glob.glob(os.path.join(b, "*-*", "meta.json")):
+            self.assertEqual(load(meta)["client"], "claude")
 
     def test_cli_refused_before_anything_is_touched_when_claude_lacks_a_flag(self):
         self.assertEqual(self.run_batch(1, FAKE_CLAUDE_HELP="--restricted --effort"), 1)
@@ -178,7 +193,7 @@ class TestClaudeBatch(CliCase):
         self.assertEqual(sorted(kinds), ["AGENT", "AGENT", "LLM", "LLM", "TOOL", "TOOL"])
         for root in (s for s in spans if s["attrs"]["openinference.span.kind"] == "AGENT"):
             a = root["attrs"]
-            self.assertEqual((a["client"], a["provider"]), ("cli", "anthropic"))  # provider from the cli fallback
+            self.assertEqual((a["client"], a["provider"]), ("claude", "anthropic"))  # provider from the claude fallback
             tid = root[1][0]
             children = [s for s in spans if s[1][0] == tid and s is not root]
             tool = next(s for s in children if s["attrs"]["openinference.span.kind"] == "TOOL")
@@ -257,18 +272,23 @@ class TestSandboxProbe(CliCase):
     def test_stage_one_names_the_cli_version_and_says_when_cost_is_unknown(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("ok    claude CLI 2.1.282 accepts the flags the harness passes", self.err)
-        self.assertIn("ok    expected cost unknown: no recorded cli trial of paymentFailure on sonnet", self.err)
+        self.assertIn("ok    expected cost unknown: no recorded claude trial of paymentFailure on sonnet", self.err)
 
     def test_expected_cost_is_per_arm_median_times_n(self):
         self.write_recorded([{"cost_usd": x} for x in (0.1, 0.2, 0.3)])
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
                          [(True, "expected cost about 2.00 USD per arm of 10 trials (recorded max 0.30 per trial, cap 2)")])
-        # recorded cli trials say nothing about a goose run on the same model id
+        # recorded claude trials say nothing about a goose run on the same model id
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records, client="goose"),
                          [(True, "expected cost unknown: no recorded goose trial of paymentFailure on sonnet")])
         os.remove(os.path.join(self.records, "old", "batch-1", "manifest.json"))  # no manifest: no known client, not read
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records),
-                         [(True, "expected cost unknown: no recorded cli trial of paymentFailure on sonnet")])
+                         [(True, "expected cost unknown: no recorded claude trial of paymentFailure on sonnet")])
+
+    def test_a_cli_manifest_counts_for_the_claude_expected_cost(self):
+        self.write_recorded([{"cost_usd": x} for x in (0.1, 0.2, 0.3)], client="cli")
+        self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 10, 2, records=self.records, client="claude")[0][1][:28],
+                         "expected cost about 2.00 USD")
 
     def test_max_budget_usd_is_required_for_the_cli(self):
         self.refused(lambda d: d["run"].pop("max_budget_usd"), "run.max_budget_usd must be a positive number")

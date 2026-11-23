@@ -49,6 +49,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import config
+
 
 def load_rows(batch_dir):
     """score.py summary dicts, each tagged with 'arm', from the batch's scores.jsonl."""
@@ -132,9 +134,11 @@ def _cross_values(m, fields=CROSS_FIELDS):
     arm = (m.get("arm_pin") or {}).get("arm") or next(iter(exp["arms"]))
     prompt = exp["arms"][arm]["prompt"]
     v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256", "grader")}
-    g = m.get("grader") or {}  # manifests from before the goose grader have no client: they were cli
+    if "client" in v:
+        v["client"] = config.client_name(v["client"])  # cli, written before 2026-11-23, is claude
+    g = m.get("grader") or {}  # manifests from before the goose grader have no client: they were claude (once cli)
     if "grader" in fields:
-        v["grader"] = (g.get("client") or "cli", g.get("provider"), g.get("model"), g.get("prompt_sha256"))
+        v["grader"] = (config.recorded_client(g.get("client")), g.get("provider"), g.get("model"), g.get("prompt_sha256"))
     v["prompt name"] = prompt
     v["prompt sha256"] = (m.get("file_hashes_sha256") or {}).get("prompts/%s.txt" % prompt)
     return v

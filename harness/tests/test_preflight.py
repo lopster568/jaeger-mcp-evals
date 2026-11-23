@@ -26,7 +26,7 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", smoke="", no_docker=False, info="", home=None, no_claude=False):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", client="", no_docker=False, info="", home=None, no_claude=False):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
                 if (name == "docker" and no_docker) or (name == "claude" and no_claude):
@@ -45,7 +45,7 @@ class Preflight(unittest.TestCase):
                     os.symlink(shutil.which(t), os.path.join(tools, t))
                 path = d + os.pathsep + tools
             env = dict(os.environ, PATH=path, OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
-                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, SMOKE_CLIENT=smoke, FAKE_COMPOSE=compose, FAKE_INFO=info)
+                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, CLIENT=client, FAKE_COMPOSE=compose, FAKE_INFO=info)
             if home:
                 env["HOME"] = home
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
@@ -66,23 +66,25 @@ class Preflight(unittest.TestCase):
 
     def test_host_only_skips_the_claude_checks(self):
         self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="1").returncode, 0)
-        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="0", grader="cli").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, host_only="0", grader="claude").returncode, 1)
 
     def test_remote_fixture_skips_docker_and_ports_on_the_agent_machine(self):
         # FIXTURE_SSH_USER set: Docker and the demo's ports live on the fixture host; here docker always fails
         self.assertEqual(self.run_script(1, jaeger=False, remote="u").returncode, 0)  # docker is on PATH; compose is not asked
         self.assertEqual(self.run_script(1, jaeger=False).returncode, 0)  # local: the working docker shim passes
 
-    def test_remote_agent_machine_needs_docker_unless_everything_is_cli(self):
+    def test_remote_agent_machine_needs_docker_unless_everything_is_claude(self):
         # Goose and the Goose grader run in Docker on the agent machine, whatever the fixture host is
         r = self.run_script(1, jaeger=False, remote="u", no_docker=True)
         self.assertEqual(r.returncode, 1)
         self.assertIn("docker is not installed", r.stdout)
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="goose").returncode, 1)
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="goose", grader="cli").returncode, 1)
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="cli").returncode, 0)
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="codex", grader="cli").returncode, 0)
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="codex", grader="goose").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="goose", grader="claude").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="codex", grader="claude").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="codex", grader="goose").returncode, 1)
+        # GRADER_CLIENT empty: the grader follows the agent (claude grades claude; codex has no grader, goose does)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="claude").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="cli").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, client="codex").returncode, 1)
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, host_only="1").returncode, 0)  # no agent here
 
     def test_compose_must_be_2_24_or_newer_locally(self):
@@ -93,16 +95,21 @@ class Preflight(unittest.TestCase):
                 self.assertIn("2.24", r.stdout)
         self.assertEqual(self.run_script(1, jaeger=False, remote="u", compose="v2.1.0").returncode, 0)  # the fixture host's own check
 
-    def test_logged_out_claude_fails_only_for_the_cli_grader(self):
-        r = self.run_script(1, jaeger=False, logged_in=False, grader="cli")
+    def test_logged_out_claude_fails_only_for_the_claude_grader(self):
+        r = self.run_script(1, jaeger=False, logged_in=False, grader="cli")  # the old name still means claude
         self.assertEqual(r.returncode, 1)
         self.assertIn("claude is not logged in", r.stdout)
         r = self.run_script(1, jaeger=False, logged_in=False, grader="goose")
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout, "")  # the Goose defaults need no claude: nothing to say
-        r = self.run_script(1, jaeger=False, logged_in=False, smoke="cli")
+        r = self.run_script(1, jaeger=False, logged_in=False, client="claude", grader="goose")
         self.assertEqual(r.returncode, 0)
-        self.assertIn("needed for SMOKE_CLIENT=cli", r.stdout)
+        self.assertIn("needed for CLIENT=claude", r.stdout)
+        # GRADER_CLIENT empty: a claude agent is graded by claude, so a logged-out claude fails
+        r = self.run_script(1, jaeger=False, logged_in=False, client="claude")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("claude is not logged in", r.stdout)
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, client="codex").returncode, 0)  # codex: goose grades
 
     def test_docker_that_will_not_answer_names_the_cause(self):
         r = self.run_script(1, jaeger=False, info="permission denied while trying to connect to the Docker daemon socket")
@@ -112,17 +119,17 @@ class Preflight(unittest.TestCase):
         r = self.run_script(1, jaeger=False, info="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
         self.assertEqual(r.returncode, 1)
         self.assertIn("not running; start Docker", r.stdout)
-        # a remote fixture with a cli agent and grader needs no docker here, so a broken one is not asked
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u", smoke="cli", grader="cli", info="x").returncode, 0)
+        # a remote fixture with a claude agent and grader needs no docker here, so a broken one is not asked
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", client="claude", grader="claude", info="x").returncode, 0)
 
     def test_claude_installed_off_path_says_so(self):
         with tempfile.TemporaryDirectory() as home:
-            r = self.run_script(1, jaeger=False, grader="cli", no_claude=True, home=home)
+            r = self.run_script(1, jaeger=False, grader="claude", no_claude=True, home=home)
             self.assertIn("is not installed", r.stdout)
             os.makedirs(os.path.join(home, ".local", "bin"))
             pathlib.Path(home, ".local", "bin", "claude").write_text("#!/bin/bash\n")
             os.chmod(os.path.join(home, ".local", "bin", "claude"), 0o755)
-            r = self.run_script(1, jaeger=False, grader="cli", no_claude=True, home=home)
+            r = self.run_script(1, jaeger=False, grader="claude", no_claude=True, home=home)
             self.assertEqual(r.returncode, 1)
             self.assertIn("not on your PATH", r.stdout)
 
