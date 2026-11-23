@@ -85,15 +85,14 @@ def validate(instance, schema, path="$"):
 
 def extract_json(text, schema):
     """The final message, code fences stripped, is structured_output if it parses as JSON
-    and validates; otherwise null, with the errors."""
+    and validates; otherwise None."""
     text = text.strip()
     fenced = re.fullmatch(r"```[a-zA-Z]*\s*(.*?)\s*```", text, re.DOTALL)
     try:
         obj = json.loads(fenced.group(1) if fenced else text)
-    except ValueError as e:
-        return None, ["final text is not JSON: %s" % e]
-    errs = validate(obj, schema)
-    return (None, errs) if errs else (obj, None)
+    except ValueError:
+        return None
+    return None if validate(obj, schema) else obj
 
 
 def codex_argv(codex_bin, model, effort, schema_file, url):
@@ -207,12 +206,12 @@ def main(argv=None):
             if subtype is None:
                 subtype = "error_during_execution"
                 err = err or "codex exited %d without turn.completed" % p.returncode
-        structured, errors = extract_json(text, schema)
+        structured = extract_json(text, schema)
         # score.py sums input_tokens and cache_read_input_tokens; codex's input_tokens includes the cached ones.
         u = {"input_tokens": usage.get("input_tokens", 0) - usage.get("cached_input_tokens", 0),
              "cache_read_input_tokens": usage.get("cached_input_tokens", 0), "output_tokens": usage.get("output_tokens", 0)}
         result = {"type": "result", "subtype": subtype, "is_error": subtype != "success", "result": text,
-                  "structured_output": structured, "structured_output_errors": errors,
+                  "structured_output": structured,
                   "num_turns": calls + 1,  # the CLI's convention: tool calls plus one
                   "num_tool_calls": calls, "duration_ms": int((time.time() - t0) * 1000),
                   "total_cost_usd": None, "usage": u, "model": a.model, "session_id": sid}

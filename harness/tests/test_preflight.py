@@ -5,6 +5,7 @@
 """fixture/preflight.sh: busy fixture ports fail unless the stack is already ours. docker and claude are PATH shims (claude answers auth status)."""
 import os
 import pathlib
+import shutil
 import socket
 import stat
 import subprocess
@@ -13,7 +14,7 @@ import unittest
 
 SCRIPT = str(pathlib.Path(__file__).resolve().parents[2] / "fixture" / "preflight.sh")
 DOCKER = """#!/bin/bash
-[ "$1 $2" = "compose version" ] && { echo "Docker Compose version v2.29.1"; exit 0; }
+[ "$1 $2" = "compose version" ] && { echo "Docker Compose version ${FAKE_COMPOSE:-v2.29.1}"; exit 0; }
 [ "$1" = ps ] && [ -n "$FAKE_JAEGER" ] && echo abc123
 exit 0
 """
@@ -24,17 +25,26 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind=""):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", smoke="", no_docker=False):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
+                if name == "docker" and no_docker:
+                    continue
                 shim = os.path.join(d, name)
                 body = ("#!/bin/bash\nexit 1\n" if remote else DOCKER) if name == "docker" else CLAUDE % int(not logged_in)
                 pathlib.Path(shim).write_text(body)
                 os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%s%d:16686"\n' % (bind, port))
-            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
-                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader)
+            path = d + os.pathsep + os.environ["PATH"]
+            if no_docker:  # a PATH of only what the script needs, so a docker installed here is not found
+                tools = os.path.join(d, "tools")
+                os.mkdir(tools)
+                for t in ("bash", "env", "dirname", "git", "curl", "python3", "grep", "sed", "head"):
+                    os.symlink(shutil.which(t), os.path.join(tools, t))
+                path = d + os.pathsep + tools
+            env = dict(os.environ, PATH=path, OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
+                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, SMOKE_CLIENT=smoke, FAKE_COMPOSE=compose)
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
 
     def test_busy_port_fails_unless_stack_is_ours(self):
@@ -57,8 +67,26 @@ class Preflight(unittest.TestCase):
 
     def test_remote_fixture_skips_docker_and_ports_on_the_agent_machine(self):
         # FIXTURE_SSH_USER set: Docker and the demo's ports live on the fixture host; here docker always fails
-        self.assertEqual(self.run_script(1, jaeger=False, remote="u").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u").returncode, 0)  # docker is on PATH; compose is not asked
         self.assertEqual(self.run_script(1, jaeger=False).returncode, 0)  # local: the working docker shim passes
+
+    def test_remote_agent_machine_needs_docker_unless_everything_is_cli(self):
+        # Goose and the Goose grader run in Docker on the agent machine, whatever the fixture host is
+        r = self.run_script(1, jaeger=False, remote="u", no_docker=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("docker is not installed", r.stdout)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="goose").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="goose", grader="cli").returncode, 1)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, smoke="cli", grader="cli").returncode, 0)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", no_docker=True, host_only="1").returncode, 0)  # no agent here
+
+    def test_compose_must_be_2_24_or_newer_locally(self):
+        for version, ok in (("v2.23.3", False), ("v2.24.0", True), ("v2.29.1-desktop.1", True), ("2.9.0", False), ("v5.0.0", True)):
+            r = self.run_script(1, jaeger=False, compose=version)
+            self.assertEqual(r.returncode, 0 if ok else 1, version)
+            if not ok:
+                self.assertIn("2.24", r.stdout)
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", compose="v2.1.0").returncode, 0)  # the fixture host's own check
 
     def test_logged_out_claude_fails_only_for_the_cli_grader(self):
         r = self.run_script(1, jaeger=False, logged_in=False, grader="cli")

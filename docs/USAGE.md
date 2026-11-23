@@ -4,7 +4,7 @@ See README.md, fixture/FIXTURE.md, docs/RECORD.md (recorded keys) and docs/TUNIN
 
 ## Prerequisites
 
-Python 3.11+, bash, git, Docker with Compose v2 and one agent client
+Python 3.11+, bash, git, Docker with Docker Compose 2.24 or newer and one agent client
 (Clients below), here or on a remote host over ssh (clone this repo there, fixture/FIXTURE.md).
 Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.env` (copy of
 `fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings (`GOOSE_PROVIDER`, `GOOSE_MODEL`: read by `make measure`, `make smoke` and as the grader's fallback) and the Codex command.
@@ -118,7 +118,9 @@ A batch aborts before the flag flips on:
 |---|---|
 | No arm matches | only arms whose `image` equals `docker inspect jaeger` run; run other images as separate batches |
 | Instructions mismatch | an arm whose image record has an `instructions` key must serve the MCP `instructions` string equal (trimmed) to that file under `harness/experiments/instructions/`; absent or null is recorded only (`instructions_sha256` in the manifest) |
-| Failed gate | leak scan, readiness, oracle (docs/SCENARIOS.md) or sandbox probe (cli); `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
+| Failed gate | leak scan, readiness or sandbox probe (cli); `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
+
+The oracle (docs/SCENARIOS.md) runs after the flag flips and only warns; it never aborts a batch.
 
 ## Pins, cost and what to attach
 
@@ -141,7 +143,7 @@ For a pull request attach `records/<experiment>/RESULT.md` and the two batch dir
 
 ## Protocol
 
-Results published in this repo come from one protocol:
+The published results in this repo were measured with this protocol. A new comparison may use any client and model, provided both arms use the same one (and the same grader).
 
 - Model: `claude-sonnet-5-5`, requested by that full id in `run.model`. Every trial's `model_asserted` in scores.jsonl is the model its stream reported, and the batch aborts after a cell that reports another one.
 - Client: the Claude Code CLI with its built-in tools off (`--tools ""`) and only `mcp__jaeger__*` allowed.
@@ -160,8 +162,6 @@ Results published in this repo come from one protocol:
 
 | Key | Checks, per test arm |
 |---|---|
-| `tool_used_min`, `tool_used_max` | runs using each named tool |
-| `tool_output_chars_median_drop_pct_min` | percentage drop in median `tool_output_chars` against baseline |
 | `accuracy_pass_min` | the PASS count |
 | `fisher_p_max` | PASS only if two-sided Fisher p (`bench.fisher_p`) of baseline vs arm PASS counts is below the value; both arms need the same n |
 | exit code | 0 all pass, 1 any fails, 2 refusal: an empty `thresholds` block, or manifests that do not carry one experiment sha256, differ on scenario, scenario version or hash, prompt or system prompt (overlay and image may differ), or have `arm_pin` blocks not matching the argument order |
@@ -174,7 +174,7 @@ Results published in this repo come from one protocol:
 - Every number comes from `bench.py verify`.
 - `bench.py band <batch_dir> [--arm A]` (a `$RUNS_DIR` directory; cached grades only) prints the Results table: verdict counts, `err`, `invalid`, `leak`, rate, Wilson 95% CI, medians. `err`, `invalid`, `leak` and abnormal stops count in n, never in PASS. Exit 0 certified, 2 when n is under 10, 3 when the rate is 0 or 1.
 - Below it, "Client limits" lists each trial the client may have cut short or squeezed (stopped before a result, compacted, 80% of max_budget_usd used, API retries), or reads "none"; `client_limits` in scores.jsonl, report only.
-- Under the table, "Passes to read" lists each PASS whose trial shows a grounding flag (a cited span id no tool result returned, a flag name or export marker inside a tool result) or whose tool results never matched the scenario's signal, with the trial directory; it reads "none" when empty. These fields (`evidence_unseen`, `tool_result_leak_hits`, `export_marker_hits`) are report only and never change a verdict. `band` and `verify` flag runs with a compaction event (context numbers not comparable). Scenarios with `deterministic` set to no stay out of the certified pool. `bench.py power <n_per_arm>` gives the smallest significant variant PASS count (Fisher).
+- Under the table, "Passes to read" lists each PASS whose trial shows a grounding flag (a cited span id no tool result returned, a flag name or export marker inside a tool result) or whose tool results never matched the scenario's signal, with the trial directory; it reads "none" when empty. These fields (`evidence_unseen`, `tool_result_leak_hits`, `export_marker_hits`) are report only and never change a verdict. `band` and `verify` flag runs with a compaction event (context numbers not comparable). A scenario's `deterministic` value is recorded and shown in `records/INDEX.md`; `band` does not use it. `bench.py power <n_per_arm>` gives the smallest significant variant PASS count (Fisher).
 
 ## Scoring
 

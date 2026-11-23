@@ -163,7 +163,8 @@ def call_goose(truth, text):
     name = "goose-grader-" + hashlib.sha256((truth + text).encode("utf-8")).hexdigest()[:12]
     with tempfile.TemporaryDirectory() as tmp:
         work, events = os.path.join(tmp, "goose"), os.path.join(tmp, "events.jsonl")
-        os.mkdir(work, 0o755)
+        os.mkdir(work)
+        os.chmod(work, 0o755)  # mkdir's mode is masked by the umask; the image's user reads the mount
         for fname, body in (("recipe.yaml", goose_client.build_recipe("", prompt_text(), SCHEMA, None, param="answer")),
                             ("answer.txt", answer)):
             with open(os.path.join(work, fname), "w", encoding="utf-8") as f:

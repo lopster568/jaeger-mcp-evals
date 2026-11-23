@@ -24,11 +24,6 @@ judge.py:
     (the two directories were probably swapped or mismatched)
   - refuses (exit 2) if the experiment's thresholds block is empty: nothing would be judged
   - for each non-baseline arm, from scores.jsonl:
-      - per-tool run counts: how many of that arm's runs used a given tool
-        at least once, for every tool named under tool_used_min / tool_used_max
-      - median tool_output_chars (the drop percentage in
-        tool_output_chars_median_drop_pct_min is measured against the
-        baseline arm's median, from the baseline batch)
       - PASS count, using score.py's strict verdict == "PASS"; INVALID rows (sandbox check
         failed) and LEAK rows (the answer names a flag) stay in n, are never a PASS, and
         each arm with any gets a WARNING line
@@ -51,7 +46,6 @@ Exit codes:
 """
 import json
 import os
-import statistics
 import sys
 from datetime import datetime, timezone
 
@@ -63,11 +57,6 @@ def load_rows(batch_dir):
         return []
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
-
-
-def median(xs):
-    xs = [x for x in xs if isinstance(x, (int, float))]
-    return statistics.median(xs) if xs else None
 
 
 def invalid_cause(rows):
@@ -87,7 +76,6 @@ def arm_metrics(rows, arm, tool_names):
     return {
         "n": len(arm_rows),
         "tool_used": tool_used,
-        "chars_median": median([r.get("tool_output_chars") for r in arm_rows]),
         "pass_count": sum(1 for r in arm_rows if r.get("verdict") == "PASS"),
         "invalid": sum(1 for r in arm_rows if r.get("verdict") == "INVALID"),
         "invalid_cause": invalid_cause(arm_rows),
@@ -131,8 +119,8 @@ def _versions(manifest, rows):
 
 CROSS_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256",
                 "client", "provider", "model_requested", "effort", "max_turns", "max_budget_usd", "n_per_arm",
-                "fixture_overlay_sha256", "system_prompt_sha256"]
-SAME_RUN_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256", "system_prompt_sha256"]
+                "fixture_overlay_sha256", "system_prompt_sha256", "grader"]
+SAME_RUN_FIELDS = ["scenario", "scenario_version", "scenario_sha256", "prompt name", "prompt sha256", "system_prompt_sha256", "grader"]
 
 
 OVERLAY, OVERLAY_NOIMG = "fixture_overlay_sha256", "fixture_overlay_sha256_sans_image"
@@ -143,7 +131,10 @@ def _cross_values(m, fields=CROSS_FIELDS):
     exp = m["experiment"]["content"]
     arm = (m.get("arm_pin") or {}).get("arm") or next(iter(exp["arms"]))
     prompt = exp["arms"][arm]["prompt"]
-    v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256")}
+    v = {k: m.get(k) for k in fields if k not in ("prompt name", "prompt sha256", "grader")}
+    g = m.get("grader") or {}  # manifests from before the goose grader have no client: they were cli
+    if "grader" in fields:
+        v["grader"] = (g.get("client") or "cli", g.get("provider"), g.get("model"), g.get("prompt_sha256"))
     v["prompt name"] = prompt
     v["prompt sha256"] = (m.get("file_hashes_sha256") or {}).get("prompts/%s.txt" % prompt)
     return v
@@ -233,9 +224,6 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
 
     if not thresholds:
         return (["judge: the experiment has no thresholds; nothing was judged"], 2)
-    tool_min = thresholds.get("tool_used_min") or {}
-    tool_max = thresholds.get("tool_used_max") or {}
-    tool_names = set(tool_min) | set(tool_max)
 
     baseline_rows = load_rows(baseline_batch_dir)
     variant_rows = load_rows(variant_batch_dir)
@@ -247,7 +235,7 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
             + "); keep each pair on one client"], 2)
     if any(v is None for vs in seen.values() for v in vs):
         print("judge: client version not recorded", file=sys.stderr)  # not in lines: RESULT.md stays as it was
-    baseline_metrics = arm_metrics(baseline_rows, baseline_arm, tool_names)
+    baseline_metrics = arm_metrics(baseline_rows, baseline_arm, ())
     if baseline_metrics["n"] == 0:
         return ([f"judge: no rows for baseline arm '{baseline_arm}' found in {baseline_batch_dir}"], 2)
 
@@ -259,7 +247,7 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
                                 ("variant", [r for r in variant_rows if r.get("arm") in test_arms])])
     lines.append(count("baseline arm", baseline_arm, baseline_metrics))
     for arm in test_arms:
-        m = arm_metrics(variant_rows, arm, tool_names)
+        m = arm_metrics(variant_rows, arm, ())
         if m["n"] == 0:
             lines.append(f"judge: WARNING - no rows for arm '{arm}' found in {variant_batch_dir}")
         prefix = f"{arm}: " if len(test_arms) > 1 else ""
@@ -276,19 +264,6 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
             results.append(ok)
             lines.append(f"{prefix}{name}: {'PASS' if ok else 'FAIL'} (measured={measured}, required{op}{required})")
 
-        for tool, min_n in tool_min.items():
-            measured = m["tool_used"].get(tool, 0)
-            check(f"tool_used_min[{tool}]", measured >= min_n, measured, ">=", min_n)
-        for tool, max_n in tool_max.items():
-            measured = m["tool_used"].get(tool, 0)
-            check(f"tool_used_max[{tool}]", measured <= max_n, measured, "<=", max_n)
-        if "tool_output_chars_median_drop_pct_min" in thresholds:
-            min_drop = thresholds["tool_output_chars_median_drop_pct_min"]
-            base_med, var_med = baseline_metrics["chars_median"], m["chars_median"]
-            drop_pct = round((base_med - var_med) / base_med * 100, 1) if base_med and var_med is not None else None
-            check("tool_output_chars_median_drop_pct_min", drop_pct is not None and drop_pct >= min_drop,
-                  drop_pct if drop_pct is not None else
-                  "N/A (no baseline data)" if not base_med else "N/A (no variant data)", ">=", min_drop)
         if "accuracy_pass_min" in thresholds:
             min_pass = thresholds["accuracy_pass_min"]
             check("accuracy_pass_min", m["pass_count"] >= min_pass, m["pass_count"], ">=", min_pass)

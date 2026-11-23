@@ -48,8 +48,8 @@ Keys, as in the example above:
 - `flag`: the flagd flag this scenario activates.
 - `activation`: `{field, value}` written to `src/flagd/demo.flagd.json` for that flag.
 - `version`: required integer, bumped under the changelog rule below.
-- `deterministic`: `yes`, `no` or `bucketed`; `no` stays out of the certified pool
-  (docs/USAGE.md, Reading results).
+- `deterministic`: `yes`, `no` or `bucketed`; recorded and shown in
+  `records/INDEX.md`, not used by `band` (docs/USAGE.md, Reading results).
 - `ground_truth`: `{service, operation, mechanism}`, the answer key in prose.
 - `signal_regex`: text in the fault trace and absent from the baseline.
 - `pass_rule`: `{service_exact, operation_exact}`, lists of accepted exact strings

@@ -89,10 +89,9 @@ class TestCodexBatch(BenchCase):
     def test_codex_answer_must_match_the_verdict_schema(self):
         verdict = {"root_cause_service": "payment", "root_cause_operation": "charge", "mechanism": "invalid token", "cascading": [], "confidence": "high", "evidence_span_ids": [], "abstain": False}
         schema = load(bench.VERDICT_SCHEMA)
-        self.assertEqual(codex_client.extract_json("```json\n%s\n```" % json.dumps(verdict), schema), (verdict, None))
-        obj, errs = codex_client.extract_json(json.dumps(dict(verdict, confidence="certain")), schema)
-        self.assertIsNone(obj)
-        self.assertTrue(errs)
+        self.assertEqual(codex_client.extract_json("```json\n%s\n```" % json.dumps(verdict), schema), verdict)
+        self.assertIsNone(codex_client.extract_json(json.dumps(dict(verdict, confidence="certain")), schema))
+        self.assertIsNone(codex_client.extract_json("not json", schema))
 
     def test_codex_is_not_probed(self):
         self.assertEqual(self.run_batch(1), 0, self.err)

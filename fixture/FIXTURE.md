@@ -128,7 +128,7 @@ bash fixture/apply-deflag.sh
 
 It validates the config in a throwaway collector, recreates only otel-collector, rolls back if it does not stay up, then runs `harness/fixture_leak.py --live`. `bench.py run` repeats that scan before and during the fault and refuses a fixture whose telemetry names a flag.
 
-productCatalogFailure is the one deliberate exception, because its own error text names a feature flag and is the scenario's signal. The rewrite statement is in the config, commented out.
+productCatalogFailure is the one deliberate exception: a demo flag with no scenario here, whose own error text names a feature flag. The rewrite statement is in the config, commented out.
 
 ## Switch the Jaeger image for a variant
 
