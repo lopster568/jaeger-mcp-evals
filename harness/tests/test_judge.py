@@ -44,7 +44,8 @@ EXPERIMENT = {
 
 
 def write_manifest(batch_dir, arm_pin=None, sha256="deadbeef", oracle=None):
-    manifest = {"scenario": "paymentFailure", "scenario_sha256": "s1", "arms": [arm_pin] if arm_pin else ["baseline", "descchange"],
+    jaeger = {"baseline": ("jaeger:base", "aaaa111"), "descchange": ("jaeger:change", "bbbb222")}.get(arm_pin, ("jaeger:x", None))
+    manifest = {"jaeger_image": jaeger[0], "jaeger_commit": jaeger[1], "scenario": "paymentFailure", "scenario_sha256": "s1", "arms": [arm_pin] if arm_pin else ["baseline", "descchange"],
                 "experiment": {"name": EXPERIMENT["name"], "file": "x.json", "sha256": sha256, "content": EXPERIMENT}}
     if oracle:
         manifest["preflight"] = {"oracle": oracle}
@@ -147,6 +148,8 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("- experiment sha256: `deadbeef`", result)
         self.assertIn("- baseline batch: `baseline-batch`", result)
         self.assertIn("- variant batch: `variant-batch`", result)
+        self.assertIn("- baseline Jaeger: jaeger:base (commit aaaa111)", result)
+        self.assertIn("- variant Jaeger: jaeger:change (commit bbbb222)", result)
         self.assertIn("```\n" + out + "```\n", result)  # the screen lines, verbatim
         self.assertIn("\nbaseline arm baseline: 10/10 PASS\narm descchange: 10/10 PASS\n", result)
         with open(os.path.join(self.tmp, "records", "INDEX.md")) as f:
@@ -176,6 +179,17 @@ class JudgeTests(unittest.TestCase):
         lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
         self.assertEqual(code, 1)
         self.assertIn("fisher_p_max: FAIL (measured=%s, required<0.05)" % round(bench.fisher_p(3, 6, 10), 4), lines)
+
+    def test_direction_line(self):
+        for base, var, want in ((3, 9, "direction: variant 9/10 vs baseline 3/10: better"),
+                                (9, 3, "direction: variant 3/10 vs baseline 9/10: worse"),
+                                (5, 6, "direction: variant 6/10 vs baseline 5/10: no significant difference at n=10")):
+            self.fisher_pair({"fisher_p_max": 0.05}, base, var)
+            lines, code = judge_mod.judge(self.baseline_dir, self.variant_dir)
+            self.assertIn(want, lines)
+            self.assertEqual(lines[-1], "EXPERIMENT %s" % ("FAIL" if "no significant" in want else "PASS"))  # the rule stays two-sided
+            self.assertEqual(code, 1 if "no significant" in want else 0)
+            self.assertEqual(lines.index(want), len(lines) - 2)  # right before the verdict line
 
     def test_empty_thresholds_refuse(self):
         self.fisher_pair({}, 0, 10)

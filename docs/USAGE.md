@@ -21,7 +21,7 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
    sudo usermod -aG docker "$USER"
    ```
    `make measure` also needs Go, the version in the `go.mod` of your Jaeger checkout.
-2. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `OPENROUTER_API_KEY` in fixture.env (`GOOSE_PROVIDER` and `GOOSE_MODEL` default to the Jaeger AI Assistant demo's `openrouter` and `nvidia/nemotron-3.5-lightning:free`) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=claude` on the Claude Code CLI (`CLIENT` in fixture.env sets the default). Pre-flight checks that a key is set, not that the provider accepts it or knows the model; the first trial is that check. A free OpenRouter key covers a few smokes a day; `make measure` needs credits on the key or a paid model.
+2. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `OPENROUTER_API_KEY` in fixture.env (`GOOSE_PROVIDER` and `GOOSE_MODEL` default to the Jaeger AI Assistant demo's `openrouter` and `nvidia/nemotron-3.5-lightning:free`) and run `make smoke` (`DRY=1` stops after the dry run), one paid trial and a dry run first, or `make smoke CLIENT=claude` on the Claude Code CLI (`CLIENT` in fixture.env sets the default). Pre-flight checks that a key is set, not that the provider accepts it or knows the model; the first trial is that check. A free OpenRouter key covers a few smokes a day; `make measure` needs credits on the key or a paid model.
    ```bash
    make setup
    ```
@@ -87,15 +87,15 @@ The `claude` and `codex` shapes are under Other clients.
 
 1. Dry run, from the repository root.
    ```bash
-   python3 harness/bench.py run harness/experiments/<name>.json --dry-run
+   make run EXPERIMENT=<name or path> DRY=1
    ```
    > [!TIP]
    > The dry run is free: a read-only pre-flight that prints the plan and seed, never flips the flag or calls a model.
    The pre-flight prints numbered stages (`[1/4] Agent and grader`, `Scenario`, `Jaeger under test`, `Demo`; a real run adds `[5/6] Fault on` and `[6/6] Evidence`), each with the reason it exists and one `ok`, `FAIL` or `WARN` line per check. A `FAIL` stops the run, comes with a `fix:` line where a first-time runner is likely to land, and is followed by one `bench: ABORT` line. A `WARN` (the scripted evidence check failed) lets the trials go on.
    Run `smoke-run.json` (written by `make smoke`), a file under `records/inputs/` (`claude` only), or your own copy of an experiment file.
-2. Run (`--first-only` runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled (a cell still running after 30 minutes is killed and counts as a failed cell), restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
+2. Run (`FIRST=1`, `--first-only` for the script, runs one cell): flips the flag and confirms it through OFREP, waits for fresh fault traces, runs the cells shuffled (a cell still running after 30 minutes is killed and counts as a failed cell), restores the flag, scores. Output goes to `$RUNS_DIR/<scenario>/batch-<UTC>/`; its records, never trajectories, are copied to `records/<name>/`.
    ```bash
-   python3 harness/bench.py run harness/experiments/<name>.json
+   make run EXPERIMENT=<name or path> [FIRST=1]
    ```
 3. Verify: re-scores every `stream.jsonl` except those of smoke batches; fails on a disagreeing verdict, any INVALID or LEAK run, an answer with no cached grade, a trial that failed to score in its run (one `ERROR` line: discard that batch), or a stale `records/INDEX.md` (`run` and `bench.py index` rewrite it).
    ```bash
@@ -144,7 +144,7 @@ The oracle (docs/SCENARIOS.md) runs after the flag flips and only warns; it neve
 
 ## Measure a change
 
-`harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|claude|codex] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=claude]`) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `--base` as the base when given, else `merge-base HEAD upstream/main` (else `origin/main`), builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial, asks for a y/N, commits the file signed off (on N nothing is committed; the two image records stay local, and each batch's manifest records the image tag, id and Jaeger commit), then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
+`harness/measure.sh <jaeger-checkout> <scenario> [--base <ref>] [--n <per-arm>] [--client goose|claude|codex] [--yes] [--dry-run]` (or `make measure JAEGER=<checkout> SCENARIO=<name> [CLIENT=] [N=] [BASE=] [DRY=1] [YES=1]`: the same options in upper case) answers "does my Jaeger commit change the pass rate on this scenario?". It refuses a checkout with uncommitted changes, takes HEAD as the change and `--base` as the base when given, else `merge-base HEAD upstream/main` (else `origin/main`), builds both images on the fixture (`fixture/build-image.sh`, from a temporary worktree), writes `harness/experiments/measure-<scenario>-<head sha>.json` before any trial, asks for a y/N, commits the file signed off (on N nothing is committed; the two image records stay local, and each batch's manifest records the image tag, id and Jaeger commit), then for each image swaps the fixture's jaeger (`fixture/swap-jaeger.sh`), waits 5 minutes for traffic, runs the batch, and restores the image it found. It ends with `judge.py`: `fisher_p_max` 0.05 on PASS counts.
 
 Cost: 2 x n trials (default 10 per arm). With `--client claude` the model is `CLAUDE_MODEL` (claude-sonnet-5-5), measured at 0.4 to 2.4 USD of agent time per 10-trial arm plus a grader call per trial; on Goose the cost depends on `GOOSE_MODEL` (stage 1 of `bench.py` prints the expected cost). `--dry-run` checks and prints every step without building, swapping or running. The builds need Go on this machine (the version in Jaeger's go.mod). Each build prints a start line and an end line and keeps the rest in `/tmp/variant-build-<name>-<sha>/build.log`, shown (last 20 lines) when a build fails; a successful build removes that directory and the fixture's `~/variant-build/<name>`.
 

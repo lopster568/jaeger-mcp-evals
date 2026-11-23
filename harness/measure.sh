@@ -72,6 +72,7 @@ CHANGE_TAG="jaeger-mcp-evals/jaeger:$CHANGE_NAME-$HS" BASE_TAG="jaeger-mcp-evals
 SETTLE=300
 run() { echo "+ $*"; [ "$DRY" -eq 1 ] || "$@"; }
 
+GO_LINE="go: not needed, both images exist"
 echo "measure: scenario $SCENARIO, base $BS ($BASE_REF), head $HS, n=$N per arm"
 for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   # shellcheck disable=SC2086  # $t is three space-free words, split on purpose
@@ -79,7 +80,9 @@ for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
   else
-    [ "$DRY" -eq 1 ] || command -v go >/dev/null 2>&1 || die "Go (the version in Jaeger's go.mod) is needed to build $1, and go is not on PATH; install it first"
+    if command -v go >/dev/null 2>&1; then GO_LINE="go: $(go version | cut -d' ' -f3) found"
+    elif [ "$DRY" -eq 1 ]; then GO_LINE="WARN go is not on PATH; a real run stops here (install the Go version in Jaeger's go.mod)"
+    else die "Go (the version in Jaeger's go.mod) is needed to build $1, and go is not on PATH; install it first"; fi
     run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"
   fi
 done
@@ -119,10 +122,22 @@ else:
     print("measure: wrote %s" % path)
 PY
 
-echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID"
-if [ "$CLIENT" = claude ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
-elif [ "$CLIENT" = codex ]; then echo "measure: Codex's cost per trial is not measured; it counts against your Codex login, plus one grader call per trial"
-else echo "measure: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
+# The plan: everything a contributor decides on before spending, in a dry run and before the y/N.
+BILL=""; [ "$CLIENT" = claude ] && BILL=", bills ANTHROPIC_API_KEY"
+echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID$BILL"
+if [ "$CLIENT" = claude ]; then echo "measure: cost: 0.04 to 0.24 USD agent per trial (measured), $(awk -v n=$((2 * N)) 'BEGIN{printf "%.1f to %.1f", 0.04 * n, 0.24 * n}') USD for $((2 * N)) trials, plus one grader call each"
+elif [ "$CLIENT" = codex ]; then echo "measure: cost: Codex's cost per trial is not measured; it counts against your Codex login, plus one grader call per trial"
+else echo "measure: cost: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
+# 12 to 83 s: recorded cell durations of the 251 cells under records/ (2026-11-23), not a promise
+echo "measure: time: two image builds (skipped when the image exists), 2 x $((SETTLE / 60)) min settle, then $((2 * N)) trials (recorded trials: 12 to 83 s each)"
+GRADER=$("${PYTHON:-python3}" -c 'import sys; sys.path.insert(0, sys.argv[1]); import config, grade; c, p, m = grade.settings(config.load(), sys.argv[2]); print(" ".join(x for x in (c, "" if c == "claude" else p, m) if x))' "$HERE" "$CLIENT") || die "cannot read the grader settings"
+[ "$CLIENT" = codex ] && GRADER="$GRADER (Codex has no grader client)"
+echo "measure: grader: $GRADER"
+echo "measure: $GO_LINE"
+if [ "$N" -lt 10 ]; then
+  echo "measure: n=$N per arm is rank only (a pass rate needs 10 or more); smallest significant variant PASS count per baseline count:"
+  "${PYTHON:-python3}" "$HERE/bench.py" power "$N" | sed '1d; s/^/  /'
+fi
 case "$MODEL" in *:free) echo "measure: WARN $MODEL is a free model; a free OpenRouter key covers a few trials a day, not $((2 * N)); use a key with credits or a paid model" ;; esac
 if [ "$DRY" -eq 0 ] && [ "$YES" -eq 0 ]; then
   read -r -p "measure: continue? [y/N] " ans
@@ -167,4 +182,6 @@ run "${PYTHON:-python3}" harness/judge.py "$B_DIR" "$V_DIR"; RC=$?
 for d in "$B_DIR" "$V_DIR"; do
   run "${PYTHON:-python3}" harness/bench.py export "$d" || echo "measure: WARN not exported to Phoenix; the trials are in $d; once fixed: ${PYTHON:-python3} harness/bench.py export $d" >&2
 done
+# The verdict's direction last: the pair file's rule is two-sided, so EXPERIMENT PASS alone does not say better or worse.
+if [ "$DRY" -eq 0 ] && [ "$RC" -le 1 ]; then sed -n 's/^direction: /measure: /p' "$ROOT/records/$EXP/RESULT.md"; fi
 exit "$RC"
