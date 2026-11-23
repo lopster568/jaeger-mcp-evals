@@ -37,6 +37,8 @@ case "$N" in ''|*[!0-9]*|0) die "--n must be a positive integer" ;; esac
 case "$CLIENT" in
   goose) case "${GOOSE_PROVIDER:-}" in anthropic|openrouter) ;; *) die "GOOSE_PROVIDER must be anthropic or openrouter; fix: set GOOSE_PROVIDER and GOOSE_MODEL in fixture.env, or pass --client cli" ;; esac
          [ -n "${GOOSE_MODEL:-}" ] || die "GOOSE_MODEL is empty; fix: set it in fixture.env to a full model id of $GOOSE_PROVIDER, or pass --client cli"
+         KEYVAR=ANTHROPIC_API_KEY; [ "$GOOSE_PROVIDER" = openrouter ] && KEYVAR=OPENROUTER_API_KEY
+         [ -n "${!KEYVAR:-}" ] || die "$KEYVAR is empty; fix: set it in fixture.env (the key of GOOSE_PROVIDER=$GOOSE_PROVIDER), or pass --client cli"
          MODEL=$GOOSE_MODEL ;;
   cli) MODEL=claude-sonnet-5-5 ;;
   *) die "--client must be goose or cli" ;;
@@ -69,7 +71,10 @@ for t in "$BASE_NAME $BS $BASE_TAG" "$CHANGE_NAME $HS $CHANGE_TAG"; do
   set -- $t
   if grep -qF "\"tag\": \"$3\"" "$ROOT/harness/experiments/images/$1.json" 2>/dev/null && { [ "$DRY" -eq 1 ] || fx "docker image inspect $3" >/dev/null 2>&1; }; then
     echo "measure: image record $1 exists, reusing $3"
-  else run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"; fi
+  else
+    [ "$DRY" -eq 1 ] || command -v go >/dev/null 2>&1 || die "Go (the version in Jaeger's go.mod) is needed to build $1, and go is not on PATH; install it first"
+    run bash "$HERE/../fixture/build-image.sh" "$REPO" "$2" "$1" --remote || die "build-image failed for $1"
+  fi
 done
 
 # Pair file, written before any run (pre-registration). An existing one must match.
@@ -106,21 +111,26 @@ else:
     print("measure: wrote %s" % path)
 PY
 
+echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID"
+if [ "$CLIENT" = cli ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
+else echo "measure: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
+case "$MODEL" in *:free) echo "measure: WARN $MODEL is a free model; a free OpenRouter key covers a few trials a day, not $((2 * N)); use a key with credits or a paid model" ;; esac
+if [ "$DRY" -eq 0 ] && [ "$YES" -eq 0 ]; then
+  read -r -p "measure: continue? [y/N] " ans
+  [ "$ans" = y ] || [ "$ans" = Y ] || die "not confirmed; nothing was committed; images are built and the pair file is at $EXP_FILE"
+fi
+
 # Commit the pair file before any trial (docs/USAGE.md, Protocol: the rule is in history first). The image
 # records stay local (git-ignored): each batch's manifest records the image tag, id and Jaeger commit.
 PRE=("harness/experiments/$EXP.json")
 if [ "$DRY" -eq 1 ]; then echo "+ git commit ${PRE[*]}"
 else
   git -C "$ROOT" add -- "${PRE[@]}" || die "git add failed for the pair file"
-  git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}" || git -C "$ROOT" commit -q -s -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
-fi
-
-echo "measure: client $CLIENT, model $MODEL, $N trials per arm, 2 arms, PAID"
-if [ "$CLIENT" = cli ]; then echo "measure: estimate 0.4 to 2.4 USD agent per 10-trial arm (measured), plus one grader call per trial"
-else echo "measure: Goose's cost per trial is not measured yet; each trial records it (cost_usd), plus one grader call per trial"; fi
-if [ "$DRY" -eq 0 ] && [ "$YES" -eq 0 ]; then
-  read -r -p "measure: continue? [y/N] " ans
-  [ "$ans" = y ] || [ "$ans" = Y ] || die "not confirmed; images are built and the pair file is written"
+  if git -C "$ROOT" diff --cached --quiet -- "${PRE[@]}"; then echo "measure: pair file already committed"
+  else
+    git -C "$ROOT" commit -q -s -m "measure: pre-register $EXP" -- "${PRE[@]}" || die "git commit of the pair file failed"
+    echo "measure: pre-registered in commit $(git -C "$ROOT" rev-parse --short HEAD)"
+  fi
 fi
 
 cd "$ROOT" || exit 2
