@@ -702,7 +702,7 @@ def results(scenario, rows, out, detail=lambda m: None):
             rate = r["PASS"] / r["n"]
             xs[8] = paint(GREEN if rate == 1 else BOLD_RED if rate == 0 else YELLOW, xs[8])
         out("  " + "  ".join(xs))
-        out("    tools used: " + (", ".join("%s %d" % kv for kv in r["tools"].items()) or "none"))
+        out("    trials using each tool: " + (", ".join("%s %d/%d" % (k, v, r["n"]) for k, v in r["tools"].items()) or "none"))
         extra = (["steps to evidence %s (median)" % num(r["steps"])] if r["steps"] is not None else []) + \
                 (["stops " + r["stops"]] if r["stops"] != "-" else []) + \
                 (["read_skill attempted %d/%d, succeeded %d/%d" % (r["rs_att"], r["n"], r["rs_ok"], r["n"])] if r["rs_att"] else []) + \
@@ -710,7 +710,7 @@ def results(scenario, rows, out, detail=lambda m: None):
         if extra:
             out("    " + paint(DIM, " \u00b7 ".join(extra)))
     to_read = [(r["arm"], d, why) for r in rows for d, why in r.get("to_read", [])]
-    out("Passes to read: " + ("none" if not to_read else "%d" % len(to_read)))
+    out("Suspect passes: " + ("none" if not to_read else "%d" % len(to_read)))
     for arm, d, why in to_read:
         out("  %s  %s: %s" % (arm, d, why))
     limits = [(r["arm"], d, why) for r in rows for d, why in r.get("limits", [])]
@@ -1420,7 +1420,8 @@ def run(a, cfg):
             sleep(TRACE_POLL_SLEEP)
     if pre["baseline_traces"] < 3:
         return die("ABORT - only %d baseline traces for service=%s; the fixture is up but not completing requests "
-                   "through it. Check upstream services before flipping any flag." % (pre["baseline_traces"], gt_service),
+                   "through it. A just-started fixture needs a few minutes of load-generator traffic; otherwise check upstream "
+                   "services before flipping any flag." % (pre["baseline_traces"], gt_service),
                    fix="run `docker compose ps -a` on the demo host and wait until the load generator is sending traffic, then run again")
     log.detail("pre-flight: baseline traffic OK (%d traces)" % pre["baseline_traces"])
     log.check(True, "%s sending traces (%d in the last %d min)" % (gt_service, pre["baseline_traces"], BASELINE_LOOKBACK_S // 60))
@@ -1511,7 +1512,7 @@ def run(a, cfg):
 
     if a.dry_run:
         log.section("DRY RUN: planned cell order", paint(DIM, "  (seed=%d%s)" % (seed, ", first only" if a.first_only else "")))
-        if a.seed is None:
+        if a.seed is None and len(plan) > 1:
             log("  " + paint(YELLOW, "a real run draws a new seed, so its order will differ; set run.seed to %d to run this order" % seed))
         for c in plan:
             log("  order_index=%d arm=%s trial_index=%d prompt=%s %s" % (c["order_index"], c["arm"], c["trial_index"],
@@ -1535,7 +1536,8 @@ def run(a, cfg):
         log("  %s/" % shown(bdir))
         log("    batch.log preflight.json manifest.json tools.json cells.jsonl restore.json scores.jsonl")
         log("    <order_index>-<arm>/{prompt.txt,system-prompt.txt,mcp.json,meta.json,stream.jsonl,stderr.txt,exit.txt}")
-        log("  copied to %s/: %s" % (shown(os.path.join(RECORDS, a.experiment, batch_id)), " ".join(RECORD_FILES)))
+        if a.experiment != SMOKE_EXPERIMENT:  # keep_records copies nothing for the smoke batch
+            log("  copied to %s/: %s" % (shown(os.path.join(RECORDS, a.experiment, batch_id)), " ".join(RECORD_FILES)))
         log("\nbench: DRY RUN complete, nothing on the fixture or under RUNS_DIR was written")
         return 0
 
@@ -1576,6 +1578,10 @@ def run(a, cfg):
             if fault["signal_traces_seen"] >= TRACE_MIN_COUNT:
                 break
             if i < poll_max:
+                wait = "waiting for the fault in traces, %s of up to %s" % (dur(i * TRACE_POLL_SLEEP), dur(poll_max * TRACE_POLL_SLEEP))
+                log.live(wait)
+                if not log.tty and i % 6 == 0:  # a pipe gets one line a minute, like fixture_cli's heartbeat
+                    log("  .. " + wait)
                 sleep(TRACE_POLL_SLEEP)
         if fault["signal_traces_seen"] < TRACE_MIN_COUNT:
             log.check(False, "fault not in the traces: fewer than %d matching traces after %d polls" % (TRACE_MIN_COUNT, poll_max))
@@ -1766,7 +1772,12 @@ def export_batch(bdir, experiment, cfg, log):
     if sent:
         log.detail(said[-1])
         base = phoenix_base(None, cfg)
-        pid = phoenix_project_id(base, experiment)
+        pid = None
+        for attempt in range(3):  # Phoenix may not list the project the instant after the first export
+            pid = phoenix_project_id(base, experiment)
+            if pid or attempt == 2:
+                break
+            time.sleep(1)
         log(paint(BOLD_CYAN, "Phoenix") + " " + (base + "/projects/" + pid if pid else base) + "   " + paint(DIM, "project %s: %s" % (
             experiment, "one trace per trial" if pid else "open the project, one trace per trial")))
         return
