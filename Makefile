@@ -12,7 +12,7 @@
 # make variables are case-sensitive: client=claude would be ignored and the default client would run
 $(foreach v,client jaeger scenario python n base dry yes experiment first,$(if $(filter command line,$(origin $v)),$(error $v=$($v) is ignored: make variables are upper case; use $(shell echo $v | tr a-z A-Z)=$($v))))
 
-# Any Python 3.11+ interpreter, e.g. make setup PYTHON=python3.12 (fixture/preflight.sh checks the version)
+# Any Python 3.10+ interpreter, e.g. make setup PYTHON=python3.12 (fixture/preflight.sh checks the version)
 PYTHON ?= python3
 CLI := $(PYTHON) harness/fixture_cli.py
 export PYTHON
@@ -23,7 +23,7 @@ PREFLIGHT := bash fixture/preflight.sh
 help:
 	@echo "Set up"
 	@echo "  make setup      preflight, fixture, up (and the Goose image) and phoenix: everything free, in order"
-	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.11 and the ports (claude is noted, needed when it is the client or the grader)"
+	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.10 and the ports (claude is noted, needed when it is the client or the grader)"
 	@echo "  make fixture    clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay"
 	@echo "  make up         pull missing images, start the demo, wait (10 min at most) until it answers"
 	@echo "  make phoenix    start the optional Phoenix trajectory store"

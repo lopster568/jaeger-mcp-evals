@@ -11,12 +11,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:  # 3.10 is the floor (Ubuntu 22.04's python3)
+          - {python: "3.10", os: ubuntu-latest}
+          - {python: "3.12", os: ubuntu-latest}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - name: unit tests
         run: python3 -m unittest discover -s harness/tests
       - name: scenario readiness

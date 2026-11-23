@@ -4,7 +4,7 @@ A harness for evaluating the MCP tools and skills Jaeger serves to AI agents, as
 
 ## Quick Start
 
-You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or newer. The demo takes about 2.9 GB RAM and 6 busy cores. `make measure` also needs Go (the version in your Jaeger `go.mod`). `make preflight` checks all of this.
+You need make, Python 3.10 or newer, git, curl, and Docker with Compose 2.24 or newer. The demo takes about 2.9 GB RAM and 6 busy cores. `make measure` also needs Go (the version in your Jaeger `go.mod`). `make preflight` checks all of this.
 
 1. Copy the settings and set `OPENROUTER_API_KEY` in `fixture.env`:
 

@@ -48,8 +48,8 @@ if [ "$FIXTURE_HOST_ONLY" != 1 ]; then
   fi
 fi
 PY="${PYTHON:-python3}"
-command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 or newer, or point make at one: make setup PYTHON=python3.12"
-"$PY" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "$PY is $("$PY" -V 2>&1), need 3.11 or newer; install it, or point make at one: make setup PYTHON=python3.12"
+command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.10 or newer, or point make at one: make setup PYTHON=python3.12"
+"$PY" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || fail "$PY is $("$PY" -V 2>&1), need 3.10 or newer; install it, or point make at one: make setup PYTHON=python3.12"
 
 # The stack is ours when a container named jaeger exists (running or stopped): its ports are expected
 # to be taken, so re-running setup works. Otherwise a busy port belongs to something else.

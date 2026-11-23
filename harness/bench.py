@@ -109,8 +109,11 @@ SOAK_REMOTE = ('l=$(cut -d" " -f1 /proc/loadavg); u=$(docker ps --format "{{.Sta
 
 
 def sha256_file(path):
+    h = hashlib.sha256()
     with open(path, "rb") as f:
-        return hashlib.file_digest(f, "sha256").hexdigest()
+        for b in iter(lambda: f.read(1 << 20), b""):  # hashlib.file_digest is 3.11+, the floor is 3.10
+            h.update(b)
+    return h.hexdigest()
 
 
 repo_relpath = config.repo_relpath

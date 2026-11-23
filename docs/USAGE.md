@@ -4,7 +4,7 @@ See README.md, fixture/FIXTURE.md, docs/RECORD.md (recorded keys) and docs/TUNIN
 
 ## Prerequisites
 
-Python 3.11+, bash, git, Docker with Docker Compose 2.24 or newer and one agent client
+Python 3.10+, bash, git, Docker with Docker Compose 2.24 or newer and one agent client
 (Clients below), here or on a remote host over ssh (clone this repo there, fixture/FIXTURE.md).
 Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.env` (copy of
 `fixture.env.example`) holds the fixture location, `RUNS_DIR`, API keys, the Goose settings (`GOOSE_PROVIDER`, `GOOSE_MODEL`: read by `make measure`, `make smoke` and as the grader's fallback) and the Codex command.
