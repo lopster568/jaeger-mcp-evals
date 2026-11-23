@@ -494,14 +494,14 @@ def footer(cfg, t0):
         out("Ready in %s. Jaeger UI %s  Phoenix %s" % (dur(time.monotonic() - t0), jaeger, phx))
         out("Next: make smoke    one agent trial, %s" % smoke_size(cfg))
         if not smoke_ready(cfg):
-            out("Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env")
+            out("Before it: set OPENROUTER_API_KEY in fixture.env (another provider: GOOSE_PROVIDER, GOOSE_MODEL and its key)")
         return
     out("\n  " + paint("1", "Ready in %s" % dur(time.monotonic() - t0)) + "\n")
     out("    Jaeger UI   " + jaeger)
     out("    Phoenix     " + phx + "\n")
     out("  Next: " + paint("1", "make smoke") + "    " + paint(DIM, "one agent trial, %s" % smoke_size(cfg)) + "\n")
     if not smoke_ready(cfg):
-        out("  Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env\n")
+        out("  Before it: set OPENROUTER_API_KEY in fixture.env (another provider: GOOSE_PROVIDER, GOOSE_MODEL and its key)\n")
 
 
 def smoke(cfg):

@@ -26,7 +26,7 @@ flowchart LR
 ## Quick Start
 
 ```bash
-cp fixture.env.example fixture.env   # set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key, as for the Jaeger AI Assistant demo (scripts/ai-sidecar/goose)
+cp fixture.env.example fixture.env   # set OPENROUTER_API_KEY; Goose defaults to the Jaeger AI Assistant demo's provider and model
 make setup     # free: install the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
 make measure JAEGER=<jaeger-checkout> SCENARIO=<name>                   # paid: A/B your Jaeger commit against its base, on Goose
 make smoke     # paid: one Goose trial end to end; CLIENT=cli runs it on the Claude Code CLI (log in once: claude)
