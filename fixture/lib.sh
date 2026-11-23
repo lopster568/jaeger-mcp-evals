@@ -2,13 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # shellcheck shell=bash
 
-# Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example;
+# Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example (its #KEY=value lines too);
 # a variable already in the environment wins.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 for f in "$ROOT/fixture.env" "$ROOT/fixture.env.example"; do
   [ -f "$f" ] || continue
+  hash=""; [ "${f##*/}" = fixture.env.example ] && hash="#"  # "#KEY=value" there is a default, shown commented out
   while IFS='=' read -r k v; do
-    [[ $k =~ ^[A-Z_][A-Z0-9_]*$ ]] && [ -z "${!k+x}" ] && { v=${v#[\"\']}; export "$k=${v%[\"\']}"; }
+    k=${k#"$hash"}
+    if [[ $k =~ ^[A-Z_][A-Z0-9_]*$ ]] && [ -z "${!k+x}" ]; then
+      v=${v%%[[:space:]]#*}; v=${v%"${v##*[![:space:]]}"}  # a " #" starts a comment, as in dotenv
+      v=${v#[\"\']}; export "$k=${v%[\"\']}"
+    fi
   done < "$f"
 done
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"

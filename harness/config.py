@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Fixture settings: DEFAULTS, then fixture.env.example, then fixture.env, then os.environ win."""
+"""Fixture settings: DEFAULTS, then fixture.env.example (its #KEY=value lines too), then fixture.env, then os.environ win."""
 import json
 import os
 import urllib.parse
@@ -21,8 +21,11 @@ def load(root=ROOT):
         if os.path.isfile(path):
             for line in open(path, encoding="utf-8"):
                 line = line.strip()
+                if name == "fixture.env.example" and line[:1] == "#" and line[1:2].isupper():
+                    line = line[1:]  # "#KEY=value" in the example is a default, shown commented out
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
+                    v = v.split(" #", 1)[0]  # a " #" starts a comment, as in dotenv
                     cfg[k.strip()] = v.strip().strip("\"'")
     cfg.update({k: v for k, v in os.environ.items() if k in cfg})
     return cfg
