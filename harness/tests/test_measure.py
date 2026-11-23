@@ -146,6 +146,29 @@ class Measure(unittest.TestCase):
         self.assertNotIn("build-image.sh", r.stdout)
         self.assertFalse(self.pair.exists())
 
+    def test_dry_run_warns_when_go_is_missing(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bin_dir = pathlib.Path(tmp.name)
+        for tool in ("git", "dirname", "grep", "sed", "mktemp", "python3", "cut", "cat", "tr", "uname", "date"):
+            if shutil.which(tool):
+                (bin_dir / tool).symlink_to(shutil.which(tool))
+        r = self.measure("--dry-run", PATH=str(bin_dir))
+        self.assertEqual(r.returncode, 0, r.stderr)  # a dry run reports it and goes on
+        self.assertIn("measure: WARN go is not on PATH; a real run stops here", r.stdout)
+
+    def test_plan_lines(self):
+        out = self.measure("--dry-run", "--client", "claude", "--n", "3", ANTHROPIC_API_KEY="k").stdout
+        for want in ("measure: client claude, model claude-sonnet-5-5, 3 trials per arm, 2 arms, PAID, bills ANTHROPIC_API_KEY",
+                     "measure: cost: 0.04 to 0.24 USD agent per trial (measured), 0.2 to 1.4 USD for 6 trials, plus one grader call each",
+                     "measure: time: two image builds (skipped when the image exists), 2 x 5 min settle, then 6 trials (recorded trials: 12 to 83 s each)",
+                     "measure: grader: claude claude-fable-5-1", "measure: go: ",
+                     "n=3 per arm is rank only", "  baseline_passes\tmin_variant_passes_significant"):
+            self.assertIn(want, out)
+        self.assertNotIn("rank only", self.measure("--dry-run", "--n", "10").stdout)  # a table from 10 up is not needed
+        self.assertIn("measure: grader: goose openrouter vendor/model-x", self.measure("--dry-run").stdout)
+        self.assertIn("(Codex has no grader client)", self.measure("--dry-run", "--client", "codex").stdout)
+
     def test_pre_registration_commit_comes_after_the_cost_lines_and_before_the_first_swap(self):
         # the prompt sits between them and the commit; a dry run never prompts, so the plan order is what is checked
         out = self.measure("--dry-run").stdout

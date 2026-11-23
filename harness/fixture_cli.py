@@ -9,8 +9,8 @@
   fixture_cli.py fixture   clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay
   fixture_cli.py up        pull missing images (and the Goose image), start the demo (and Phoenix, if it exists), wait until it is up
   fixture_cli.py phoenix   start the Phoenix trajectory store and wait until it answers
-  fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (CLIENT: goose by default, claude or codex)
-  fixture_cli.py down      stop the demo containers, keeping their data
+  fixture_cli.py smoke [--dry-run]  the smoke dry run, then ONE paid agent trial (CLIENT: goose by default, claude or codex)
+  fixture_cli.py down      stop the demo containers (Jaeger traces are lost, Phoenix keeps its own)
   fixture_cli.py clean     remove the demo containers and network
   fixture_cli.py test      the offline unit tests
 
@@ -496,6 +496,10 @@ def phoenix(cfg, d):
     """FIXTURE.md, Trajectory store. Phoenix takes one to two minutes to answer."""
     st = Step("Phoenix", "starting")
     must(sh(COMPOSE + ["--profile", "store", "up", "-d", "--no-deps", "phoenix"], cwd=d)[0], "docker compose up phoenix")
+    # Survive a reboot like the demo's services; the overlay stays untouched (its hash is recorded in every batch).
+    for cid in sh(COMPOSE + ["--profile", "store", "ps", "-q", "phoenix"], cwd=d, merge=False)[1]:
+        if cid.strip():
+            sh(["docker", "update", "--restart", "unless-stopped", cid.strip()])
     st.text = "waiting for port %s" % cfg["PHOENIX_PORT"]
     for _ in range(60):
         try:
@@ -533,8 +537,8 @@ def footer(cfg, t0):
         out("  Before it: set OPENROUTER_API_KEY in fixture.env (another provider: GOOSE_PROVIDER, GOOSE_MODEL and its key)\n")
 
 
-def smoke(cfg):
-    """The dry run, a 5 s window to cancel, then bench.py's own run output (this process becomes bench.py)."""
+def smoke(cfg, dry=False):
+    """The dry run, a 5 s window to cancel, then bench.py's own run output (this process becomes bench.py); dry stops after the dry run."""
     st = Step("Pre-flight", "dry run")
     exp = smoke_file(cfg)
     rc, output = dry_run(exp)
@@ -547,6 +551,9 @@ def smoke(cfg):
         e = json.load(f)
     pad = "  " if TTY else ""
     out("\n" + pad + "One agent trial: " + sep().join((e["run"]["model"], "arm " + ", ".join(e["arms"]), smoke_size(cfg))))
+    if dry:
+        out(pad + "dry run only; nothing spent")
+        return
     if TTY and sys.stdin.isatty():
         for s in range(5, 0, -1):
             sys.stdout.write("\r\x1b[K  Starting in %ds, Ctrl-C to cancel" % s)
@@ -567,7 +574,7 @@ def down(cfg, remove=False):
     ids = [i for i in sh(COMPOSE + ["--profile", "store", "ps", "-q"], cwd=d, merge=False)[1] if i.strip()]
     must(sh(COMPOSE + ["--profile", "store", "down" if remove else "stop"], cwd=d)[0],
          "docker compose " + ("down" if remove else "stop"))
-    st.ok("%d removed, Jaeger traces gone; volumes and images kept" % len(ids) if remove else "%d stopped, data kept" % len(ids))
+    st.ok("%d removed, Jaeger traces gone; volumes and images kept" % len(ids) if remove else "%d stopped; Jaeger's traces are lost (in-memory store), Phoenix keeps its own" % len(ids))
     if not remove:
         out(("  " if TTY else "") + "Next: make up to start them again")
 
@@ -596,7 +603,8 @@ def test():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1 or argv[0] not in ("setup", "tools", "fixture", "up", "phoenix", "smoke", "down", "clean", "test"):
+    dry = argv[1:] == ["--dry-run"] and argv[0] == "smoke"
+    if (len(argv) != 1 and not dry) or argv[0] not in ("setup", "tools", "fixture", "up", "phoenix", "smoke", "down", "clean", "test"):
         print(__doc__.strip())
         return 2
     cmd, t0 = argv[0], time.monotonic()
@@ -617,7 +625,7 @@ def main(argv=None):
             refuse_smoke_client(cfg)
             tools(cfg)
         if cmd == "smoke":
-            smoke(cfg)
+            smoke(cfg, dry)
         if cmd in ("down", "clean"):
             down(cfg, remove=cmd == "clean")
         if cmd in ("setup", "fixture"):

@@ -10,6 +10,7 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import threading
@@ -44,6 +45,7 @@ elif "up" in a and "phoenix" not in a:
     print(" Container flagd  Recreated"); print(" Container jaeger  Started")
     if os.environ.get("FAKE_UP_RC", "0") != "0": print("Error response from daemon: port is already allocated")
     sys.exit(int(os.environ.get("FAKE_UP_RC", "0")))
+elif a[:1] == ["update"]: open(os.environ["FAKE_UPDATES"], "a").write(" ".join(a) + "\n")
 elif "ps" in a and "phoenix" in a:
     if os.environ.get("FAKE_PHOENIX"): print("ppp")
 elif "ps" in a: print("aaa\nbbb\nccc")
@@ -201,11 +203,11 @@ class Setup(unittest.TestCase):
         self.srv.server_close()
         self.tmp.cleanup()
 
-    def setup_run(self, cmd="setup", **env):
+    def setup_run(self, cmd="setup", *args, **env):
         buf = io.StringIO()
         with mock.patch.dict(os.environ, dict(self.env, **env)), contextlib.redirect_stdout(buf), \
                 mock.patch.multiple(fc, ROOT=str(self.t / "root"), LOG=str(self.t / "root" / ".make.log")):
-            rc = fc.main([cmd])
+            rc = fc.main([cmd, *args])
         return rc, buf.getvalue()
 
     def test_setup_succeeds(self):
@@ -349,6 +351,70 @@ class Setup(unittest.TestCase):
         rc, text = self.setup_run("up", FAKE_PRESENT=" ".join(SERVICES.values()), FAKE_PHOENIX="1")
         self.assertEqual(rc, 0, text)
         self.assertIn("ok    Phoenix      trajectory store up", text)
+
+
+    def test_phoenix_gets_a_restart_policy_without_touching_the_overlay(self):
+        self.setup_run("fixture")  # clones the demo
+        updates = self.t / "updates"
+        rc, text = self.setup_run("phoenix", FAKE_PHOENIX="1", FAKE_UPDATES=str(updates))
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(updates.read_text(), "update --restart unless-stopped ppp\n")
+
+    def test_down_says_what_survives(self):
+        self.setup_run("fixture")
+        rc, text = self.setup_run("down", FAKE_UPDATES=str(self.t / "u"))
+        self.assertEqual(rc, 0, text)
+        self.assertIn("3 stopped; Jaeger's traces are lost (in-memory store), Phoenix keeps its own", text)
+
+    def test_smoke_dry_run_spends_nothing(self):
+        with mock.patch.object(fc, "dry_run", return_value=(0, ["ok"])), mock.patch.object(fc, "checks_passed", return_value=1), \
+                mock.patch.object(fc.os, "execv") as ex, mock.patch.object(fc.time, "sleep") as nap:
+            rc, text = self.setup_run("smoke", "--dry-run")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("dry run only; nothing spent", text)
+        ex.assert_not_called()  # no bench.py run
+        nap.assert_not_called()  # no 5 s window either
+        self.assertEqual(fc.main(["smoke", "--bogus"]), 2)
+
+
+MAKE = ["make", "-n", "--no-print-directory", "-C", str(REPO)]
+
+
+def make_n(*args):
+    r = subprocess.run(MAKE + list(args), capture_output=True, text=True)
+    return r.returncode, r.stdout, r.stderr
+
+
+class Make(unittest.TestCase):
+    """The Makefile at make -n time: no recipe runs."""
+
+    def test_lower_case_make_variable_stops(self):
+        for args, want in ((["smoke", "client=claude"], "use CLIENT=claude"), (["measure", "n=3"], "use N=3"),
+                           (["run", "experiment=x"], "use EXPERIMENT=x")):
+            rc, out, err = make_n(*args)
+            self.assertEqual(rc, 2, args)
+            self.assertIn(want, err)
+            self.assertEqual(out, "")
+
+    def test_make_passes_every_option(self):
+        rc, out, err = make_n("measure", "JAEGER=/x", "SCENARIO=y", "CLIENT=claude", "N=3", "BASE=main", "DRY=1", "YES=1")
+        self.assertEqual(rc, 0, err)
+        self.assertIn('CLIENT=claude bash harness/measure.sh "/x" "y" --n 3 --base main --dry-run --yes', out)
+        out = make_n("measure", "JAEGER=/x", "SCENARIO=y", "DRY=0", "YES=0")[1]  # 0 is not a switch
+        self.assertRegex(out, r'measure\.sh "/x" "y"\s*\n')
+        self.assertNotIn("--dry-run", out)
+        self.assertNotIn("--yes", out)
+        out = make_n("smoke", "CLIENT=codex", "DRY=1")[1]
+        self.assertIn("CLIENT=codex", out)
+        self.assertIn("fixture_cli.py smoke --dry-run", out)
+        self.assertNotIn("--dry-run", make_n("smoke", "DRY=0")[1])
+        self.assertIn("harness/experiments/records.json", make_n("run", "EXPERIMENT=records")[1])  # a name, not the directory
+        out = make_n("run", "EXPERIMENT=foo", "DRY=1", "FIRST=1")[1]
+        self.assertIn("bench.py run harness/experiments/foo.json --dry-run --first-only", out)
+        out = make_n("run", "EXPERIMENT=records/inputs/skill-callee-down-cli55.json")[1]  # a path is passed as given
+        self.assertIn("bench.py run records/inputs/skill-callee-down-cli55.json", out)
+        r = subprocess.run(["make", "-C", str(REPO), "run"], capture_output=True, text=True)  # only the usage test runs
+        self.assertEqual((r.returncode, "usage: make run EXPERIMENT=" in r.stdout), (2, True))
 
 
 class SmokeFile(unittest.TestCase):

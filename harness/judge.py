@@ -279,6 +279,9 @@ def judge(baseline_batch_dir, variant_batch_dir, overlay_checked=None):
             else:
                 p = bench.fisher_p(baseline_metrics["pass_count"], m["pass_count"], n)
                 check("fisher_p_max", p < pmax, round(p, 4), "<", pmax)
+                base_k, var_k = baseline_metrics["pass_count"], m["pass_count"]  # output only: the rule stays two-sided
+                verdict = ("better" if var_k > base_k else "worse") if p < pmax else "no significant difference at n=%d" % n
+                lines.append(f"{prefix}direction: variant {var_k}/{n} vs baseline {base_k}/{n}: {verdict}")
 
     if grounding:
         lines.append(grounding)
@@ -301,6 +304,8 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
     os.makedirs(dest, exist_ok=True)
     notes = ["Note: the oracle failed in the %s batch; trials ran on the signal wait alone." % label
              for label, m in (("baseline", base), ("variant", var)) if (m.get("preflight") or {}).get("oracle") == "FAIL"]
+    jaeger = ["- %s Jaeger: %s (commit %s)" % (label, m.get("jaeger_image") or "not recorded", m.get("jaeger_commit") or "not recorded")
+              for label, m in (("baseline", base), ("variant", var))]
     path = os.path.join(dest, "RESULT.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join([
@@ -311,7 +316,7 @@ def write_result(lines, baseline_batch_dir, variant_batch_dir, records=None):
                                           if base["experiment"]["sha256"] != exp["sha256"] else "same file"),
             "- experiment sha256: `%s`" % exp["sha256"],
             "- baseline batch: `%s`" % batch_id(base, baseline_batch_dir),
-            "- variant batch: `%s`" % batch_id(var, variant_batch_dir),
+            "- variant batch: `%s`" % batch_id(var, variant_batch_dir)] + jaeger + [
             "- judged (UTC): %s" % datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "", "```"] + lines + ["```", ""] + (notes + [""] if notes else [])))
     bench.write_index(records, out=lambda *a: None)
