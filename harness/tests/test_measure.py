@@ -7,6 +7,7 @@ checkout is refused. No docker, no ssh, no model; syntax of the three fixture sc
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -32,8 +33,8 @@ class Measure(unittest.TestCase):
         self.addCleanup(lambda: self.pair.unlink(missing_ok=True))
 
     def measure(self, *args, **env):
-        env = dict(os.environ, **dict({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model-x"}, **env))
-        return subprocess.run(["bash", MEASURE, self.repo, "cartFailure", *args], capture_output=True, text=True, cwd=ROOT, env=env)
+        env = dict(os.environ, **dict({"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "vendor/model-x", "OPENROUTER_API_KEY": "k"}, **env))
+        return subprocess.run([shutil.which("bash"), MEASURE, self.repo, "cartFailure", *args], capture_output=True, text=True, cwd=ROOT, env=env)
 
     def test_scripts_parse(self):
         for f in ("harness/measure.sh", "fixture/build-image.sh", "fixture/swap-jaeger.sh"):
@@ -76,6 +77,35 @@ class Measure(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn(said, r.stderr)
             self.assertIn("fix: set", r.stderr)
+
+    def test_goose_key_required(self):
+        r = self.measure("--dry-run", OPENROUTER_API_KEY="")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("OPENROUTER_API_KEY is empty", r.stderr)
+        r = self.measure("--dry-run", GOOSE_PROVIDER="anthropic", ANTHROPIC_API_KEY="")
+        self.assertIn("ANTHROPIC_API_KEY is empty", r.stderr)
+
+    def test_free_model_warns_in_the_cost_lines(self):
+        self.assertIn("free OpenRouter key covers a few trials a day, not 20", self.measure("--dry-run", GOOSE_MODEL="x:free").stdout)
+        self.assertNotIn("free OpenRouter key", self.measure("--dry-run").stdout)
+
+    def test_missing_go_stops_before_any_build(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bin_dir = pathlib.Path(tmp.name)
+        for tool in ("git", "dirname", "grep", "sed", "mktemp"):
+            (bin_dir / tool).symlink_to(shutil.which(tool))
+        r = self.measure("--yes", PATH=str(bin_dir))
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("Go (the version in Jaeger's go.mod) is needed to build", r.stderr)
+        self.assertNotIn("build-image.sh", r.stdout)
+        self.assertFalse(self.pair.exists())
+
+    def test_pre_registration_commit_comes_after_the_cost_lines_and_before_the_first_swap(self):
+        # the prompt sits between them and the commit; a dry run never prompts, so the plan order is what is checked
+        out = self.measure("--dry-run").stdout
+        self.assertLess(out.index("PAID"), out.index("+ git commit"))
+        self.assertLess(out.index("+ git commit"), out.index("swap-jaeger.sh"))
 
     def test_generated_pair_file_is_not_pinned_to_a_client_version(self):
         self.assertNotIn("client_version", self.planned_pair()["run"])

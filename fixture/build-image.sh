@@ -23,6 +23,9 @@
 #      jaeger-mcp-evals/jaeger:<name>-<short sha>
 #   e) print the tag and local image ID; write harness/experiments/images/<name>.json
 #
+# The screen shows one start line per step and one end line; the rest goes to <build dir>/build.log. On
+# success the build dir and the fixture's ~/variant-build/<name> are removed; on failure both are kept.
+#
 # Host, user and paths come from fixture.env via fixture/lib.sh.
 # Exit codes: 0 image built and recorded (--remote only); 1 refused (bad args, no such checkout or
 # ref) or a git step failed; 2 local build failed; 3 stopped after the local build (no --remote, or
@@ -61,14 +64,17 @@ SHORT_SHA=$(git -C "$REPO" rev-parse --short=8 "$SHA")
 BUILD_DIR="/tmp/variant-build-$NAME-$SHORT_SHA"
 mkdir -p "$BUILD_DIR/base"
 WT="$BUILD_DIR/src"
-git -C "$REPO" worktree add --detach "$WT" "$SHA" >&2 || die "git worktree add failed"
+# Screen: one start line per step and one end line. Everything else (+ command echoes, git and docker
+# output) goes to build.log; a failure shows its last 20 lines and where the log is.
+LOG="$BUILD_DIR/build.log"
+: > "$LOG"
+fail() { tail -n 20 "$LOG" >&2; echo "build-image: $2 (last 20 lines of $LOG above)" >&2; exit "$1"; }  # fail EXIT-CODE MESSAGE
+git -C "$REPO" worktree add --detach "$WT" "$SHA" >> "$LOG" 2>&1 || fail 1 "git worktree add failed"
 trap 'git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1' EXIT
-echo "== building linux/amd64 binary ($REF = $SHA) ==" >&2
-if ! (cd "$WT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$BUILD_DIR/jaeger-linux-amd64" ./cmd/jaeger/) > "$BUILD_DIR/go-build.log" 2>&1; then
-  cat "$BUILD_DIR/go-build.log" >&2
-  echo "build-image: go build FAILED" >&2
-  exit 2
-fi
+echo "build-image: go build of $NAME $SHORT_SHA ($REF); a first build downloads Go modules and takes several minutes" >&2
+echo "+ go build -trimpath -o $BUILD_DIR/jaeger-linux-amd64 ./cmd/jaeger/" >> "$LOG"
+(cd "$WT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$BUILD_DIR/jaeger-linux-amd64" ./cmd/jaeger/) >> "$LOG" 2>&1 \
+  || fail 2 "go build FAILED"
 cp "$WT/cmd/jaeger/Dockerfile" "$WT/cmd/jaeger/sampling-strategies.json" "$BUILD_DIR/"
 cp "$WT/scripts/build/docker/base/Dockerfile" "$BUILD_DIR/base/Dockerfile"
 
@@ -96,9 +102,10 @@ stop_after_local() {
 fx true >&2 || stop_after_local "stopping after the local build: fixture $TARGET unreachable."
 
 # ---- (c, d) copy and build on the fixture host -------------------------------
+echo "build-image: copy and docker builds on the fixture ($TARGET); the first one pulls the base image" >&2
 for step in "${REMOTE_STEPS[@]}"; do
-  echo "+ $step" >&2
-  bash -c "$step" >&2 || { echo "build-image: fixture step failed: $step" >&2; exit 4; }
+  echo "+ $step" >> "$LOG"
+  bash -c "$step" >> "$LOG" 2>&1 || fail 4 "fixture step failed: $step"
 done
 
 # ---- (e) record it -------------------------------------------------------------
@@ -120,4 +127,9 @@ with open(sys.argv[8], 'w') as f:
     json.dump({k: doc[k] for k in order}, f, indent=2)
     f.write(chr(10))
 " "$NAME" "$IMAGE_TAG" "$IMAGE_ID" "$REF" "$SHA" "$BASE_IMAGE_TAG" "$BASE_IMAGE_RECIPE" "$IMAGES_DIR/$NAME.json"
-echo "build-image: wrote $IMAGES_DIR/$NAME.json; the running fixture was not touched." >&2
+echo "build-image: wrote $IMAGES_DIR/$NAME.json after ${SECONDS}s; the running fixture was not touched." >&2
+
+# Success: drop the build context here and on the fixture (a failure above keeps both for the resume line).
+git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1
+rm -rf "$BUILD_DIR"
+fx "rm -rf $RD" >/dev/null 2>&1 || echo "build-image: could not remove ~/variant-build/$NAME on the fixture; remove it by hand" >&2
