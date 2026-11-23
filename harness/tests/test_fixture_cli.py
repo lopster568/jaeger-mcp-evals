@@ -44,6 +44,8 @@ elif "up" in a and "phoenix" not in a:
     print(" Container flagd  Recreated"); print(" Container jaeger  Started")
     if os.environ.get("FAKE_UP_RC", "0") != "0": print("Error response from daemon: port is already allocated")
     sys.exit(int(os.environ.get("FAKE_UP_RC", "0")))
+elif "ps" in a and "phoenix" in a:
+    if os.environ.get("FAKE_PHOENIX"): print("ppp")
 elif "ps" in a: print("aaa\nbbb\nccc")
 """ % repr(SERVICES)
 GIT = """#!/bin/bash
@@ -176,9 +178,14 @@ class Setup(unittest.TestCase):
             (t / "bin" / name).chmod(0o755)
         (t / "root").mkdir()
         (t / "root" / "fixture").symlink_to(REPO / "fixture")
+        (t / "root" / "harness" / "experiments").mkdir(parents=True)  # ready() reads the smoke scenario's service
+        (t / "root" / "harness" / "scenarios").symlink_to(REPO / "harness" / "scenarios")
+        (t / "root" / "harness" / "experiments" / "smoke-paymentfailure.json").write_text((REPO / fc.SMOKE).read_text())
         (t / "root" / "fixture.env.example").write_text((REPO / "fixture.env.example").read_text())
         self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Phoenix)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.traces = mock.patch.object(bench, "traces", return_value=[{}] * 3).start()  # the baseline traffic Ready waits for
+        self.addCleanup(mock.patch.stopall)
         self.t = t
         self.env = {"PATH": str(t / "bin") + os.pathsep + os.environ["PATH"], "FIXTURE_SSH_USER": "",
                     "FIXTURE_HOST": "localhost", "FIXTURE_DEMO_DIR": str(t / "demo"),
@@ -191,11 +198,11 @@ class Setup(unittest.TestCase):
         self.srv.server_close()
         self.tmp.cleanup()
 
-    def setup_run(self, **env):
+    def setup_run(self, cmd="setup", **env):
         buf = io.StringIO()
         with mock.patch.dict(os.environ, dict(self.env, **env)), contextlib.redirect_stdout(buf), \
                 mock.patch.multiple(fc, ROOT=str(self.t / "root"), LOG=str(self.t / "root" / ".make.log")):
-            rc = fc.main(["setup"])
+            rc = fc.main([cmd])
         return rc, buf.getvalue()
 
     def test_setup_succeeds(self):
@@ -208,7 +215,7 @@ class Setup(unittest.TestCase):
         self.assertIn("ok    Images       2 pulled, 1 present, 0s", lines)
         self.assertIn("ok    Containers   3 started, flagd recreated, 0s", lines)
         self.assertIn("ok    Goose image  pulled, 0s", lines)
-        self.assertIn("ok    Ready        3 containers running, Jaeger answers, 0s", lines)
+        self.assertIn("ok    Ready        3 containers running, Jaeger answers, payment sending traces, 0s", lines)
         self.assertIn("ok    Phoenix      trajectory store up, 0s", lines)
         self.assertEqual(lines[-1], "Next: make smoke    one agent trial, cost depends on your provider and model")
         self.assertTrue((self.t / "demo" / "overlay" / "compose.overlay.yaml").is_file())
@@ -293,6 +300,25 @@ class Setup(unittest.TestCase):
         self.assertIn("    Error response from daemon: port is already allocated", text)
         self.assertIn("  Log:  ", text)
         self.assertNotIn("Ready", text)
+        self.assertNotIn('"services"', text)  # the compose config JSON is data for the caller, not the error
+        self.assertNotIn('"services"', (self.t / "root" / ".make.log").read_text())
+
+    def test_ready_waits_for_the_baseline_traces(self):
+        self.traces.side_effect = [[], [], [{}] * 3]
+        with mock.patch.object(fc, "READY_SLEEP_S", 0):
+            rc, text = self.setup_run(FAKE_PRESENT=SERVICES["flagd"])
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(self.traces.call_count, 3)
+        self.assertIn("Ready        3 containers running, Jaeger answers, payment sending traces", text)
+
+    def test_up_starts_phoenix_only_when_its_container_exists(self):
+        self.setup_run(FAKE_PRESENT=" ".join(SERVICES.values()))  # clones the demo
+        rc, text = self.setup_run("up", FAKE_PRESENT=" ".join(SERVICES.values()))
+        self.assertEqual(rc, 0, text)
+        self.assertNotIn("Phoenix", text)
+        rc, text = self.setup_run("up", FAKE_PRESENT=" ".join(SERVICES.values()), FAKE_PHOENIX="1")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("ok    Phoenix      trajectory store up", text)
 
 
 class SmokeFile(unittest.TestCase):
@@ -336,10 +362,13 @@ class SmokeFile(unittest.TestCase):
             fc.bench.load_experiment(str(REPO / fc.SMOKE))
 
     def test_empty_goose_settings_stop_at_once(self):
-        for cfg in ({}, {"GOOSE_PROVIDER": "openrouter"}, {"GOOSE_MODEL": "m"}, {"GOOSE_PROVIDER": "x", "GOOSE_MODEL": "m"}):
+        for cfg, text in (({}, "GOOSE_PROVIDER is ''; it must be anthropic or openrouter"),
+                          ({"GOOSE_PROVIDER": "openrouter"}, "GOOSE_MODEL is empty in fixture.env"),
+                          ({"GOOSE_MODEL": "m"}, "GOOSE_PROVIDER is ''; it must be anthropic or openrouter"),
+                          ({"GOOSE_PROVIDER": "openai", "GOOSE_MODEL": "m"}, "GOOSE_PROVIDER is 'openai'; it must be anthropic or openrouter")):
             with self.assertRaises(fc.Failed) as e:
                 fc.smoke_file(cfg)
-            self.assertIn("GOOSE_PROVIDER or GOOSE_MODEL", e.exception.text)
+            self.assertEqual(e.exception.text, text)
             self.assertTrue(any("OPENROUTER_API_KEY" in l and "scripts/ai-sidecar" not in l for l in e.exception.block))
             self.assertTrue(any("scripts/ai-sidecar/goose" in l for l in e.exception.block))
 

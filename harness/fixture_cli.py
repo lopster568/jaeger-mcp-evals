@@ -7,7 +7,7 @@
   fixture_cli.py setup     tools, fixture, up, phoenix: everything free, in order
   fixture_cli.py tools     the Tools line (after fixture/preflight.sh has checked them)
   fixture_cli.py fixture   clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay
-  fixture_cli.py up        pull missing images (and the Goose image), start the demo, wait until it is up
+  fixture_cli.py up        pull missing images (and the Goose image), start the demo (and Phoenix, if it exists), wait until it is up
   fixture_cli.py phoenix   start the Phoenix trajectory store and wait until it answers
   fixture_cli.py smoke     the smoke dry run, then ONE paid agent trial (SMOKE_CLIENT: goose by default, or cli)
   fixture_cli.py down      stop the demo containers, keeping their data
@@ -148,7 +148,7 @@ class Step:
 def sh(argv, cwd=None, merge=True, on_line=None):
     """Run a third-party command, its output appended to .make.log. merge: stderr joins stdout (both
     returned and passed to on_line line by line); otherwise stdout alone is returned and stderr goes
-    to the log only. Returns (exit code, output lines)."""
+    to the log only (stdout is data for the caller, so it stays out of the log and its failure tail). Returns (exit code, output lines)."""
     global CHILD
     with open(LOG, "a", encoding="utf-8") as log:
         log.write("$ %s\n" % shlex.join(argv))
@@ -157,7 +157,8 @@ def sh(argv, cwd=None, merge=True, on_line=None):
                               stderr=subprocess.STDOUT if merge else log, text=True, errors="replace") as CHILD:
             lines = []
             for l in CHILD.stdout:
-                log.write(l)
+                if merge:
+                    log.write(l)
                 lines.append(l.rstrip("\n"))
                 if on_line:
                     on_line(lines[-1])
@@ -230,7 +231,8 @@ def smoke_file(cfg):
     elif client != "goose":
         raise Failed("SMOKE_CLIENT is %r, not goose or cli" % client, tries=[("set SMOKE_CLIENT in fixture.env", "goose or cli")])
     elif provider not in goose_client.KEYS or not model:
-        raise Failed("GOOSE_PROVIDER or GOOSE_MODEL is not set in fixture.env",
+        raise Failed("GOOSE_PROVIDER is %r; it must be anthropic or openrouter" % provider if provider not in goose_client.KEYS
+                     else "GOOSE_MODEL is empty in fixture.env",
                      ["GOOSE_PROVIDER must be anthropic or openrouter and GOOSE_MODEL a full model id of it;",
                       "the key (ANTHROPIC_API_KEY or OPENROUTER_API_KEY) goes in fixture.env too.",
                       "The Jaeger AI Assistant demo's scripts/ai-sidecar/goose uses the same two settings."],
@@ -447,6 +449,9 @@ def ready(cfg):
     """FIXTURE.md, Bring up: wait on the fixture alone (MIN_CONTAINERS running, Jaeger answering), whatever the
     agent settings; bench.py's pre-flight runs in every bench.py run and in make smoke's dry run."""
     st, why = Step("Ready", "waiting for the fixture"), ""
+    with open(os.path.join(ROOT, SMOKE), encoding="utf-8") as f:  # the baseline make smoke's pre-flight asks for
+        with open(os.path.join(ROOT, "harness", "scenarios", json.load(f)["scenario"] + ".json"), encoding="utf-8") as g:
+            service = json.load(g)["ground_truth"]["service"]
     while True:
         n = len(sh(["docker", "ps", "-q"], merge=False)[1])
         try:
@@ -454,8 +459,15 @@ def ready(cfg):
                 why = "%d of %s containers" % (n, cfg["MIN_CONTAINERS"]) if n < int(cfg["MIN_CONTAINERS"]) else ""
         except OSError:
             why = "Jaeger not answering"
+        if not why:  # Jaeger answers; the load generator needs a few minutes more to fill its in-memory store
+            try:
+                seen = len(bench.traces(dict(cfg, FIXTURE_HOST="localhost"), service, bench.now_us() - bench.BASELINE_LOOKBACK_S * 10**6,
+                                        bench.now_us(), 20, 10))
+            except Exception:
+                seen = 0
+            why = "waiting for %s traces (%d of 3)" % (service, seen) if seen < 3 else ""
         if not why:
-            st.ok("%d containers running, Jaeger answers" % n)
+            st.ok("%d containers running, Jaeger answers, %s sending traces" % (n, service))
             return
         if time.monotonic() - st.t0 + READY_SLEEP_S > READY_BUDGET_S:
             raise Failed("gave up after %s: %s" % (st.elapsed(), why), [], [("docker compose ps -a", "which container is not up")])
@@ -598,7 +610,7 @@ def main(argv=None):
             goose_image(cfg)
             containers(d, services)
             ready(cfg)
-        if cmd in ("setup", "phoenix"):
+        if cmd in ("setup", "phoenix") or (cmd == "up" and any(sh(COMPOSE + ["--profile", "store", "ps", "-aq", "phoenix"], cwd=demo_dir(cfg), merge=False)[1])):
             phoenix(cfg, demo_dir(cfg))
         if cmd == "setup":
             footer(cfg, t0)

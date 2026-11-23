@@ -16,6 +16,7 @@ SCRIPT = str(pathlib.Path(__file__).resolve().parents[2] / "fixture" / "prefligh
 DOCKER = """#!/bin/bash
 [ "$1 $2" = "compose version" ] && { echo "Docker Compose version ${FAKE_COMPOSE:-v2.29.1}"; exit 0; }
 [ "$1" = ps ] && [ -n "$FAKE_JAEGER" ] && echo abc123
+[ "$1" = info ] && [ -n "$FAKE_INFO" ] && { echo "$FAKE_INFO" >&2; echo "stdout is not the cause"; exit 1; }
 exit 0
 """
 CLAUDE = """#!/bin/bash
@@ -25,26 +26,28 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", smoke="", no_docker=False):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", smoke="", no_docker=False, info="", home=None, no_claude=False):
         with tempfile.TemporaryDirectory() as d:
             for name in ("docker", "claude"):
-                if name == "docker" and no_docker:
+                if (name == "docker" and no_docker) or (name == "claude" and no_claude):
                     continue
                 shim = os.path.join(d, name)
-                body = ("#!/bin/bash\nexit 1\n" if remote else DOCKER) if name == "docker" else CLAUDE % int(not logged_in)
+                body = ("#!/bin/bash\n[ \"$1\" = info ] && { [ -n \"$FAKE_INFO\" ] && exit 1; exit 0; }\nexit 1\n" if remote else DOCKER) if name == "docker" else CLAUDE % int(not logged_in)
                 pathlib.Path(shim).write_text(body)
                 os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC)
             overlay = os.path.join(d, "overlay.yaml")
             pathlib.Path(overlay).write_text('    ports:\n      - "%s%d:16686"\n' % (bind, port))
             path = d + os.pathsep + os.environ["PATH"]
-            if no_docker:  # a PATH of only what the script needs, so a docker installed here is not found
+            if no_docker or no_claude:  # a PATH of only what the script needs, so a docker or claude installed here is not found
                 tools = os.path.join(d, "tools")
                 os.mkdir(tools)
                 for t in ("bash", "env", "dirname", "git", "curl", "python3", "grep", "sed", "head"):
                     os.symlink(shutil.which(t), os.path.join(tools, t))
                 path = d + os.pathsep + tools
             env = dict(os.environ, PATH=path, OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
-                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, SMOKE_CLIENT=smoke, FAKE_COMPOSE=compose)
+                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, SMOKE_CLIENT=smoke, FAKE_COMPOSE=compose, FAKE_INFO=info)
+            if home:
+                env["HOME"] = home
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
 
     def test_busy_port_fails_unless_stack_is_ours(self):
@@ -94,7 +97,32 @@ class Preflight(unittest.TestCase):
         self.assertIn("claude is not logged in", r.stdout)
         r = self.run_script(1, jaeger=False, logged_in=False, grader="goose")
         self.assertEqual(r.returncode, 0)
-        self.assertIn("needed only for run.client cli or GRADER_CLIENT=cli", r.stdout)
+        self.assertEqual(r.stdout, "")  # the Goose defaults need no claude: nothing to say
+        r = self.run_script(1, jaeger=False, logged_in=False, smoke="cli")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("needed for SMOKE_CLIENT=cli", r.stdout)
+
+    def test_docker_that_will_not_answer_names_the_cause(self):
+        r = self.run_script(1, jaeger=False, info="permission denied while trying to connect to the Docker daemon socket")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("cannot use it (permission denied)", r.stdout)
+        self.assertIn("usermod -aG docker", r.stdout)
+        r = self.run_script(1, jaeger=False, info="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not running; start Docker", r.stdout)
+        # a remote fixture with a cli agent and grader needs no docker here, so a broken one is not asked
+        self.assertEqual(self.run_script(1, jaeger=False, remote="u", smoke="cli", grader="cli", info="x").returncode, 0)
+
+    def test_claude_installed_off_path_says_so(self):
+        with tempfile.TemporaryDirectory() as home:
+            r = self.run_script(1, jaeger=False, grader="cli", no_claude=True, home=home)
+            self.assertIn("is not installed", r.stdout)
+            os.makedirs(os.path.join(home, ".local", "bin"))
+            pathlib.Path(home, ".local", "bin", "claude").write_text("#!/bin/bash\n")
+            os.chmod(os.path.join(home, ".local", "bin", "claude"), 0o755)
+            r = self.run_script(1, jaeger=False, grader="cli", no_claude=True, home=home)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("not on your PATH", r.stdout)
 
 
 if __name__ == "__main__":

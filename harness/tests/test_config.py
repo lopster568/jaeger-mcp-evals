@@ -48,6 +48,14 @@ class EnvFiles(unittest.TestCase):
         self.assertEqual(py, want)
         self.assertEqual(sh, want)
 
+    def test_last_line_of_a_file_wins_and_the_environment_still_wins(self):
+        (self.root / "fixture.env").write_text("RUNS_DIR=a\nRUNS_DIR=b\n")
+        py, sh = self.both()
+        self.assertEqual((py["RUNS_DIR"], sh["RUNS_DIR"]), ("b", "b"))
+        out = subprocess.run(["bash", "-c", '. fixture/lib.sh; echo "$RUNS_DIR"'], cwd=self.root, env=dict(os.environ, RUNS_DIR="env"),
+                             capture_output=True, text=True, check=True).stdout
+        self.assertEqual(out.strip(), "env")
+
     def test_example_lists_every_key_once(self):
         keys = [line.lstrip("#").split("=", 1)[0] for line in (REPO / "fixture.env.example").read_text().splitlines()
                 if line.lstrip("#")[:1].isupper() and "=" in line]

@@ -161,6 +161,7 @@ It never restarts a running container. Exit codes: 0 built and recorded, 1 refus
 ## Gotchas
 
 - After a Docker restart the stack may stay down despite `restart: unless-stopped`; check the container count and rerun `up -d` (wait a minute if the engine is still starting).
+- After a host reboot run `make up`: it restarts the demo and, when its container exists, Phoenix.
 - flagd can hang at its memory cap (the demo's 75M; the overlay raises it to 200M): OFREP accepts connections but never answers, and `docker stats` shows flagd at high CPU near its limit. Recreate only flagd: `... up -d --no-deps --force-recreate flagd`.
 - Jaeger's Dockerfile needs `--build-arg debug_image=...` even for `--target release`; build-image.sh passes it.
 - Jaeger's storage is in memory: any restart of Jaeger, Docker or the host empties it until the load generator refills it.

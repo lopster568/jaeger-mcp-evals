@@ -3,14 +3,16 @@
 # shellcheck shell=bash
 
 # Sourced by the fixture scripts. Loads fixture.env, then fixture.env.example (its #KEY=value lines too);
-# a variable already in the environment wins.
+# a variable already in the environment wins, and within one file the last line for a key wins (as in harness/config.py).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 for f in "$ROOT/fixture.env" "$ROOT/fixture.env.example"; do
   [ -f "$f" ] || continue
+  mine=" "  # keys this file has set, so its later line can replace its earlier one but never a variable from the environment
   hash=""; [ "${f##*/}" = fixture.env.example ] && hash="#"  # "#KEY=value" there is a default, shown commented out
   while IFS='=' read -r k v; do
     k=${k#"$hash"}
-    if [[ $k =~ ^[A-Z_][A-Z0-9_]*$ ]] && [ -z "${!k+x}" ]; then
+    if [[ $k =~ ^[A-Z_][A-Z0-9_]*$ ]] && { [ -z "${!k+x}" ] || [[ $mine == *" $k "* ]]; }; then
+      mine="$mine$k "
       v=${v%%[[:space:]]#*}; v=${v%"${v##*[![:space:]]}"}  # a " #" starts a comment, as in dotenv
       v=${v#[\"\']}; export "$k=${v%[\"\']}"
     fi

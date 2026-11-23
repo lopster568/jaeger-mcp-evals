@@ -58,7 +58,11 @@ class Forward(unittest.TestCase):
             shim.write_text('#!/bin/bash\necho "$@" >> %s/args\nexit 255\n' % d)
             shim.chmod(0o755)
             env = dict(ENV, PATH=d + os.pathsep + os.environ["PATH"], FORWARD_SLEEP="0.2")
-            p = subprocess.Popen([SCRIPT, "vm-target"], env=env, stderr=subprocess.PIPE, text=True)
+            # A background job of a non-interactive shell inherits SIGINT ignored, and bash cannot trap a signal
+            # ignored at entry, so restore it; and kill the script if an assertion fails before it exits.
+            p = subprocess.Popen([SCRIPT, "vm-target"], env=env, stderr=subprocess.PIPE, text=True,
+                                 preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+            self.addCleanup(p.kill)
             time.sleep(1)
             p.send_signal(signal.SIGINT)
             err = p.communicate(timeout=10)[1]
