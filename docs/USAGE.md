@@ -162,8 +162,6 @@ The published results in this repo were measured with this protocol. A new compa
 
 | Key | Checks, per test arm |
 |---|---|
-| `tool_used_min`, `tool_used_max` | runs using each named tool |
-| `tool_output_chars_median_drop_pct_min` | percentage drop in median `tool_output_chars` against baseline |
 | `accuracy_pass_min` | the PASS count |
 | `fisher_p_max` | PASS only if two-sided Fisher p (`bench.fisher_p`) of baseline vs arm PASS counts is below the value; both arms need the same n |
 | exit code | 0 all pass, 1 any fails, 2 refusal: an empty `thresholds` block, or manifests that do not carry one experiment sha256, differ on scenario, scenario version or hash, prompt or system prompt (overlay and image may differ), or have `arm_pin` blocks not matching the argument order |
