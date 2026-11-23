@@ -538,7 +538,7 @@ class TestBatch(BenchCase):
         # One stream: everything a human reads is on stderr, and batch.log carries every screen line too.
         self.assertEqual(self.out, "")
         for line in ("ok    paymentFailure ready", "ok    provider anthropic, ANTHROPIC_API_KEY set", "[1/2] ",
-                     "tools used: get_trace_errors 1", "Records "):
+                     "trials using each tool: get_trace_errors 1/1", "Records "):
             self.assertIn(line, self.err)
             self.assertIn(line, blog)
         lines = self.err.splitlines()
@@ -638,6 +638,16 @@ class TestBatch(BenchCase):
     def test_dry_run_without_seed_says_the_real_order_differs(self):
         self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
         self.assertIn("set run.seed to", self.err)
+
+    def test_smoke_dry_run_has_no_copy_line_and_no_seed_hint(self):
+        self.assertEqual(self.run_batch(1, "--dry-run"), 0, self.err)
+        self.assertIn("copied to", self.err)  # a real experiment keeps records
+        shutil.rmtree(self.runs, ignore_errors=True)
+        path = self.knob({"noskill": arm("neutral")}, name=bench.SMOKE_EXPERIMENT)
+        self.assertEqual(self.bench("run", path, "--dry-run"), 0, self.err)
+        self.assertIn("DRY RUN", self.err)
+        self.assertNotIn("copied to", self.err)
+        self.assertNotIn("set run.seed to", self.err)  # one cell: the order cannot differ
 
     def test_dry_run_leaves_runs_dir_unchanged(self):
         os.makedirs(os.path.join(self.runs, "paymentFailure"))
@@ -764,6 +774,7 @@ class TestBatch(BenchCase):
             self.assertEqual(self.run_batch(1), 1, self.err)
         self.assertIn("ABORT - only 0 baseline traces", self.err)
         self.assertIn("fix: run `docker compose ps -a` on the demo host", self.err)
+        self.assertIn("A just-started fixture needs a few minutes of load-generator traffic; otherwise check upstream", self.err)
 
     def test_ofrep_not_showing_the_flip_aborts_with_a_fix(self):
         real, first = bench.ofrep_variant, []
@@ -850,6 +861,35 @@ class TestBatch(BenchCase):
         self.assertIn("\r\x1b[K", err.getvalue())
         self.assertNotIn("\x1b[3", err.getvalue())  # NO_COLOR: no colours even on a TTY
         self.assertNotIn("running...", read(os.path.join(self.batch_dir(), "batch.log")))
+
+
+    def slow_fault(self):
+        """traces() finds nothing for the first 7 fault polls, then the real answer."""
+        real, n = bench.traces, [0]
+
+        def slow(cfg, service, start_us, end_us, limit, timeout, operation=None):
+            if limit != 50:  # not the fault poll
+                return real(cfg, service, start_us, end_us, limit, timeout, operation)
+            n[0] += 1
+            return [] if n[0] <= 7 else real(cfg, service, start_us, end_us, limit, timeout, operation)
+        return mock.patch.object(bench, "traces", slow)
+
+    def test_a_slow_fault_says_it_is_waiting_once_a_minute_on_a_pipe(self):
+        with self.slow_fault(), mock.patch.object(bench, "sleep"):
+            self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertEqual(self.err.count("waiting for the fault in traces"), 1)
+        self.assertIn("waiting for the fault in traces, 1m00s of up to 8m00s", self.err)
+
+    def test_a_slow_fault_redraws_a_waiting_line_on_a_tty(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+        err = TTY()
+        with self.slow_fault(), mock.patch.dict(os.environ, dict(self.env, FORCE_COLOR="", NO_COLOR="1")), mock.patch.object(bench, "sleep"), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(bench.main(["run", self.knob()]), 0)
+        self.assertIn("waiting for the fault in traces, 10s of up to 8m00s", err.getvalue())
+        self.assertNotIn("waiting for the fault", read(os.path.join(self.batch_dir(), "batch.log")))
 
 
 class TestStageAndFix(unittest.TestCase):
@@ -1510,11 +1550,19 @@ class TestExport(BenchCase):
         self.assertEqual(lines[-1], "Phoenix http://127.0.0.1:%s/projects/UHJvamVjdDoy   project t: one trace per trial" % self.phoenix_port)
         self.assertTrue(lines[-2].startswith("Records"), lines[-2])
 
+    def test_phoenix_project_lookup_is_retried(self):
+        answers = iter([None, "UHJvamVjdDoy"])
+        with mock.patch.object(bench, "phoenix_project_id", lambda base, name: next(answers)), mock.patch.object(bench.time, "sleep") as nap:
+            self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
+        self.assertIn(mock.call(1), nap.call_args_list)  # the real lookup waited 1 s between its two tries
+        self.assertIn("/projects/UHJvamVjdDoy", self.err.splitlines()[-1])
+
     def test_phoenix_line_falls_back_to_the_base_url_when_the_lookup_fails(self):
         for projects in (None, [{"name": "other", "id": "x"}]):  # 404, then a project list without this one
             Fake.projects = projects
             shutil.rmtree(self.runs, ignore_errors=True)  # two runs in one UTC second would share a batch directory
-            self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
+            with mock.patch.object(bench.time, "sleep"):  # the lookup retries 1 s apart
+                self.assertEqual(self.run_batch(1, PHOENIX_PORT=self.phoenix_port), 0, self.err)
             self.assertEqual(self.err.splitlines()[-1],
                              "Phoenix http://127.0.0.1:%s   project t: open the project, one trace per trial" % self.phoenix_port)
 

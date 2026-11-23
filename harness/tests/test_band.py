@@ -118,7 +118,7 @@ class TestBand(unittest.TestCase):
         bench.results("s", [bench.arm_row("a", [], 0)], out.append, out.append)
         self.assertNotIn("ci95", out[1])
         self.assertIn("0/0", out[-4])
-        self.assertEqual(out[-2:], ["Passes to read: none", "Client limits: none"])
+        self.assertEqual(out[-2:], ["Suspect passes: none", "Client limits: none"])
 
     def test_table_row_is_aligned_under_its_header(self):
         rc, out = run_band(make_batch(self.tmp, [[INIT, CALL, RESULT, PASS_FINAL]] * 6 + [[INIT, CALL, RESULT, FAIL_FINAL]] * 4))
@@ -209,4 +209,4 @@ class TestPassesToRead(unittest.TestCase):
         s, out, _ = self.band_of(result_with("span abc111"), ["abc111"])
         self.assertEqual((s["evidence_unseen"], s["tool_result_leak_hits"], s["export_marker_hits"]), ([], [], []))
         if s["steps_to_evidence"] is not None:
-            self.assertIn("Passes to read: none", out)
+            self.assertIn("Suspect passes: none", out)
