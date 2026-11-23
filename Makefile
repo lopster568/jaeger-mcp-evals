@@ -9,6 +9,9 @@
 
 .DEFAULT_GOAL := help
 
+# make variables are case-sensitive: client=cli would be ignored and the default client would run
+$(foreach v,client jaeger scenario python,$(if $(filter command line,$(origin $v)),$(error $v=$($v) is ignored: make variables are upper case; use $(shell echo $v | tr a-z A-Z)=$($v))))
+
 # Any Python 3.11+ interpreter, e.g. make setup PYTHON=python3.12 (fixture/preflight.sh checks the version)
 PYTHON ?= python3
 CLI := $(PYTHON) harness/fixture_cli.py
