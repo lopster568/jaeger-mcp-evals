@@ -17,7 +17,7 @@ flowchart LR
 
 | Need | Detail |
 |---|---|
-| Tools | make, Python 3.11 or newer (standard library only), Docker with Compose v2, git, curl; `make preflight` checks all but make, and the ports |
+| Tools | make, Python 3.11 or newer (standard library only), Docker with Docker Compose 2.24 or newer, git, curl; `make preflight` checks all but make, and the ports |
 | Agent client | `run.client` `goose`, the default: Goose v1.57.0 in the image the Jaeger AI Assistant demo pins, through Docker, with `run.provider` `anthropic` or `openrouter`, `run.model` by full id, and that provider's key in `fixture.env`. The agent sees only Jaeger's MCP tools (plus Goose's `load_skill`, counted); any other tool scores INVALID. The mechanism grader follows the agent client: `GRADER_CLIENT` `goose` (default, same image, `GRADER_PROVIDER` and `GRADER_MODEL` falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`, no default model). The Claude Code CLI (`cli`, which ran every published result, and its grader) and `codex` (experimental) are in [docs/USAGE.md](docs/USAGE.md#other-clients) |
 | Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; boots the pinned release quay.io/jaegertracing/jaeger:2.23.0; `make measure` runs the Jaeger built from your checkout (main lineage); no other release is used or tested |
 | Cost | Goose: depends on provider and model, recorded per trial. Claude CLI, published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant. Plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |
@@ -38,7 +38,7 @@ python3 harness/bench.py verify                                         # free: 
 > [!WARNING]
 > `make smoke` and `bench.py run` start paid agent trials. `make smoke` does its own dry run first and waits 5 seconds before spending.
 
-Jaeger is at http://localhost:16686/jaeger/ui and Phoenix at http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Everything a batch does is set in one checked-in file, `harness/experiments/<name>.json`; no command-line flag changes a run. Below 10 trials per arm a result only ranks the arms.
+Jaeger is at http://localhost:16686/jaeger/ui and Phoenix at http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Everything a batch does is set in one checked-in file, `harness/experiments/<name>.json`; command-line flags only choose a dry run, the first cell only, or skipping the Phoenix export (`measure.sh` has its own flags). Below 10 trials per arm a result only ranks the arms.
 
 ## Layout and docs
 
