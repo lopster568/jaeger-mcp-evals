@@ -14,7 +14,7 @@ Ports 16686 (Jaeger query) and 8016 (flagd OFREP) must be reachable. `fixture.en
 
 ## Before you start
 
-1. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `GOOSE_PROVIDER`, `GOOSE_MODEL` and that provider's key in fixture.env (the demo's settings) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=cli` on the Claude Code CLI (`SMOKE_CLIENT` in fixture.env sets the default).
+1. Start the fixture: 22 containers (23 with Phoenix), about 2.9 GB RAM, 6 busy cores. `make setup` runs `make preflight` first, pulls the pinned Goose image next to the demo's, and `make up` waits up to 10 minutes for the fixture (agent settings are not needed); Phoenix takes one to two more, and traces show after a few minutes of load. Then set `OPENROUTER_API_KEY` in fixture.env (`GOOSE_PROVIDER` and `GOOSE_MODEL` default to the Jaeger AI Assistant demo's `openrouter` and `nvidia/nemotron-3.5-lightning:free`) and run `make smoke`, one paid trial and a dry run first, or `make smoke CLIENT=cli` on the Claude Code CLI (`SMOKE_CLIENT` in fixture.env sets the default).
    ```bash
    make setup
    ```

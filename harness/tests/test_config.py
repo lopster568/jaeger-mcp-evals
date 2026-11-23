@@ -36,7 +36,7 @@ class EnvFiles(unittest.TestCase):
 
     def test_commented_defaults_apply(self):
         py, sh = self.both()
-        want = {"GOOSE_PROVIDER": "", "GOOSE_MODEL": "", "GRADER_CLIENT": "goose", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
+        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "goose", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
         self.assertEqual(py, want)
         self.assertEqual(sh, want)
 
@@ -44,7 +44,7 @@ class EnvFiles(unittest.TestCase):
         (self.root / "fixture.env").write_text("GOOSE_PROVIDER=openrouter   # inline comment\n"
                                                "GRADER_CLIENT='cli'\n#RUNS_DIR=elsewhere\n")
         py, sh = self.both()
-        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "", "GRADER_CLIENT": "cli", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
+        want = {"GOOSE_PROVIDER": "openrouter", "GOOSE_MODEL": "nvidia/nemotron-3.5-lightning:free", "GRADER_CLIENT": "cli", "RUNS_DIR": "runs", "PHOENIX_PORT": "16006"}
         self.assertEqual(py, want)
         self.assertEqual(sh, want)
 

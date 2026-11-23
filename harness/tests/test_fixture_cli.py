@@ -246,7 +246,7 @@ class Setup(unittest.TestCase):
         self.assertNotIn("claude", text.split("Demo")[0])
         self.assertNotIn("logged in", text)
         self.assertIn("ok    Ready        3 containers running, Jaeger answers", text)
-        self.assertEqual(text.splitlines()[-1], "Before it: set GOOSE_PROVIDER, GOOSE_MODEL and that provider's key in fixture.env")
+        self.assertEqual(text.splitlines()[-1], "Before it: set OPENROUTER_API_KEY in fixture.env (another provider: GOOSE_PROVIDER, GOOSE_MODEL and its key)")
 
     def test_pull_is_retried_then_succeeds(self):
         with mock.patch.object(fc, "PULL_BACKOFF_S", 0):
