@@ -51,7 +51,7 @@ Keys, as in the example above:
 - `deterministic`: `yes`, `no` or `bucketed`; recorded and shown in
   `records/INDEX.md`, not used by `band` (docs/USAGE.md, Reading results).
 - `ground_truth`: `{service, operation, mechanism}`, the answer key in prose.
-- `signal_regex`: text in the fault trace and absent from the baseline.
+- `signal_regex`: text in the fault trace and absent from the baseline. A fault must leave an error text in the spans, so a latency-only flag cannot be a scenario.
 - `pass_rule`: `{service_exact, operation_exact}`, lists of accepted exact strings
   (case-insensitive, whitespace-trimmed equality).
 - `mechanism_truth`: one plain sentence saying what fails and why, with no flag, service,

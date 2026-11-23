@@ -1,57 +1,81 @@
 # jaeger-ai-evals
 
-A harness for evaluating the MCP tools and skills Jaeger serves to AI agents, as [jaegertracing/jaeger#9135](https://github.com/jaegertracing/jaeger/issues/9135) asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. The records show which tools the agent called, whether it named the cause, and every factor that could change the result. It keeps no leaderboard and does not rank models.
-
-```mermaid
-flowchart LR
-  X[experiment file] --> B[bench.py run]
-  B -->|1. turn one flag on| D[OpenTelemetry Demo]
-  D -->|traces| J[Jaeger]
-  B -->|2. prompt| A[agent]
-  A <-->|3. MCP tool calls| J
-  A -->|4. JSON verdict| S[score.py]
-  S -->|5. result| R[records/]
-```
-
-## Before you start
-
-| Need | Detail |
-|---|---|
-| Tools | make, Python 3.11 or newer (standard library only), Docker with Docker Compose 2.24 or newer, git, curl; Go (the version in Jaeger's `go.mod`) for `make measure` only; `make preflight` checks all but make, and the ports; install steps for Ubuntu are in [docs/USAGE.md](docs/USAGE.md#before-you-start) |
-| Agent client | `run.client` `goose`, the default: Goose v1.57.0 in the image the Jaeger AI Assistant demo pins, through Docker, with `run.provider` `anthropic` or `openrouter`, `run.model` by full id, and that provider's key in `fixture.env`. The agent sees only Jaeger's MCP tools (plus Goose's `load_skill`, counted); any other tool scores INVALID. The mechanism grader follows the agent client when `GRADER_CLIENT` is empty (`claude` for a Claude agent, else `goose`; same image, `GRADER_PROVIDER` and `GRADER_MODEL` falling back to `GOOSE_PROVIDER` and `GOOSE_MODEL`, no default model). The Claude Code CLI (`claude`, read from `cli` in older records; it ran every published result, and its grader) and `codex` (experimental) are in [docs/USAGE.md](docs/USAGE.md#other-clients) |
-| Fixture | 22 containers (23 with Phoenix), about 2.9 GB RAM and 6 busy cores under load, a large first image pull; free ports 16686, 8013, 8016, 16006; boots the pinned release quay.io/jaegertracing/jaeger:2.23.0; `make measure` runs the Jaeger built from your checkout (main lineage); no other release is used or tested |
-| Cost | Goose: depends on provider and model, recorded per trial. Claude CLI, published pair, 10 trials per arm: about 0.77 USD and 4.5 min baseline, 2.77 USD and 8 min variant. Plus a grader call per trial; attach `RESULT.md` and the batch directory under `records/` to a pull request; details in [docs/USAGE.md](docs/USAGE.md) |
-| Host | `make` targets run on the fixture host, this machine by default; `bench.py` can drive a remote fixture over ssh, its ports reached through `fixture/forward.sh` ([FIXTURE.md](fixture/FIXTURE.md#remote-host)) |
+A harness for evaluating the MCP tools and skills Jaeger serves to AI agents, as [jaegertracing/jaeger#9135](https://github.com/jaegertracing/jaeger/issues/9135) asks. Each trial breaks one service in the OpenTelemetry Demo with a feature flag, lets an agent investigate with only Jaeger's MCP tools, and scores its JSON verdict against the known cause. The records show which tools the agent called, whether it named the cause, and what could change the result. There is no leaderboard.
 
 ## Quick Start
 
-```bash
-git clone https://github.com/lopster568/jaeger-mcp-evals && cd jaeger-mcp-evals
-cp fixture.env.example fixture.env   # set OPENROUTER_API_KEY; a free key covers a few smokes a day, make measure needs credits on it or a paid model
-make setup     # free: set up the fixture, pull the Goose image, start the demo and Phoenix, wait until Jaeger answers
-make smoke     # paid: one trial end to end, proves the setup; CLIENT=claude runs it on Claude Code (log in once: claude)
-# measure, the main job: JAEGER is your Jaeger clone (git clone https://github.com/jaegertracing/jaeger ~/jaeger) with your change committed on a branch;
-# SCENARIO is a file name in harness/scenarios/ without .json. It builds two images, then asks before spending.
-make measure JAEGER=~/jaeger SCENARIO=paymentFailure   # paid: A/B your commit against its base, on Goose
-python3 harness/bench.py verify      # free: re-score every run from its raw files
-```
+You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or newer. The demo takes about 2.9 GB RAM and 6 busy cores. `make measure` also needs Go (the version in your Jaeger `go.mod`). `make preflight` checks all of this.
 
-> [!WARNING]
-> `make smoke` and `make measure` start paid agent trials. `make smoke` does its own dry run first and waits 5 seconds before spending.
+1. Copy the settings and set `OPENROUTER_API_KEY` in `fixture.env`:
 
-Jaeger is at http://localhost:16686/jaeger/ui and Phoenix at http://localhost:16006. Stop with `make down`, remove the containers with `make clean`. Everything a batch does is set in one checked-in file, `harness/experiments/<name>.json`; command-line flags only choose a dry run, the first cell only, or skipping the Phoenix export (`measure.sh` has its own flags). Below 10 trials per arm a result only ranks the arms.
+   ```bash
+   cp fixture.env.example fixture.env
+   ```
 
-## Layout and docs
+2. Start the demo. This is free and waits until Jaeger answers at http://localhost:16686/jaeger/ui:
 
-| Path | What it is |
-|---|---|
-| `harness/` | `bench.py` (run, verify, gates), `score.py`, `judge.py`, agent clients, prompts, scenarios, experiments, tests |
-| `fixture/` | the OpenTelemetry Demo overlay and its scripts: [FIXTURE.md](fixture/FIXTURE.md) |
-| `records/` | batch records, one `RESULT.md` per judged experiment, and [INDEX.md](records/INDEX.md) |
-| [docs/USAGE.md](docs/USAGE.md) | the experiment file, running a batch, protocol, thresholds, reading results, scoring |
-| [docs/SCENARIOS.md](docs/SCENARIOS.md) | adding or editing a scenario |
-| [docs/RECORD.md](docs/RECORD.md), [docs/TUNING.md](docs/TUNING.md) | every key a run records; each factor that can change a result |
-| [docs/results/](docs/results/) | results pages; new ones start from [TEMPLATE.md](docs/results/TEMPLATE.md) |
-| [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md) | scenario versions and comparability; tests and DCO sign-off |
+   ```bash
+   make setup
+   ```
 
-Licensed under Apache 2.0; see LICENSE.
+3. Check that one agent trial works. `DRY=1` checks everything and spends nothing; without it the trial is paid:
+
+   ```bash
+   make smoke DRY=1
+   make smoke
+   ```
+
+4. Measure your Jaeger change. `JAEGER` is your Jaeger clone with the change committed, and `SCENARIO` is a file name in `harness/scenarios/` without `.json` (an unknown name prints the list). It runs 10 trials on your commit and 10 on its base, and asks before it spends:
+
+   ```bash
+   make measure JAEGER=~/jaeger SCENARIO=paymentFailure DRY=1
+   make measure JAEGER=~/jaeger SCENARIO=paymentFailure
+   ```
+
+   The last line says whether your commit is better, worse, or not significantly different. Below 10 trials per arm a result only ranks the two.
+
+## Commands
+
+| Target | What it does | Cost |
+|---|---|---|
+| `make setup` | runs preflight, fixture, up and phoenix in order, and pulls the Goose image | free |
+| `make preflight` | checks the tools, versions and ports | free |
+| `make fixture` | clones the OpenTelemetry Demo and installs the overlay | free |
+| `make up` | starts the demo and waits for it (10 minutes at most) | free |
+| `make phoenix` | starts the optional Phoenix trajectory store | free |
+| `make smoke` | one agent trial end to end | PAID; free with `DRY=1` |
+| `make measure` | your Jaeger commit against its base, judged by Fisher's exact test | PAID; free with `DRY=1` |
+| `make run` | your own experiment file | PAID; free with `DRY=1` |
+| `make test` | offline unit tests | free |
+| `make verify` | re-scores every trajectory under `RUNS_DIR` and checks `records/INDEX.md` | free |
+| `make down` | stops the containers; Jaeger's traces are lost, Phoenix keeps its own | free |
+| `make clean` | removes the containers and network, keeping volumes and images | free |
+
+Everything above goes through make, and `make help` lists it. `python3 harness/bench.py` adds analysis subcommands for maintainers (`verify`, `band`, `export`, `pack`, `index`, `power`, `leak`, `readiness`, `oracle`, `soak`); see `bench.py --help`.
+
+## Options
+
+Variables go on the make line (`make smoke CLIENT=claude`). Lower case is refused. Every target takes `PYTHON=` for another interpreter. `DRY=1` and `YES=1` mean on; `DRY=0` is off.
+
+| Variable | Targets | Default | Meaning |
+|---|---|---|---|
+| `CLIENT` | smoke, measure | `goose` | agent client: `goose`, `claude` (Claude Code) or `codex` (experimental) |
+| `JAEGER`, `SCENARIO` | measure | required | your Jaeger checkout, the scenario name |
+| `N` | measure | `10` | trials per arm |
+| `BASE` | measure | merge-base with `upstream/main`, else `origin/main` | the commit to compare against |
+| `DRY` | smoke, measure, run | off | `1` checks and prints every step and spends nothing |
+| `YES` | measure | off | `1` skips the y/N question before the pair file is committed |
+| `EXPERIMENT` | run | required | a file name under `harness/experiments/` or a path |
+| `FIRST` | run | off | `1` runs one cell only |
+| `GOOSE_MODEL`, `CLAUDE_MODEL`, `CODEX_MODEL` | smoke, measure | in `fixture.env.example` | the model for that client, by full id; set in `fixture.env` |
+
+With `CLIENT=claude`, `make smoke` uses your claude.ai login and `make measure` bills `ANTHROPIC_API_KEY`, as every published result did. Other keys (provider, grader, ports, `RUNS_DIR`) are in `fixture.env.example`.
+
+## Layout and documentation
+
+`Makefile` and `fixture/` bring the demo up. `harness/` holds `bench.py`, `measure.sh`, the scenarios, prompts and experiment files. `records/` holds checked-in results, `runs/` the raw trajectories (git-ignored). `docs/` holds the manual.
+
+- [docs/USAGE.md](docs/USAGE.md): stop and restart, review a result, where results land, glossary, the experiment file, protocol
+- [docs/SCENARIOS.md](docs/SCENARIOS.md): adding a scenario; [docs/RECORD.md](docs/RECORD.md): every recorded key
+- [docs/TUNING.md](docs/TUNING.md): factors that change a result; [fixture/FIXTURE.md](fixture/FIXTURE.md): the demo overlay, remote host
+- [records/INDEX.md](records/INDEX.md): every recorded batch; [CHANGELOG.md](CHANGELOG.md): scenario versions; [CONTRIBUTING.md](CONTRIBUTING.md); [LICENSE](LICENSE) (Apache 2.0)
