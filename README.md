@@ -47,7 +47,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 | `paymentFailure` | payment rejects every charge with "invalid token" | 10/10 | worse only (5/10 or below) |
 | `paymentUnreachable` | checkout cannot resolve payment's address | 10/10 | worse only (5/10 or below) |
 
-Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 10 trials, 2026-11-05/06. Goose baselines are not measured. [docs/SCENARIOS.md](docs/SCENARIOS.md) describes each scenario and how to choose one.
+Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 10 trials, 2026-11-05/06. Goose baselines are not measured. The last column holds for these baselines only: on another client or model the scenario's baseline may differ, and the baseline arm of your own measure is what the result compares against. [docs/SCENARIOS.md](docs/SCENARIOS.md) describes each scenario and how to choose one.
 
 ## Commands
 
