@@ -63,6 +63,7 @@ Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 
 | `make run` | your own experiment file | PAID; free with `DRY=1` |
 | `make test` | offline unit tests | free |
 | `make lint` | license headers and line endings; it adds a missing header in place, as Jaeger's does, and `make fmt` also fixes line endings; CI also runs shellcheck | free |
+| `make test-ci` | the same unit tests under coverage, writing `.cover/cover.xml`; run `make install-test-tools` once first, in a virtual environment if your Python refuses pip installs | free |
 | `make verify` | re-scores every trajectory under `RUNS_DIR` and checks `records/INDEX.md` | free |
 | `make down` | stops the containers; Jaeger's traces are lost, Phoenix keeps its own | free |
 | `make clean` | removes the containers and network, keeping volumes and images | free |

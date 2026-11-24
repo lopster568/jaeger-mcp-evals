@@ -21,7 +21,7 @@ PREFLIGHT := bash fixture/preflight.sh
 LIST_LICENSE_SRC = git ls-files '*.py' '*.sh' '*.yaml' '*.yml' 'Makefile'
 FMT_LOG=.fmt.log
 
-.PHONY: help setup preflight fixture up phoenix smoke measure run down clean test verify lint lint-license lint-line-endings fmt
+.PHONY: help setup preflight fixture up phoenix smoke measure run down clean test test-ci install-test-tools verify lint lint-license lint-line-endings fmt
 
 help:
 	@echo "Set up"
@@ -37,6 +37,8 @@ help:
 	@echo "  make run     EXPERIMENT=<name or path> [DRY=1] [FIRST=1]   run your own experiment file"
 	@echo "Check"
 	@echo "  make test       offline unit tests"
+	@echo "  make test-ci    the same unit tests under coverage; writes .cover/cover.xml (needs make install-test-tools)"
+	@echo "  make install-test-tools  pip install the pinned coverage package (CI and maintainers only; the harness itself needs no packages)"
 	@echo "  make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
 	@echo "  make lint       license headers and line endings; adds a missing header in place, like Jaeger (shellcheck runs in CI)"
 	@echo "  make fmt        add missing license headers and fix line endings in place"
@@ -88,3 +90,13 @@ fmt:
 	@$(PYTHON) scripts/lint/updateLicense.py $(shell $(LIST_LICENSE_SRC))
 	@echo Running check-line-endings on all files ...
 	@$(PYTHON) scripts/lint/check-line-endings.py -u
+
+# Coverage is a CI and maintainer tool: the harness and make test stay stdlib only.
+install-test-tools:
+	@$(PYTHON) -m pip install "coverage==7.17.2"
+
+# The same suite as make test, under coverage, with an XML report in .cover/cover.xml.
+test-ci:
+	@$(PYTHON) -m coverage run -m unittest discover -s harness/tests
+	@$(PYTHON) -m coverage xml -o .cover/cover.xml
+	@$(PYTHON) -m coverage report

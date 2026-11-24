@@ -9,16 +9,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+      - name: install test tools
+        run: make install-test-tools
       - name: unit tests
-        run: python3 -m unittest discover -s harness/tests
+        run: make test-ci
       - name: scenario readiness
         run: |
           for f in harness/scenarios/*.json; do
