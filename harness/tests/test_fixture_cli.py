@@ -275,11 +275,6 @@ class Setup(unittest.TestCase):
         self.assertNotIn("Goose image", text)
         self.assertIn("claude 2.1.300", text)
 
-    def test_smoke_client_in_the_environment_refuses(self):  # SMOKE_CLIENT=cli make smoke used to run Goose silently
-        rc, text = self.setup_run(SMOKE_CLIENT="cli")
-        self.assertEqual(rc, 1, text)
-        self.assertIn("SMOKE_CLIENT is now CLIENT", text)
-
     def test_a_codex_smoke_shows_codex_and_not_claude(self):
         rc, text = self.setup_run(CLIENT="codex", GRADER_CLIENT="goose")
         self.assertEqual(rc, 0, text)
@@ -483,11 +478,6 @@ class SmokeFile(unittest.TestCase):
             with self.assertRaises(fc.Failed) as e:
                 fc.smoke_file({"CLIENT": raw})
             self.assertEqual(e.exception.text, "CLIENT is %r, not goose, claude or codex" % raw)
-
-    def test_stale_smoke_client_refuses(self):
-        with self.assertRaises(fc.Failed) as e:
-            fc.refuse_smoke_client({"SMOKE_CLIENT": "cli", "CLIENT": "goose"})
-        self.assertEqual(e.exception.text, "SMOKE_CLIENT is now CLIENT")
 
     def test_bench_refuses_the_template(self):
         with self.assertRaisesRegex(ValueError, "is the make smoke template .*; run make smoke, which fills them in"):

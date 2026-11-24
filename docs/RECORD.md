@@ -19,6 +19,8 @@ Every setting comes from the experiment file (docs/USAGE.md, The experiment file
 | `RESULT.md` | `records/<experiment>/` | judge.py's answer for a judged pair, naming both batches; a re-run overwrites it | yes |
 | `INDEX.md` | `records/` | results table and batch list; regenerated after each run and judge | yes |
 
+The trajectories (`stream.jsonl`) are not published, so a batch in `records/` cannot be re-scored from this repository: `verify` re-scores only the runs you have under `RUNS_DIR`.
+
 ## meta.json (50 keys, written before the client starts, rewritten at the end)
 
 | Group | Keys | Source or meaning |

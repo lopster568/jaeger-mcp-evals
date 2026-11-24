@@ -65,7 +65,7 @@ Per scenario, both arms share the scenario version, the neutral prompt, the full
 
 ## Caveats
 
-- Scenario fixes found on this host before any trial counted: paymentUnreachable v3 (the resolver error text differs by host), cartFailure v2 (the signal wait polls the rare EmptyCart operation), emailMemoryLeak v2 (10000x; at 1000x email crashed too rarely for the signal wait). Aborted batches are listed in [records/INDEX.md](../../records/INDEX.md) and count toward no result. The three there with no scores.jsonl (cartFailure v1, emailMemoryLeak v1, paymentUnreachable v2) aborted at the signal wait before the first trial; their cells.jsonl is empty.
+- Scenario fixes found on this host before any trial counted: paymentUnreachable v3 (the resolver error text differs by host), cartFailure v2 (the signal wait polls the rare EmptyCart operation), emailMemoryLeak v2 (10000x; at 1000x email crashed too rarely for the signal wait). Aborted batches count toward no result and are not in `records/`: three (cartFailure v1, emailMemoryLeak v1, paymentUnreachable v2) stopped at the signal wait before the first trial, and one paymentUnreachable v3 batch stopped after one of its ten trials.
 - Every trial on this page ran on a Claude CLI that loaded an operator UI plugin; its init lists only the verdict tool and the Jaeger tools ([docs/TUNING.md](../TUNING.md#things-that-do-not-compare-or-cannot-be-set)).
 - Mechanism grades are from one grader pass; they were not re-graded as the 2.20.0 pair was.
 

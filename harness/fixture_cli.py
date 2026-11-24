@@ -210,12 +210,6 @@ def host_only(cfg):
     return cfg.get("FIXTURE_HOST_ONLY") == "1"
 
 
-def refuse_smoke_client(cfg):
-    if "SMOKE_CLIENT" in cfg or "SMOKE_CLIENT" in os.environ:
-        raise Failed("SMOKE_CLIENT is now CLIENT",
-                     tries=[("rename SMOKE_CLIENT to CLIENT in fixture.env or on the make line", "same values; cli is now claude")])
-
-
 def agent_client(cfg):
     return config.client_name(cfg.get("CLIENT", ""))
 
@@ -627,7 +621,6 @@ def main(argv=None):
         if cmd != "tools":
             header(cmd)
         if cmd in ("setup", "tools", "smoke"):
-            refuse_smoke_client(cfg)
             tools(cfg)
         if cmd == "smoke":
             smoke(cfg, dry)

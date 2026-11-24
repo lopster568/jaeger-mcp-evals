@@ -126,7 +126,7 @@ Log a scenario's `version` bump here the same sitting (bump rule: docs/SCENARIOS
 
 ## 2026-11-23
 
-- Docs: README Quick Start is rewritten to run from a fresh machine (clone, setup, smoke, measure, verify), docs/USAGE.md gains the Ubuntu install step, the key pre-flight limit and the Claude Code install line, and fixture.env.example and `make help` name `cli` as the Claude Code CLI. No scenario, scoring or fixture change; comparable: yes.
+- Docs: README Quick Start is rewritten to run from a fresh machine (copy fixture.env, setup, smoke, measure), docs/USAGE.md gains the Ubuntu install step, the key pre-flight limit and the Claude Code install line, and fixture.env.example and `make help` name `cli` as the Claude Code CLI. No scenario, scoring or fixture change; comparable: yes.
 - Settings: within fixture.env (or the example) the last line for a key wins in `fixture/lib.sh` as it already did in `harness/config.py`; the environment still wins. No run behaviour changes.
 - Setup: `make preflight` runs `docker info` and says whether Docker is not running or this user lacks permission (the docker group), names `~/.local/bin` when `claude` is installed but not on PATH, and prints its claude note only when `SMOKE_CLIENT=cli`.
 - Setup: a failed `make up` step shows the error as the last lines of its output, not the compose config JSON; `make up` also starts Phoenix when its container exists; Ready waits until the smoke scenario's service has 3 baseline traces, so Ready means `make smoke` can start; `make smoke` names which of GOOSE_PROVIDER and GOOSE_MODEL is wrong. No record, score or verify result changes.
