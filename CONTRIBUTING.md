@@ -6,6 +6,10 @@
 
 `make install-test-tools` then `make test-ci` runs the same suite under coverage and writes `.cover/cover.xml` (use a virtual environment if your Python refuses pip installs). CI runs it and prints the coverage table.
 
+## License headers
+
+Every `.py`, `.sh`, `.yml` and `.yaml` file and the Makefile starts with the two-line header `Copyright (c) 2026 The Jaeger Authors.` and `SPDX-License-Identifier: Apache-2.0`; `make lint` adds a missing one. The prompt and word-list files (`harness/grader-prompt.txt`, `harness/leak-words.txt`, `harness/system-prompt.txt`, `harness/prompts/*.txt`) carry none on purpose: they are used byte for byte and their sha256 is recorded in every manifest, so a header would change the input.
+
 ## Experiments, scenarios and records
 
 A run's settings live only in its experiment file (docs/USAGE.md, The experiment file); change one there and say why in its `status`.

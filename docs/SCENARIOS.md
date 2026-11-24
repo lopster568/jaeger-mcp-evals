@@ -5,7 +5,7 @@ file. Running batches and reading results are in docs/USAGE.md.
 
 ## The scenarios
 
-Baseline is the PASS count out of 10 trials on Jaeger main image main-d22c65b9, with the Claude Code CLI and claude-sonnet-5-5, run 2026-11-05/06 (`records/v1-main-d22c65b9-<scenario>/`, baseline arm). Goose baselines are not measured. The "can show" columns below hold for these baselines only: on another client or model the scenario's baseline may differ, and the baseline arm of your own measure is what the result compares against.
+Baseline is the PASS count out of 10 trials on Jaeger main image main-d22c65b9, with the Claude Code CLI and claude-sonnet-5-5, run 2026-11-05/06 (`records/v1-main-d22c65b9-<scenario>/`, baseline arm). A measure needs no recorded baseline, because its own baseline arm is the comparison. The "can show" columns below hold for these recorded Claude baselines only: on another client or model the scenario's baseline may differ.
 
 paymentFailure (deterministic: yes, baseline 10/10). Payment rejects every charge with an "invalid token" error. The error span, message and exception event sit on the leaf span; the checkout and frontend errors are cascading symptoms. It is the easiest scenario and the sanity floor.
 

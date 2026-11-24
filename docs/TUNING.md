@@ -36,7 +36,7 @@ A run is tuned only by editing its experiment file, `harness/experiments/<name>.
 
 ## Guards per client
 
-The checks the harness makes on a run besides the per-call tool check in score.py (any tool other than Jaeger's, plus Goose's `load_skill`, scores INVALID on every client). Goose runs in an image pinned by digest with no extensions; for the others the installed version is recorded, and checked only when `run.client_version` is set.
+The checks the harness makes on a run besides the per-call tool check in score.py (any tool other than Jaeger's scores INVALID on every client; `load_skill` is allowed for Goose only, and is a breach for the claude and codex clients). Goose runs in an image pinned by digest with no extensions; for the others the installed version is recorded, and checked only when `run.client_version` is set.
 
 These are the guard keys of each client's entry in `CLIENTS`, `harness/bench.py`.
 
