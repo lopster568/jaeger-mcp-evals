@@ -38,7 +38,7 @@ help:
 	@echo "Check"
 	@echo "  make test       offline unit tests"
 	@echo "  make verify     re-score every trajectory under RUNS_DIR and check records/INDEX.md"
-	@echo "  make lint       license headers and line endings (free; shellcheck runs in CI)"
+	@echo "  make lint       license headers and line endings; adds a missing header in place, like Jaeger (shellcheck runs in CI)"
 	@echo "  make fmt        add missing license headers and fix line endings in place"
 	@echo "Stop"
 	@echo "  make down       stop the containers; Jaeger's traces are lost (in-memory store), Phoenix keeps its own"
@@ -76,15 +76,15 @@ lint: lint-license lint-line-endings
 
 lint-license:
 	@echo Verifying that all files have license headers
-	@./scripts/lint/updateLicense.py $(shell $(LIST_LICENSE_SRC)) > $(FMT_LOG)
+	@$(PYTHON) scripts/lint/updateLicense.py $(shell $(LIST_LICENSE_SRC)) > $(FMT_LOG)
 	@[ ! -s "$(FMT_LOG)" ] || (echo "License check failures, run 'make fmt'" | cat - $(FMT_LOG) && false)
 
 lint-line-endings:
 	@echo Verifying that all files use Unix line endings, have no trailing whitespace, and end with a final newline at EOF
-	@./scripts/lint/check-line-endings.py
+	@$(PYTHON) scripts/lint/check-line-endings.py
 
 fmt:
 	@echo Running updateLicense.py on LICENSE_SRC ...
-	@./scripts/lint/updateLicense.py $(shell $(LIST_LICENSE_SRC))
+	@$(PYTHON) scripts/lint/updateLicense.py $(shell $(LIST_LICENSE_SRC))
 	@echo Running check-line-endings on all files ...
-	@./scripts/lint/check-line-endings.py -u
+	@$(PYTHON) scripts/lint/check-line-endings.py -u

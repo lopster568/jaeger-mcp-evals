@@ -28,8 +28,7 @@ from pathlib import Path
 # globs; * also matches /). Not in Jaeger's copy.
 EXCLUDE = [
     "harness/scenarios/*.json",  # hashed recorded inputs (bench.py), incl. evidence/*.json
-    "records/*",                 # published records
-    "*.patch",                   # patches need their trailing whitespace
+    "records/*",                 # published records, incl. patches that need their trailing whitespace
 ]
 
 
