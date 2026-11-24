@@ -1,9 +1,58 @@
-# Adding a scenario
+# Scenarios
 
-How to add or edit a `harness/scenarios/*.json` file. Running batches and reading
-results are in docs/USAGE.md.
+What each scenario tests, how to choose one, and how to add or edit a `harness/scenarios/*.json`
+file. Running batches and reading results are in docs/USAGE.md.
 
-## Example
+## The scenarios
+
+Baseline is the PASS count out of 10 trials on Jaeger main image main-d22c65b9, with the Claude Code CLI and claude-sonnet-5-5, run 2026-11-05/06 (`records/v1-main-d22c65b9-<scenario>/`, baseline arm). Goose baselines are not measured.
+
+paymentFailure (deterministic: yes, baseline 10/10). Payment rejects every charge with an "invalid token" error. The error span, message and exception event sit on the leaf span; the checkout and frontend errors are cascading symptoms. It is the easiest scenario and the sanity floor.
+
+paymentUnreachable (deterministic: yes, baseline 10/10). Checkout cannot resolve payment's address, so checkout's own client span fails and payment never has a span. The right answer is the caller (checkout), not the service named in the failing call. The resolver error text differs by host DNS (Docker Desktop or a GCP VM); the span is the same.
+
+cartFailure (deterministic: yes, baseline 8/10). Cart's EmptyCart fails to reach its store while AddItem and GetCart work. Checkout discards the error and PlaceOrder returns OK, so the failure sits under an OK parent. Slow requests and frontend-proxy timeouts upstream are symptoms. Cart is restarted before a run.
+
+emailMemoryLeak (deterministic: bucketed, baseline 9/10). Email grows memory on every request until it is OOM-killed and restarted. In-flight calls end on checkout's client span with EOF or connection reset, and no email server span exists for them. Memory is not in trace data; naming the crash and restart is enough. Restarts are expected during trials.
+
+recommendationCacheFailure (deterministic: bucketed, baseline 0/10, all PARTIAL). No span has ERROR status. The signal is a span attribute (`demo.product.count`) that climbs into the millions and is visible only through get_span_details. The frontend slowdown appears only late. The service OOM-restarts in a cycle, and connection errors during restarts are symptoms. A batch waits for the first restart. Bucketed: the direction is certain, the rate depends on load.
+
+adFailure (deterministic: no, baseline 6/10). Ad fails about 1 in 10 GetAds requests at random by design, even with the flag fully on, with a transient UNAVAILABLE status that the frontend passes up. It is noisy by construction and not a good target for measuring a change.
+
+## Choosing a scenario
+
+Pick the scenario whose trace pattern your change is about:
+
+| Your change is about | Run | At N=10 it can show |
+|---|---|---|
+| reading span attributes beyond error status (`get_span_details`) | recommendationCacheFailure | better only |
+| an error on the leaf span, with its message and exception event | paymentFailure | worse only |
+| a failing client span whose server span never exists, so the caller is the cause | paymentUnreachable | worse only |
+| a service that crashes and restarts, seen as dropped connections in its callers | emailMemoryLeak | worse only |
+| an error that the caller swallows under an OK parent | cartFailure | worse only |
+
+- To check that you broke nothing, run the scenario nearest to what you touched.
+- A scenario at 6/10 or above can only catch a regression at N=10.
+- adFailure is noisy by design; do not use it to measure a change.
+- Raising `N` costs proportionally more trials.
+
+What a measure can show at the default N=10, using the harness's two-sided Fisher exact test (`bench.fisher_p`) at 0.05:
+
+| Baseline | Better | Worse |
+|---|---|---|
+| 0/10 | the change at 5/10 or more (p 0.0325) | not possible |
+| 6/10 | not possible (6 against 10 gives p 0.0867) | 0/10 |
+| 8/10 | not possible (8 against 10 gives p 0.4737) | 2/10 or below |
+| 9/10 | not possible | 3/10 or below |
+| 10/10 | not possible | 5/10 or below |
+
+At larger N: base 12/20 needs 19/20 to show better; base 16/20 cannot show better; base 18/30 needs 26/30; base 24/30 needs 30/30.
+
+Both `make measure` records so far are on recommendationCacheFailure: `records/measure-recommendationCacheFailure-6aee67e4` (0/10 to 10/10) and `records/measure-recommendationCacheFailure-b6ad85f8` (2/10 to 10/10), both EXPERIMENT PASS (see their RESULT.md).
+
+## Adding a scenario
+
+### Example
 
 [harness/scenarios/paymentFailure.json](../harness/scenarios/paymentFailure.json), the simplest scenario: the payment service rejects every charge, and the error span carries the message.
 
@@ -41,7 +90,7 @@ results are in docs/USAGE.md.
 }
 ```
 
-## The file
+### The file
 
 Keys, as in the example above:
 
@@ -80,13 +129,13 @@ Keys, as in the example above:
 - `signal_operation` (optional): a span name. The signal wait searches only traces with that operation,
   for a fault on a call too rare to appear among the newest 50 traces of `ground_truth.service`.
 
-## The evidence traces
+### The evidence traces
 
 Captured by hand into `harness/scenarios/evidence/<scenario>.trace.json` (flag on) and `<scenario>.baseline.json` (flag off); no `bench.py` code writes them.
 Flip the flag, confirm over OFREP, wait for fresh traces, then pull one trace of each.
 Flag flip: fixture/FIXTURE.md. Wait and confirm sequence: docs/USAGE.md, Run a batch.
 
-## Gates before a pilot
+### Gates before a pilot
 
 All three must be green before a scenario's first pilot batch:
 
@@ -98,7 +147,7 @@ All three must be green before a scenario's first pilot batch:
 - `python3 harness/bench.py oracle <scenario>` against the live fixture: the
   `oracle` call sequence returns the signal through the served MCP tools.
 
-## Changelog rule
+### Changelog rule
 
 An edit that changes what PASS means or which trajectories are comparable to
 earlier runs bumps `version` and gets a line in CHANGELOG.md: date, scenario, old
