@@ -9,6 +9,7 @@ score.py; the recipe; the container cleanup.
 Run with: python3 -m unittest discover harness/tests
 Python 3 stdlib only, no network, no LLM, no docker (a fake docker on PATH where one is needed).
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -198,6 +199,13 @@ class TestMapping(Scored):
         self.assertEqual((r["subtype"], r["structured_output"]), ("error_during_execution", {"x": 1}))
         r = goose_client.to_stream(events + [{"type": "complete"}], "", "m", "1", returncode=None)[-1]  # stopped after complete
         self.assertEqual(r["subtype"], "error_during_execution")
+
+    def test_the_wrapper_is_jaegers_copy(self):
+        # sha256 of `git show f9046f3dad:scripts/ai-sidecar/goose/goose-without-extensions.sh` in jaegertracing/jaeger
+        # (also Jaeger main 8e07bbf4ba, 2026-11-24). A bump of the demo's Goose means updating IMAGE, this sha and
+        # re-recording tests/data/goose together.
+        with open(goose_client.WRAPPER, "rb") as f:
+            self.assertEqual(hashlib.sha256(f.read()).hexdigest(), "541f6a5a6032c83e2c222361162927ba166999369465663481c576e6242eb507")
 
     def test_docker_argv_mounts_work_by_absolute_path(self):
         argv = goose_client.docker_argv("n", False, os.path.join("runs", "b", "0-a", "goose"), "anthropic", "m", "high", 5)

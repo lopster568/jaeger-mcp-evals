@@ -14,8 +14,11 @@ log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) forward.sh: $1" >&2; }
 
 # The ports to forward, one per line.
 fwd_ports() { echo "$JAEGER_UI_PORT"; echo "$OFREP_PORT"; [ -n "$PHOENIX" ] && echo "$PHOENIX_PORT"; }
-# The -L arguments, bound on FIXTURE_HOST.
-fwd_args() { local p; for p in $(fwd_ports); do printf -- '-L\n%s:%s:127.0.0.1:%s\n' "$FIXTURE_HOST" "$p" "$p"; done; }
+# The -L arguments, bound on FIXTURE_HOST; ssh takes an IPv6 bind address only in brackets.
+fwd_args() {
+  local p h=$FIXTURE_HOST; [[ $h == *:* ]] && h="[$h]"
+  for p in $(fwd_ports); do printf -- '-L\n%s:%s:127.0.0.1:%s\n' "$h" "$p" "$p"; done
+}
 loopback() { [[ $1 =~ ^(localhost|127\.[0-9.]+|::1)$ ]]; }
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0  # sourced by the unit test: functions only
@@ -34,8 +37,7 @@ if [ -n "$CHECK" ]; then
 fi
 
 [ -n "$TARGET" ] || die "usage: forward.sh [--phoenix] SSH_TARGET | --check"
-# shellcheck disable=SC2207  # fwd_args prints space-free -L specs, one per word
-L=($(fwd_args))  # no mapfile: macOS bash 3.2
+L=(); while IFS= read -r x; do L+=("$x"); done < <(fwd_args)  # no mapfile: macOS bash 3.2; no word split: [::1] would glob
 trap 'kill "$pid" 2>/dev/null; log "stopped"; exit 0' INT TERM
 while :; do
   log "starting ssh -N to $TARGET: $(fwd_ports | tr '\n' ' ')"

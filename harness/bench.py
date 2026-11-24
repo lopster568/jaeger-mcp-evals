@@ -185,6 +185,16 @@ def fixture_sh(cfg, cmd, stdin_text=None, timeout=120):
         return subprocess.CompletedProcess([], 255, "", str(e))
 
 
+# The fixture's overlay hashes; POSIX sh only: ssh login shells vary. sha256sum, or where it is absent (macOS)
+# shasum -a 256, which prints the same "<hash>  <name>" lines, so a hash does not depend on the host.
+SHA256_SH = '{ command -v sha256sum >/dev/null 2>&1 || sha256sum() { shasum -a 256 "$@"; }; } && '  # && keeps fixture_sh's cd guard
+OVERLAY_SHA = SHA256_SH + "sha256sum overlay/* .env.override"
+# Same overlay without the *.bak files make setup writes and without the image line, so two arms on
+# different images hash equal (judge.py's cross-experiment check).
+OVERLAY_SHA_SANS_IMAGE = SHA256_SH + ("{ sha256sum $(ls overlay/* | grep -v '\\.bak$'); "
+                                      "grep -v '^JAEGERTRACING_IMAGE=' .env.override | sha256sum; }")
+
+
 def http_json(url, body=None, timeout=20):
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"},
                                  method="POST" if body is not None else "GET")
@@ -888,7 +898,7 @@ def cli_argv(a, prompt_file, mcp_config, trial):
 
 
 def goose_argv(a, prompt_file, mcp_config, trial):
-    return [sys.executable, GOOSE_CLIENT, "--provider", a.provider, "--model", a.model, "--effort", a.effort,
+    return [sys.executable, GOOSE_CLIENT, "--provider", a.provider, "--model", a.model, "--effort", a.effort or "",
             "--max-turns", str(a.max_turns), "--prompt-file", prompt_file, "--system-prompt-file", SYSTEM_PROMPT,
             "--schema-file", VERDICT_SCHEMA, "--mcp-config", mcp_config, "--out-dir", trial] + (
                 ["--client-version", a.client_pre] if a.client_pre else [])
@@ -1095,7 +1105,8 @@ def load_experiment(path):
     else:
         check(r["provider"] is None, "run.provider must be null for client %s" % r["client"])
     check(isinstance(r["model"], str) and r["model"], "run.model must be a non-empty string")
-    check(r["effort"] in EFFORTS, "run.effort must be one of %s" % ", ".join(EFFORTS))
+    check(r["effort"] in EFFORTS or (r["effort"] is None and rc == "goose"),  # goose: null sends none, as the Jaeger demo
+          "run.effort must be one of %s, or null for client goose" % ", ".join(EFFORTS))
     check(is_int(r["max_turns"]) and r["max_turns"] > 0, "run.max_turns must be a positive integer")
     if CLIENTS[rc]["budget_cap"] or "max_budget_usd" in r:  # optional where no client enforces it
         check(type(r.get("max_budget_usd")) in (int, float) and r["max_budget_usd"] > 0, "run.max_budget_usd must be a positive number")
@@ -1175,7 +1186,7 @@ def run(a, cfg):
     STAGES = 4 if a.dry_run else 6  # a dry run stops after the demo checks: no fault, no evidence
     log.detail("bench: experiment=%s scenario=%s flag=%s activation=defaultVariant:%s client=%s model=%s effort=%s n_per_arm=%d"
                % (a.experiment, a.scenario, flag, act["value"], a.client, a.model, a.effort, a.n_per_arm))
-    log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join((a.client, a.model, a.effort)),
+    log(paint("1", " \u00b7 ".join((a.experiment, a.scenario, " ".join((a.client, a.model, a.effort or "no effort")),
                                      "%d per arm" % a.n_per_arm))))
     log.stage(1, STAGES, "Agent and grader", "the versions in use, recorded so two runs compare")
 
@@ -1216,9 +1227,21 @@ def run(a, cfg):
         except (OSError, subprocess.TimeoutExpired):
             pass
         log.detail("pre-flight: grader CLI %s" % grader_cli)
-        if not log.check(bool(grader_cli), "grader %s" % grade.GRADER_MODEL):
-            return die("ABORT - the claude mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
-                       fix="install the Claude Code CLI and log in (run `claude` once), or set GRADER_CLIENT=goose to grade through Goose")
+        # make measure and make run skip preflight.sh: a logged-out grader would fail only after the paid trials.
+        # run.bill_api_key: the grader bills ANTHROPIC_API_KEY, so its login is not used.
+        login = a.bill_api_key
+        if grader_cli and not login:
+            try:
+                login = subprocess.run([grade.CLAUDE, "auth", "status"], capture_output=True, stdin=subprocess.DEVNULL,
+                                       env=grade.child_env(), timeout=60).returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if not log.check(bool(grader_cli) and login, "grader %s" % grade.GRADER_MODEL):
+            if not grader_cli:
+                return die("ABORT - the claude mechanism grader needs the Claude Code CLI (%s --version failed); nothing was touched" % grade.CLAUDE,
+                           fix="install the Claude Code CLI and log in (run `claude` once), or set GRADER_CLIENT=goose to grade through Goose")
+            return die("ABORT - the claude mechanism grader is not logged in (%s auth status failed); nothing was touched" % grade.CLAUDE,
+                       fix="run %s, then /login, or set GRADER_CLIENT=goose to grade through Goose" % grade.CLAUDE)
     else:
         bad = None if client["docker"] else goose_docker(log)
         if bad:
@@ -1236,7 +1259,10 @@ def run(a, cfg):
         log.check(True, "grader goose %s %s, %s set%s" % (grade.PROVIDER, grade.GRADER_MODEL, gkey,
                   " (codex has no grader client)" if a.client == "codex" and not cfg.get("GRADER_CLIENT") else ""))
     line = "agent model %s, grader model %s. %s" % (a.model, grade.GRADER_MODEL, grade.WARNING)
-    if a.model == grade.GRADER_MODEL:
+    validated = (grade.CLIENT, grade.GRADER_MODEL) == grade.VALIDATED
+    if not validated:
+        line = "grader %s %s is not validated (only %s %s is, docs/TUNING.md); %s" % (grade.CLIENT, grade.GRADER_MODEL, *grade.VALIDATED, line)
+    if validated and a.model == grade.GRADER_MODEL:
         log.check(True, line)
     else:
         log.sub("WARNING: " + line)
@@ -1284,12 +1310,9 @@ def run(a, cfg):
     any_tools = any(tools_for[arm] for arm in arms)
     r = fixture_sh(cfg, "git rev-parse HEAD")
     otel_demo_ref = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unresolved"
-    r = fixture_sh(cfg, "sha256sum overlay/* .env.override")
+    r = fixture_sh(cfg, OVERLAY_SHA)
     overlay_sha = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else None
-    # Same overlay without the *.bak files make setup writes and without the image line, so two arms on
-    # different images hash equal (judge.py's cross-experiment check). POSIX sh only: ssh login shells vary.
-    r = fixture_sh(cfg, "{ sha256sum $(ls overlay/* | grep -v '\\.bak$'); "
-                        "grep -v '^JAEGERTRACING_IMAGE=' .env.override | sha256sum; }")
+    r = fixture_sh(cfg, OVERLAY_SHA_SANS_IMAGE)
     overlay_sha_sans_image = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else None
     git = lambda *args: subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True).stdout.strip()
     harness_sha, harness_dirty = git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--", "harness", "fixture"))
@@ -2150,7 +2173,7 @@ def index_text(runs):
             "-".join(date.groups()),
             m["scenario"],
             ", ".join("%s %d" % (arm, n[arm]) for arm in arms),
-            "%s %s" % (m["client"], m["model_requested"]), ", ".join(observed) or NOT_RECORDED, m["effort"],
+            "%s %s" % (m["client"], m["model_requested"]), ", ".join(observed) or NOT_RECORDED, m["effort"] or "none",
             m["client_version_pre"] or NOT_RECORDED, m["jaeger_image"], m["experiment"]["name"],
             ", ".join("%s %s" % (arm, "/".join(str(sum(1 for s in by[arm] if s.get("verdict") == v)) for v in ("PASS", "PARTIAL", "FAIL", "ABSTAIN", "INVALID", "LEAK"))) for arm in arms),
             ", ".join("%s %d" % (arm, band_code(n[arm], sum(1 for s in by[arm] if s.get("verdict") == "PASS"))) for arm in arms),

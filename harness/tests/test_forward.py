@@ -31,6 +31,26 @@ class Forward(unittest.TestCase):
         self.assertEqual(bash('PHOENIX=; . %s; fwd_args' % SCRIPT).stdout.split(),
                          ["-L", "127.0.0.3:16686:127.0.0.1:16686", "-L", "127.0.0.3:8016:127.0.0.1:8016"])
 
+    def test_an_ipv6_bind_is_bracketed(self):  # ssh rejects -L ::1:16686:... as a bad forwarding specification
+        with tempfile.TemporaryDirectory() as d:
+            shim = pathlib.Path(d, "ssh")
+            shim.write_text('#!/bin/bash\nprintf "%%s\\n" "$@" > %s/args\nexit 255\n' % d)
+            shim.chmod(0o755)
+            pathlib.Path(d, "1:16686:127.0.0.1:16686").write_text("")  # what [::1]:16686:... globs to if split unquoted
+            env = dict(ENV, FIXTURE_HOST="::1", PATH=d + os.pathsep + os.environ["PATH"], FORWARD_SLEEP="5")
+            p = subprocess.Popen([SCRIPT, "vm-target"], env=env, cwd=d, stderr=subprocess.DEVNULL,
+                                 preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+            self.addCleanup(p.kill)
+            for _ in range(50):
+                if os.path.exists(os.path.join(d, "args")):
+                    break
+                time.sleep(0.1)
+            p.send_signal(signal.SIGINT)
+            p.wait(timeout=10)
+            args = pathlib.Path(d, "args").read_text().splitlines()
+        self.assertIn("[::1]:16686:127.0.0.1:16686", args)
+        self.assertIn("[::1]:8016:127.0.0.1:8016", args)
+
     def test_ssh_commands_carry_the_bind(self):
         """A compose command run over ssh must see the fixture host's bind, or a recreate rebinds loopback."""
         env = dict(ENV, FIXTURE_SSH_USER="u")

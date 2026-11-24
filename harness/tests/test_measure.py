@@ -54,6 +54,8 @@ class Measure(unittest.TestCase):
         runs = [l for l in out if "bench.py run" in l]
         self.assertEqual(len(runs), 2)
         self.assertTrue(all(l.endswith("--no-export") for l in runs), runs)
+        # no colour, so the Batch line parses with POSIX sed: FORCE_COLOR emptied, as it wins over NO_COLOR
+        self.assertTrue(all(l.startswith("+ env FORCE_COLOR= NO_COLOR=1 ") for l in runs), runs)
         tail = [l for l in out if "judge.py" in l or "bench.py export" in l]
         self.assertIn("judge.py", tail[0])
         self.assertEqual([l.split("bench.py ")[-1] for l in tail[1:]], ["export <baseline batch dir>", "export <variant batch dir>"])
@@ -67,10 +69,12 @@ class Measure(unittest.TestCase):
         run = self.planned_pair()["run"]
         self.assertEqual((run["client"], run["provider"], run["model"]), ("goose", "openrouter", "vendor/model-x"))
         self.assertNotIn("bill_api_key", run)
+        self.assertIsNone(run["effort"])  # no GOOSE_THINKING_EFFORT, as the Jaeger demo
 
     def test_client_claude_runs_the_claude_cli_on_the_api_key(self):
         run = self.planned_pair("--client", "claude", ANTHROPIC_API_KEY="k")["run"]
-        self.assertEqual((run["client"], run["provider"], run["model"], run["bill_api_key"]), ("claude", None, "claude-sonnet-5-5", True))
+        self.assertEqual((run["client"], run["provider"], run["model"], run["bill_api_key"], run["effort"]),
+                         ("claude", None, "claude-sonnet-5-5", True, "high"))
         self.assertEqual(self.planned_pair("--client", "cli", ANTHROPIC_API_KEY="k")["run"], run)  # the old name, the same file
 
     def test_client_from_the_environment_without_a_flag(self):

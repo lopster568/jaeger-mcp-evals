@@ -138,6 +138,13 @@ class TestClaudeBatch(CliCase):
                 self.assertNotIn("sk-test-secret", read(path), path)
         self.assertNotIn("sk-test-secret", json.dumps([c["argv"] for c in self.calls()]))
 
+    def test_bill_api_key_skips_the_grader_login_check(self):
+        self.addCleanup(setattr, bench.grade, "API_KEY", None)
+        self.assertEqual(self.run_batch(1, "--dry-run", run={"bill_api_key": True}, ANTHROPIC_API_KEY="sk-x", FAKE_LOGGED_OUT="1"), 0, self.err)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "auth-calls.jsonl")))  # the grader bills the key: its login is unused
+        self.assertEqual(self.run_batch(1, "--dry-run", FAKE_LOGGED_OUT="1"), 1)
+        self.assertIn("grader is not logged in", self.err)
+
     def test_bill_api_key_aborts_when_the_stream_reports_another_source(self):
         self.addCleanup(setattr, bench.grade, "API_KEY", None)
         self.assertEqual(self.run_batch(2, run={"bill_api_key": True}, ANTHROPIC_API_KEY="sk-x", FAKE_KEY_SOURCE="none"), 4)

@@ -26,7 +26,7 @@ FMT_LOG=.fmt.log
 help:
 	@echo "Set up"
 	@echo "  make setup      preflight, fixture, up (and the Goose image) and phoenix: everything free, in order"
-	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.11 and the ports (claude is noted, needed when it is the client or the grader)"
+	@echo "  make preflight  check docker, Docker Compose 2.24 or newer, git, curl, python 3.11 and the ports (the claude grader, GRADER_BIN, must be logged in; a claude agent is noted)"
 	@echo "  make fixture    clone the OpenTelemetry Demo 3.0.0 into FIXTURE_DEMO_DIR, install the overlay"
 	@echo "  make up         pull missing images, start the demo, wait (10 min at most) until it answers"
 	@echo "  make phoenix    start the optional Phoenix trajectory store"

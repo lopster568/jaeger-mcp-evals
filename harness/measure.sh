@@ -91,8 +91,9 @@ done
 "${PYTHON:-python3}" - "$EXP_FILE" "$EXP" "$SCENARIO" "$N" "$BASE_TAG" "$CHANGE_TAG" "$BS" "$HS" "$DRY" "$CLIENT" "${GOOSE_PROVIDER:-}" "$MODEL" <<'PY' || exit 2
 import json, os, sys, datetime
 path, name, scenario, n, base, change, bs, hs, dry, client, provider, model = sys.argv[1:]
-run = {"client": client, "provider": provider if client == "goose" else None, "model": model, "effort": "high",
-       "max_turns": 30, "n_per_arm": int(n), "seed": None}
+# goose: no effort, so no GOOSE_THINKING_EFFORT, as the Jaeger demo's scripts/ai-sidecar/goose
+run = {"client": client, "provider": provider if client == "goose" else None, "model": model,
+       "effort": None if client == "goose" else "high", "max_turns": 30, "n_per_arm": int(n), "seed": None}
 if client == "claude":
     run.update(max_budget_usd=2, bill_api_key=True)  # claude only; goose bills the provider's key itself and has no budget cap
 doc = {
@@ -167,11 +168,13 @@ echo "measure: fixture runs $ORIG now; it is restored at the end"
 arm_run() {  # arm tag: swap, wait, run; sets BATCH
   run bash "$HERE/../fixture/swap-jaeger.sh" "$2" || die "swap to $2 failed"
   if [ "$DRY" -eq 1 ]; then echo "+ sleep $SETTLE"; else sleep "$SETTLE"; fi
-  if [ "$DRY" -eq 1 ]; then echo "+ ${PYTHON:-python3} harness/bench.py run $EXP_FILE --no-export"; BATCH="<$1 batch dir>"; return; fi
+  # No colour, so the Batch line parses without stripping escapes (GNU sed only); FORCE_COLOR would win over NO_COLOR.
+  local bench=(env FORCE_COLOR= NO_COLOR=1 "${PYTHON:-python3}" harness/bench.py run "$EXP_FILE" --no-export)
+  if [ "$DRY" -eq 1 ]; then echo "+ ${bench[*]}"; BATCH="<$1 batch dir>"; return; fi
   local out; out=$(mktemp)
-  "${PYTHON:-python3}" harness/bench.py run "$EXP_FILE" --no-export 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr
+  "${bench[@]}" 2>&1 | tee "$out"  # bench.py's screen log, Batch line included, is on stderr
   [ "${PIPESTATUS[0]}" -eq 0 ] || die "bench.py run failed for the $1 arm; the pair is discarded (see docs/USAGE.md, Protocol)"
-  BATCH=$(sed 's/\x1b\[[0-9;]*m//g' "$out" | sed -n 's/^Batch  *\([^ ]*\).*/\1/p' | tail -1)
+  BATCH=$(sed -n 's/^Batch  *\([^ ]*\).*/\1/p' "$out" | tail -1)
   rm -f "$out"
   BATCH=$([ -n "$BATCH" ] && cd "$ROOT" && cd "$BATCH" 2>/dev/null && pwd) || die "bench.py run left no batch directory for the $1 arm"
 }
