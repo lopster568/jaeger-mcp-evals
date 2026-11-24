@@ -62,6 +62,7 @@ Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 
 | `make measure` | your Jaeger commit against its base, judged by Fisher's exact test | PAID; free with `DRY=1` |
 | `make run` | your own experiment file | PAID; free with `DRY=1` |
 | `make test` | offline unit tests | free |
+| `make lint` | license headers and line endings; it adds a missing header in place, as Jaeger's does, and `make fmt` also fixes line endings; CI also runs shellcheck | free |
 | `make verify` | re-scores every trajectory under `RUNS_DIR` and checks `records/INDEX.md` | free |
 | `make down` | stops the containers; Jaeger's traces are lost, Phoenix keeps its own | free |
 | `make clean` | removes the containers and network, keeping volumes and images | free |
