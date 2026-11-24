@@ -127,7 +127,7 @@ A batch aborts before the flag flips on:
 |---|---|
 | No arm matches | only arms whose `image` equals `docker inspect jaeger` run; run other images as separate batches |
 | Instructions mismatch | an arm whose image record has an `instructions` key must serve the MCP `instructions` string equal (trimmed) to that file under `harness/experiments/instructions/`; absent or null is recorded only (`instructions_sha256` in the manifest) |
-| Failed gate | leak scan, readiness or sandbox probe (claude); `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 |
+| Failed gate | leak scan, readiness or sandbox probe (claude); `status` has `DRAFT`; wrong client version; mean `bi` of `vmstat 5 3` over 50000 (a demo host without vmstat, such as macOS, gets a WARN instead) |
 
 The oracle (docs/SCENARIOS.md) runs after the flag flips and only warns; it never aborts a batch.
 

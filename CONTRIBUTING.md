@@ -18,6 +18,10 @@ Commit the batch records `bench.py run` copies into `records/`, with `records/IN
 The inputs of the recorded batches (experiment files, image records, patches, instructions) are under `records/inputs/`; a new experiment starts in `harness/experiments/`.
 `stream.jsonl`, `stderr.txt` and the per-cell directories carry session identifiers and stay under `RUNS_DIR`, never in git (.gitignore).
 
+## Goose pin
+
+`IMAGE` in `harness/goose_client.py` and `harness/goose/goose-without-extensions.sh` are copies of Jaeger's `scripts/ai-sidecar/goose`: the image in its `docker-compose.yml` and its wrapper script. A Goose bump means: set `IMAGE` to the demo's new image (tag and digest), copy the wrapper byte for byte, put its sha256 and the Jaeger commit it came from in `test_the_wrapper_is_jaegers_copy` (`harness/tests/test_goose.py`), and re-record the six cases under `harness/tests/data/goose/` (each a `stdout.jsonl` and `goose-stderr.txt` from the new Goose on a stub model). The Goose version and Jaeger commit named in the goose_client.py and test_goose.py docstrings and in docs/USAGE.md change with it.
+
 ## Sign-off
 
 Every commit needs a Developer Certificate of Origin sign-off, as in jaegertracing/jaeger:

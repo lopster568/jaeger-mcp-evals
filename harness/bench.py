@@ -1428,12 +1428,14 @@ def run(a, cfg):
     bi_mean = vmstat_bi_mean(vmstat_out)
     pre["thrash"] = {"bi_mean_non_first": bi_mean, "loadavg": loadavg_out.strip() or None}
     log.detail("pre-flight: vmstat bi mean(non-first)=%s loadavg=%s" % (bi_mean, pre["thrash"]["loadavg"]))
-    busy = bi_mean is None or bi_mean > 50000
-    if not log.check(not busy, "host not busy" if not busy else "host busy: %s disk blocks/s read (limit 50000)" % bi_mean
-                     if bi_mean is not None else "host load unreadable (vmstat gave no numbers)"):
+    if bi_mean is None:  # a macOS host (Docker Desktop) has no vmstat and no /proc: warn, do not abort
+        pre["thrash"]["unreadable"] = "vmstat gave no numbers" if vmstat_out.strip() else "no vmstat on the demo host (not Linux)"
+        log(paint(YELLOW, "  WARN  host load unreadable (%s); the host-thrash check was skipped" % pre["thrash"]["unreadable"]))
+    elif not log.check(bi_mean <= 50000, "host not busy" if bi_mean <= 50000 else "host busy: %s disk blocks/s read (limit 50000)" % bi_mean):
         return die(NOTOUCH, fix="wait for other jobs on this machine to finish, then run again")
 
     pristine, flagfile = shlex.quote(cfg["FIXTURE_PRISTINE_FLAG_FILE"]), shlex.quote(cfg["FIXTURE_FLAG_FILE"])
+    restore_cmd = "cp %s %s" % (pristine, flagfile)
     log.detail("== pre-flight: flag %r currently at default per OFREP ==" % flag)
     r = fixture_sh(cfg, "cat %s" % pristine)
     try:
@@ -1444,7 +1446,8 @@ def run(a, cfg):
                    fix="check FIXTURE_PRISTINE_FLAG_FILE (harness/config.py, or fixture.env if set there) points at the pristine copy (make up creates it)")
     current = ofrep_variant(cfg, flag)
     if current != default_variant:
-        return die("ABORT - OFREP reports %r=%r, default is %r" % (flag, current, default_variant))
+        return die("ABORT - OFREP reports %r=%r, default is %r" % (flag, current, default_variant),
+                   fix="on the fixture host, in %s, run `%s`, then run again" % (cfg["FIXTURE_DEMO_DIR"], restore_cmd))
     log.detail("pre-flight: flag %r at default (%r) - OK" % (flag, default_variant))
     log.check(True, "fault flag at default (%s)" % default_variant)
 
@@ -1558,7 +1561,6 @@ def run(a, cfg):
 
     plan = order[:1] if a.first_only else order
     flip_cmd = "python3 - %s %s %s" % (flagfile, shlex.quote(flag), shlex.quote(act["value"]))
-    restore_cmd = "cp %s %s" % (pristine, flagfile)
 
     if a.dry_run:
         log.section("DRY RUN: planned cell order", paint(DIM, "  (seed=%d%s)" % (seed, ", first only" if a.first_only else "")))

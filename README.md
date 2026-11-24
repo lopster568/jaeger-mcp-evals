@@ -36,6 +36,8 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 
    The last line says whether your commit is better, worse, or not significantly different. Below 10 trials per arm a result only ranks the two.
 
+   With the default `CLIENT=goose` each answer is graded by Goose on the agent's own model, which is not a validated grader ([docs/TUNING.md](docs/TUNING.md)). Set `GRADER_CLIENT=claude` in `fixture.env` to grade with the validated one, the Claude Code CLI on `claude-fable-5-1`; it needs a Claude login.
+
 ## Scenarios
 
 | Scenario | What breaks | Recorded PASS (Claude CLI) | At N=10 it can show |
@@ -90,7 +92,7 @@ With `CLIENT=claude`, `make smoke` uses your claude.ai login and `make measure` 
 
 ## Layout and documentation
 
-`Makefile` and `fixture/` bring the demo up. `harness/` holds `bench.py`, `measure.sh`, the scenarios, prompts and experiment files. `records/` holds checked-in results, `runs/` the raw trajectories (git-ignored). `docs/` holds the manual; `docs/results/` the written-up experiment results.
+`Makefile` and `fixture/` bring the demo up. `harness/` holds `bench.py`, `measure.sh`, the scenarios, prompts and experiment files. `records/` holds checked-in results, `runs/` the raw trajectories (git-ignored and not published, so a published batch cannot be re-scored from this repository). `docs/` holds the manual; `docs/results/` the written-up experiment results.
 
 - [docs/USAGE.md](docs/USAGE.md): stop and restart, review a result, where results land, glossary, the experiment file, protocol
 - [docs/SCENARIOS.md](docs/SCENARIOS.md): the scenarios, choosing one, adding one; [docs/RECORD.md](docs/RECORD.md): every recorded key

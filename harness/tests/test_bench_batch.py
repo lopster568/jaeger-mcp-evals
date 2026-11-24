@@ -868,6 +868,24 @@ class TestBatch(BenchCase):
         self.assertEqual(glob.glob(os.path.join(self.runs, "*", "batch-*")), [])
         self.assertEqual(self.calls(), [])
 
+    def test_busy_host_aborts_and_a_host_without_vmstat_warns(self):
+        vmstat = os.path.join(self.binp, "vmstat")
+        pathlib.Path(vmstat).write_text(VMSTAT.replace("   150 ", " 60000 ").replace("   180 ", " 60000 "))
+        self.assertEqual(self.run_batch(1), 1, self.err)
+        self.assertIn("host busy: 60000 disk blocks/s read (limit 50000)", self.err)
+        pathlib.Path(vmstat).write_text("#!/bin/sh\necho 'vmstat: command not found' >&2\nexit 127\n")  # macOS: no vmstat
+        self.assertEqual(self.run_batch(1), 0, self.err)
+        self.assertIn("WARN  host load unreadable (no vmstat on the demo host (not Linux)); the host-thrash check was skipped", self.err)
+        thrash = load(os.path.join(self.batch_dir(), "preflight.json"))["thrash"]
+        self.assertEqual((thrash["bi_mean_non_first"], thrash["unreadable"]), (None, "no vmstat on the demo host (not Linux)"))
+
+    def test_flag_not_at_default_aborts_with_the_restore_command(self):
+        with mock.patch.object(bench, "ofrep_variant", return_value="100%"):
+            self.assertEqual(self.run_batch(1), 1, self.err)
+        self.assertIn("ABORT - OFREP reports 'paymentFailure'='100%', default is 'off'", self.err)
+        self.assertIn("fix: on the fixture host, in otel-demo-3.0.0, run "
+                      "`cp overlay/demo.flagd.json.pristine src/flagd/demo.flagd.json`, then run again", self.err)
+
     def test_failed_check_shows_its_detail_on_screen(self):
         self.assertEqual(self.run_batch(1, FIXTURE_DEMO_DIR="no-such-dir"), 1)
         self.assertIn("FAIL  demo reachable", self.err)
