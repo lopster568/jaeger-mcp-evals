@@ -47,6 +47,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 | `make measure` | your Jaeger commit against its base, judged by Fisher's exact test | PAID; free with `DRY=1` |
 | `make run` | your own experiment file | PAID; free with `DRY=1` |
 | `make test` | offline unit tests | free |
+| `make lint` | license headers and line endings (`make fmt` fixes them); CI also runs shellcheck | free |
 | `make verify` | re-scores every trajectory under `RUNS_DIR` and checks `records/INDEX.md` | free |
 | `make down` | stops the containers; Jaeger's traces are lost, Phoenix keeps its own | free |
 | `make clean` | removes the containers and network, keeping volumes and images | free |

@@ -2,7 +2,7 @@
 
 ## Tests
 
-`python3 -B -m unittest discover -s harness/tests` runs the suite offline, with no fixture, no agent and no network beyond localhost; CI runs it on every push and pull request to main.
+`python3 -B -m unittest discover -s harness/tests` runs the suite offline, with no fixture, no agent and no network beyond localhost; CI runs it on every push and pull request to main. `make lint` checks license headers and line endings, and CI also runs shellcheck on the shell scripts; `make fmt` fixes the headers and line endings.
 
 ## Experiments, scenarios and records
 

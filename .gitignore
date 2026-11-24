@@ -9,3 +9,4 @@ dist/
 harness/experiments/smoke-*.json
 !harness/experiments/smoke-paymentfailure.json
 harness/experiments/images/measure-*.json
+.fmt.log
