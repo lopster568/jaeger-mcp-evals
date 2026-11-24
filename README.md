@@ -32,7 +32,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
    make measure JAEGER=~/jaeger SCENARIO=recommendationCacheFailure
    ```
 
-   Pick the scenario from Scenarios below. At 10 trials only recommendationCacheFailure, at 0/10, can show an improvement; the others can only catch a regression.
+   Pick the scenario from Scenarios below. On the Claude baselines below, only recommendationCacheFailure (0/10) can show an improvement at 10 trials; the others can only catch a regression.
 
    The last line says whether your commit is better, worse, or not significantly different. Below 10 trials per arm a result only ranks the two.
 
@@ -40,7 +40,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 
 | Scenario | What breaks | Baseline PASS | At N=10 it can show |
 |---|---|---|---|
-| `recommendationCacheFailure` | a cache grows until the service OOM-restarts; no span has ERROR status | 0/10 (all PARTIAL) | better (5/10 or more); worse is not possible |
+| `recommendationCacheFailure` | a cache grows until the service OOM-restarts; the cause has no error span | 0/10 (all PARTIAL) | better (5/10 or more from 0/10, 8/10 from 2/10); worse is not possible |
 | `adFailure` | ad fails about 1 in 10 requests at random, by design | 6/10 | worse only (0/10) |
 | `cartFailure` | cart's EmptyCart cannot reach its store; checkout hides the error | 8/10 | worse only (2/10 or below) |
 | `emailMemoryLeak` | email is OOM-killed and restarted; callers see dropped connections | 9/10 | worse only (3/10 or below) |

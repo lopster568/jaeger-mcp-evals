@@ -15,7 +15,7 @@ cartFailure (deterministic: yes, baseline 8/10). Cart's EmptyCart fails to reach
 
 emailMemoryLeak (deterministic: bucketed, baseline 9/10). Email grows memory on every request until it is OOM-killed and restarted. In-flight calls end on checkout's client span with EOF or connection reset, and no email server span exists for them. Memory is not in trace data; naming the crash and restart is enough. Restarts are expected during trials.
 
-recommendationCacheFailure (deterministic: bucketed, baseline 0/10, all PARTIAL). No span has ERROR status. The signal is a span attribute (`demo.product.count`) that climbs into the millions and is visible only through get_span_details. The frontend slowdown appears only late. The service OOM-restarts in a cycle, and connection errors during restarts are symptoms. A batch waits for the first restart. Bucketed: the direction is certain, the rate depends on load.
+recommendationCacheFailure (deterministic: bucketed, baseline 0/10, all PARTIAL). Recommendation's own spans never set ERROR status. The signal is a span attribute (`demo.product.count`) that climbs past 1,000,000 and is visible only through get_span_details. The frontend slowdown appears only late. The service OOM-restarts in a cycle, and connection errors during restarts are symptoms. A batch waits for the first restart. Bucketed: the direction is certain, the rate depends on load.
 
 adFailure (deterministic: no, baseline 6/10). Ad fails about 1 in 10 GetAds requests at random by design, even with the flag fully on, with a transient UNAVAILABLE status that the frontend passes up. It is noisy by construction and not a good target for measuring a change.
 
@@ -41,6 +41,7 @@ What a measure can show at the default N=10, using the harness's two-sided Fishe
 | Baseline | Better | Worse |
 |---|---|---|
 | 0/10 | the change at 5/10 or more (p 0.0325) | not possible |
+| 2/10 | the change at 8/10 or more (p 0.023; 7/10 gives 0.0698) | not possible |
 | 6/10 | not possible (6 against 10 gives p 0.0867) | 0/10 |
 | 8/10 | not possible (8 against 10 gives p 0.4737) | 2/10 or below |
 | 9/10 | not possible | 3/10 or below |
