@@ -4,6 +4,8 @@
 
 `python3 -B -m unittest discover -s harness/tests` runs the suite offline, with no fixture, no agent and no network beyond localhost; CI runs it on every push and pull request to main. `make lint` checks license headers and line endings and adds a missing header in place, as Jaeger's does, so commit or revert what it changes; CI also runs shellcheck on the shell scripts. `make fmt` also fixes line endings.
 
+`make install-test-tools` then `make test-ci` runs the same suite under coverage and writes `.cover/cover.xml` (use a virtual environment if your Python refuses pip installs). CI runs it and prints the coverage table.
+
 ## Experiments, scenarios and records
 
 A run's settings live only in its experiment file (docs/USAGE.md, The experiment file); change one there and say why in its `status`.
