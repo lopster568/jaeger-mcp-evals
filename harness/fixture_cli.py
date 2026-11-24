@@ -232,8 +232,8 @@ def goose_needed(cfg):
 
 def smoke_file(cfg):
     """The experiment make smoke dry-runs and runs: SMOKE filled in with Goose's provider and model from
-    GOOSE_PROVIDER and GOOSE_MODEL (as measure.sh writes its pair file), or for CLIENT=claude or codex with
-    CLAUDE_MODEL or CODEX_MODEL."""
+    GOOSE_PROVIDER and GOOSE_MODEL and no effort (as measure.sh writes its pair file), or for CLIENT=claude or codex
+    with CLAUDE_MODEL or CODEX_MODEL and the template's effort."""
     client, provider, model = agent_client(cfg), cfg.get("GOOSE_PROVIDER", ""), cfg.get("GOOSE_MODEL", "")
     if client in ("claude", "codex"):
         key = client.upper() + "_MODEL"
@@ -256,6 +256,8 @@ def smoke_file(cfg):
     e["run"] = dict(client=client, provider=provider, model=model, **e["run"])
     if client != "claude":
         del e["run"]["max_budget_usd"]  # only the claude client enforces it
+    if client == "goose":
+        e["run"]["effort"] = None  # no GOOSE_THINKING_EFFORT, as the Jaeger demo's scripts/ai-sidecar/goose
     with open(os.path.join(ROOT, SMOKE_RUN), "w", encoding="utf-8") as f:
         json.dump(e, f, indent=2)
         f.write("\n")
@@ -277,16 +279,19 @@ def tools(cfg):
 
 
 def agent_tools(cfg):
-    """The Tools line's agent part: Goose's settings (never the key) when it is the smoke client; claude when
-    used by the claude smoke or grader; codex when it is the smoke client. Login is not checked here (preflight.sh does)."""
+    """The Tools line's agent part: Goose's settings (never the key) when it is the smoke client; claude when it is the
+    smoke client, and the claude grader's command (GRADER_BIN); codex when it is the smoke client. Login is not checked
+    here (preflight.sh does)."""
     parts, p, key = [], cfg.get("GOOSE_PROVIDER", ""), None
     agent = agent_client(cfg)
     if agent == "goose":
         key = goose_client.KEYS.get(p)
         ok = key and cfg.get("GOOSE_MODEL") and cfg.get(key)
         parts.append("goose %s %s, %s set" % (p, cfg["GOOSE_MODEL"], key) if ok else "goose settings incomplete")
-    if "claude" in (agent, config.grader_client(cfg, agent)):
-        parts.append("claude " + first_token(["claude", "--version"]))
+    cmds = (["claude"] if agent == "claude" else []) + (
+        [cfg.get("GRADER_BIN") or "claude"] if config.grader_client(cfg, agent) == "claude" else [])
+    for c in dict.fromkeys(cmds):  # one entry when the agent and the grader run the same command
+        parts.append("%s %s" % (c, first_token([c, "--version"])))
     if agent == "codex":  # "codex-cli 0.159.0": the first token starting with a digit
         v = first_token([cfg.get("CODEX_BIN") or "codex", "--version"], digit=True)
         parts.append("codex " + v)

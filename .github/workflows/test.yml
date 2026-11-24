@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The Jaeger Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-name: test
+name: Unit Tests
 
 on:
   push:
@@ -9,11 +9,15 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -35,6 +39,4 @@ jobs:
             python3 harness/bench.py readiness "$name"
           done
       - name: makefile parses
-        run: |
-          make -n setup smoke
-          make test
+        run: make -n setup smoke

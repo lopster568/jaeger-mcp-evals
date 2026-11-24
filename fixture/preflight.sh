@@ -34,17 +34,19 @@ if [ -z "$REMOTE" ]; then
 fi
 command -v git >/dev/null || fail "git is not installed; install git"
 command -v curl >/dev/null || fail "curl is not installed; install curl"
-# claude is needed only for CLIENT=claude and the claude grader: a failure for the grader, a note when only the agent is claude.
+# The claude grader runs GRADER_BIN (default claude): a failure. The claude agent runs claude: a note.
+logged_in() { command -v "$1" >/dev/null && env -u ANTHROPIC_API_KEY "$1" auth status >/dev/null 2>&1; }
 if [ "$FIXTURE_HOST_ONLY" != 1 ]; then
-  if command -v claude >/dev/null && env -u ANTHROPIC_API_KEY claude auth status >/dev/null 2>&1; then :
-  elif [ "$GR" = claude ]; then
-    if ! command -v claude >/dev/null; then
-      [ -x "$HOME/.local/bin/claude" ] && fail "claude is installed in ~/.local/bin but that is not on your PATH; open a new shell or add it to PATH (the claude grader needs it)"
-      fail "claude (the Claude Code CLI) is not installed; the claude grader needs it"
+  GB=${GRADER_BIN:-claude}
+  if [ "$GR" = claude ] && ! logged_in "$GB"; then
+    if ! command -v "$GB" >/dev/null; then
+      [ "$GB" = claude ] && [ -x "$HOME/.local/bin/claude" ] && fail "claude is installed in ~/.local/bin but that is not on your PATH; open a new shell or add it to PATH (the claude grader needs it)"
+      fail "$GB (the Claude Code CLI) is not installed; the claude grader needs it (GRADER_BIN)"
     fi
-    fail "claude is not logged in; run claude, then /login (the claude grader uses this login)"
-  elif [ "$C" = claude ]; then
-    echo "preflight: note: claude (the Claude Code CLI) not found or not logged in: needed for CLIENT=claude and the claude grader"
+    fail "$GB is not logged in; run $GB, then /login (the claude grader uses this login)"
+  fi
+  if [ "$C" = claude ] && ! logged_in claude; then
+    echo "preflight: note: claude (the Claude Code CLI) not found or not logged in: needed for CLIENT=claude"
   fi
 fi
 PY="${PYTHON:-python3}"
@@ -56,7 +58,7 @@ command -v "$PY" >/dev/null || fail "$PY is not installed; install Python 3.11 o
 if [ -z "$REMOTE" ] && [ -z "$(docker ps -aq --filter name=^jaeger$ 2>/dev/null)" ]; then
   # shellcheck disable=SC2013  # the overlay's host ports, digits only, after any bind address
   for p in $(sed -nE 's/^ *- "([^"]*:)?([0-9]+):[0-9]+".*/\2/p' "$OVERLAY"); do
-    (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && fail "port $p is in use by another program; stop it (see: ss -ltnp | grep :$p) and re-run"
+    (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && fail "port $p is in use by another program; stop it (see: ss -ltnp | grep :$p, or on macOS lsof -iTCP:$p -sTCP:LISTEN) and re-run"
   done
 fi
 exit 0

@@ -250,6 +250,17 @@ class Setup(unittest.TestCase):
         self.assertIn("claude 2.1.300", text)
         self.assertTrue(text.splitlines()[-1].endswith("one agent trial, about 50k tokens"), text)
 
+    def test_the_tools_line_shows_the_claude_grader_command(self):
+        (self.t / "bin" / "claude-wrap").write_text(CLAUDE)
+        (self.t / "bin" / "claude-wrap").chmod(0o755)
+        rc, text = self.setup_run(CLIENT="goose", GRADER_CLIENT="claude", GRADER_BIN="claude-wrap")
+        self.assertEqual(rc, 0, text)
+        self.assertRegex(text.splitlines()[1], r", OPENROUTER_API_KEY set, claude-wrap 2\.1\.300$")  # the grader's command, not plain claude
+        rc, text = self.setup_run(CLIENT="claude", GRADER_CLIENT="claude", GRADER_BIN="claude-wrap")
+        self.assertRegex(text.splitlines()[1], r", claude 2\.1\.300, claude-wrap 2\.1\.300$")  # the agent runs plain claude
+        rc, text = self.setup_run(CLIENT="claude", GRADER_CLIENT="claude", GRADER_BIN="")
+        self.assertEqual(text.splitlines()[1].count("claude 2.1.300"), 1)  # one command, shown once
+
     def test_the_grader_follows_the_agent_when_grader_client_is_empty(self):
         rc, text = self.setup_run(CLIENT="claude", GRADER_CLIENT="")  # a claude agent grades on claude: no Goose image
         self.assertEqual(rc, 0, text)
@@ -442,6 +453,8 @@ class SmokeFile(unittest.TestCase):
         want = dict(base["run"], **run)
         if run["client"] != "claude":
             del want["max_budget_usd"]  # only claude enforces it
+        if run["client"] == "goose":
+            want["effort"] = None  # no GOOSE_THINKING_EFFORT, as the Jaeger demo
         self.assertEqual(e["run"], want)
         self.assertEqual({k: v for k, v in e.items() if k != "run"}, {k: v for k, v in base.items() if k != "run"})
         fc.bench.load_experiment(os.path.join(self.tmp.name, path))

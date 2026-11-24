@@ -26,8 +26,12 @@ exit 0
 
 
 class Preflight(unittest.TestCase):
-    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", client="", no_docker=False, info="", home=None, no_claude=False):
+    def run_script(self, port, jaeger, logged_in=True, host_only="", remote="", grader="", bind="", compose="", client="", no_docker=False, info="", home=None, no_claude=False, wrap=None):
+        """wrap: True or False puts a claude-wrap shim, logged in or not, on PATH and names it in GRADER_BIN."""
         with tempfile.TemporaryDirectory() as d:
+            if wrap is not None:
+                pathlib.Path(d, "claude-wrap").write_text(CLAUDE % int(not wrap))
+                os.chmod(os.path.join(d, "claude-wrap"), 0o755)
             for name in ("docker", "claude"):
                 if (name == "docker" and no_docker) or (name == "claude" and no_claude):
                     continue
@@ -45,7 +49,8 @@ class Preflight(unittest.TestCase):
                     os.symlink(shutil.which(t), os.path.join(tools, t))
                 path = d + os.pathsep + tools
             env = dict(os.environ, PATH=path, OVERLAY=overlay, FAKE_JAEGER="1" if jaeger else "", FIXTURE_HOST_ONLY=host_only,
-                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, CLIENT=client, FAKE_COMPOSE=compose, FAKE_INFO=info)
+                       FIXTURE_SSH_USER=remote, GRADER_CLIENT=grader, CLIENT=client, FAKE_COMPOSE=compose, FAKE_INFO=info,
+                       GRADER_BIN="" if wrap is None else "claude-wrap")
             if home:
                 env["HOME"] = home
             return subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True)
@@ -59,6 +64,7 @@ class Preflight(unittest.TestCase):
                 r = self.run_script(port, jaeger=False, bind=bind)
                 self.assertEqual(r.returncode, 1, bind)
                 self.assertIn("port %d is in use" % port, r.stdout)
+                self.assertIn("lsof -iTCP:%d -sTCP:LISTEN" % port, r.stdout)  # macOS has no ss
             ok = self.run_script(port, jaeger=True)
             self.assertEqual(ok.returncode, 0)
             self.assertEqual(ok.stdout, "")  # silent on success; make prints the Tools line
@@ -110,6 +116,19 @@ class Preflight(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("claude is not logged in", r.stdout)
         self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, client="codex").returncode, 0)  # codex: goose grades
+
+    def test_the_claude_grader_is_checked_on_grader_bin(self):
+        # GRADER_BIN logged in, plain claude logged out: the grader passes; a goose agent needs no plain claude
+        self.assertEqual(self.run_script(1, jaeger=False, logged_in=False, grader="claude", wrap=True).returncode, 0)
+        r = self.run_script(1, jaeger=False, logged_in=True, grader="claude", wrap=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("claude-wrap is not logged in; run claude-wrap", r.stdout)
+        # a claude agent still runs plain claude: logged out, a note, while the grader's own command passes
+        r = self.run_script(1, jaeger=False, logged_in=False, client="claude", wrap=True)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("needed for CLIENT=claude", r.stdout)
+        r = self.run_script(1, jaeger=False, grader="claude", no_claude=True, wrap=True)  # no plain claude at all
+        self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_docker_that_will_not_answer_names_the_cause(self):
         r = self.run_script(1, jaeger=False, info="permission denied while trying to connect to the Docker daemon socket")

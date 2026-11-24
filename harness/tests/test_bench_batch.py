@@ -113,6 +113,10 @@ CLAUDE = """#!/usr/bin/env python3
 import json, os, sys, urllib.error, urllib.request
 if sys.argv[1:] == ["--version"]:
     print("2.1.282 (Claude Code)"); sys.exit(0)
+if sys.argv[1:] == ["auth", "status"]:  # the claude grader's login check; bench.py drops the key first
+    with open(os.path.join(os.environ["FAKE_HOME"], "auth-calls.jsonl"), "a") as f:
+        f.write(json.dumps({"api_key": "ANTHROPIC_API_KEY" in os.environ}) + "\\n")
+    sys.exit(1 if os.environ.get("FAKE_LOGGED_OUT") else 0)
 if sys.argv[1:] == ["--help"]:
     print(os.environ.get("FAKE_CLAUDE_HELP", "@FLAGS@")); sys.exit(0)
 if "claude-fable-5-1" in sys.argv:  # the mechanism grader
@@ -630,6 +634,16 @@ class TestBatch(BenchCase):
         self.assertNotIn("python3 -", read(os.path.join(self.home, "ssh.log")))
         self.assertEqual(self.flag_file(), self.pristine())
 
+    def test_a_logged_out_claude_grader_stops_before_any_trial(self):
+        # make measure and make run skip preflight.sh: without this a logged-out grader fails after the paid trials
+        self.assertEqual(self.run_batch(1, FAKE_LOGGED_OUT="1", ANTHROPIC_API_KEY="k"), 1)
+        self.assertIn("the claude mechanism grader is not logged in (claude auth status failed); nothing was touched", self.err)
+        self.assertIn("fix: run claude, then /login, or set GRADER_CLIENT=goose", self.err)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(glob.glob(os.path.join(self.runs, "paymentFailure", "batch-*")), [])
+        self.assertEqual(bench.read_jsonl(os.path.join(self.home, "auth-calls.jsonl")), [{"api_key": False}])  # the login, not the key
+        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)  # logged in: passes
+
     def test_dry_run_seed_matches_a_real_run_with_the_same_seed(self):
         self.assertEqual(self.run_batch(3, "--dry-run", run={"seed": 42}), 0, self.err)
         planned = [l.strip().split(" -> ")[0] for l in self.err.splitlines() if l.strip().startswith("order_index=")]
@@ -917,6 +931,35 @@ class TestBatch(BenchCase):
         self.assertNotIn("waiting for the fault", read(os.path.join(self.batch_dir(), "batch.log")))
 
 
+@unittest.skipUnless(shutil.which("sha256sum") and shutil.which("shasum") and shutil.which("dash"), "needs sha256sum, shasum and dash")
+class TestOverlaySha(unittest.TestCase):
+    """The overlay hash commands under a strict POSIX sh, with sha256sum and with only shasum (macOS): the same bytes."""
+
+    def run_sh(self, cmd, tools):
+        with tempfile.TemporaryDirectory() as bin_dir:
+            for t in tools:
+                os.symlink(shutil.which(t), os.path.join(bin_dir, t))
+            return subprocess.run([shutil.which("dash"), "-c", cmd], cwd=self.demo, env={"PATH": bin_dir},
+                                  capture_output=True, text=True)
+
+    def test_shasum_gives_the_same_output_where_sha256sum_is_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.demo = d
+            os.mkdir(os.path.join(d, "overlay"))
+            for name, body in (("compose.overlay.yaml", "a: 1\n"), ("compose.overlay.yaml.bak", "old\n")):
+                pathlib.Path(d, "overlay", name).write_text(body)
+            pathlib.Path(d, ".env.override").write_text("JAEGERTRACING_IMAGE=x\nOTHER=1\n")
+            for cmd in (bench.OVERLAY_SHA, bench.OVERLAY_SHA_SANS_IMAGE):
+                linux = self.run_sh(cmd, ("ls", "grep", "sha256sum"))
+                mac = self.run_sh(cmd, ("ls", "grep", "shasum"))
+                self.assertEqual((linux.returncode, mac.returncode), (0, 0), linux.stderr + mac.stderr)
+                self.assertEqual(mac.stdout, linux.stdout)
+                self.assertIn("  overlay/compose.overlay.yaml\n", linux.stdout)
+                for tools in (("ls", "grep", "sha256sum"), ("ls", "grep", "shasum")):  # fixture_sh's ssh form: a failed cd hashes nothing
+                    self.assertNotEqual(self.run_sh("cd /nonexistent && " + cmd, tools).returncode, 0, tools)
+            self.assertNotIn(".bak", linux.stdout)
+
+
 class TestStageAndFix(unittest.TestCase):
     def test_stage_header_and_fix_line_on_a_pipe(self):
         err = io.StringIO()
@@ -1100,6 +1143,20 @@ class TestKnobFile(BenchCase):
         self.assertEqual([load(m)["max_budget_usd"] for m in glob.glob(os.path.join(b, "*-*", "meta.json"))], [None, None])
         self.assertEqual(bench.expected_cost("paymentFailure", "sonnet", 1, None, records=self.records),
                          [(True, "expected cost unknown: no recorded claude trial of paymentFailure on sonnet")])
+
+    def test_effort_null_is_goose_only_and_sends_no_effort(self):
+        msg = "run.effort must be one of low, medium, high, xhigh, max, or null for client goose"
+        for client in ("claude", "codex"):  # their CLIs take an effort flag: null would reach the argv
+            self.refused(lambda d: d["run"].update(client=client, provider=None, effort=None), msg)
+        self.assertEqual(self.run_batch(1, run={"effort": None}), 0, self.err)  # as the Jaeger demo: no GOOSE_THINKING_EFFORT
+        self.assertIn("goose sonnet no effort", self.err)
+        self.assertNotIn("GOOSE_THINKING_EFFORT", "".join(self.calls()))
+        b = self.batch_dir()
+        self.assertIsNone(load(os.path.join(b, "manifest.json"))["effort"])
+        meta = load(glob.glob(os.path.join(b, "*-*", "meta.json"))[0])
+        self.assertIsNone(meta["effort"])
+        self.assertEqual(meta["client_argv"][meta["client_argv"].index("--effort") + 1], "")
+        self.assertIn(" | goose sonnet | sonnet | none | ", bench.index_text(self.runs))  # the INDEX row says none, not None
 
     def test_bill_api_key_only_for_claude(self):
         self.refused(lambda d: d["run"].update(bill_api_key=True),
@@ -1713,16 +1770,21 @@ class TestGooseGrader(BenchCase):
         self.assertEqual(self.run_batch(1, "--dry-run", run=CLI, GRADER_CLIENT="goose", ANTHROPIC_API_KEY="k"), 0, self.err)
         self.assertEqual((bench.grade.CLIENT, bench.grade.GRADER_MODEL), ("goose", "gm-1"))
 
-    def test_the_model_line_is_a_warning_only_when_the_models_differ(self):
-        self.goose_grader(model="gm-1")
+    def test_the_model_line_warns_unless_the_validated_grader_grades_the_agent_model(self):
+        not_validated = "WARNING: grader goose %s is not validated (only claude claude-fable-5-1 is, docs/TUNING.md); "
+        self.goose_grader(model="sonnet")  # the agent's model, on a grader nobody validated: still a warning
         self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
-        out = self.err + self.out
-        self.assertIn("WARNING: agent model sonnet, grader model gm-1. " + bench.grade.WARNING, out)
-        self.goose_grader(model="sonnet")
-        self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
-        out = self.err + self.out
-        self.assertIn("agent model sonnet, grader model sonnet. " + bench.grade.WARNING, out)
-        self.assertNotIn("WARNING: agent model", out)
+        self.assertIn(not_validated % "sonnet" + "agent model sonnet, grader model sonnet. " + bench.grade.WARNING, self.err + self.out)
+        with mock.patch.multiple(bench.grade, CLIENT="claude", GRADER_MODEL="claude-fable-5-1"):
+            self.assertEqual(self.run_batch(1, "--dry-run", ANTHROPIC_API_KEY="k"), 0, self.err)
+            out = self.err + self.out
+            self.assertIn("WARNING: agent model sonnet, grader model claude-fable-5-1. ", out)  # validated, another model
+            self.assertNotIn("not validated", out)
+            self.assertEqual(self.run_batch(1, "--dry-run", run={"model": "claude-fable-5-1"}, ANTHROPIC_API_KEY="k"), 0, self.err)
+            out = self.err + self.out
+            self.assertIn("agent model claude-fable-5-1, grader model claude-fable-5-1. ", out)
+            self.assertNotIn("WARNING: agent model", out)
+            self.assertNotIn("not validated", out)
 
     def test_batch_is_graded_through_goose_and_the_manifest_says_so(self):
         self.goose_grader(model="gm-1")

@@ -5,10 +5,11 @@
 """Grade an agent's free-text mechanism against a scenario's mechanism_truth.
 
 One pinned model with one pinned prompt (grader-prompt.txt, by sha256) labels the pair correct,
-incorrect or unclear, through Goose in the pinned image (setting GRADER_CLIENT goose, the default;
-GRADER_PROVIDER and GRADER_MODEL, falling back to GOOSE_PROVIDER and GOOSE_MODEL, no default model)
-or through the Claude Code CLI (GRADER_CLIENT claude, read from "cli" in old records; GRADER_MODEL default claude-fable-5-1, command
-GRADER_BIN default claude). Both are sandboxed like the agent: no tools, no MCP servers, no session,
+incorrect or unclear, through Goose in the pinned image (GRADER_CLIENT goose; GRADER_PROVIDER and
+GRADER_MODEL, falling back to GOOSE_PROVIDER and GOOSE_MODEL, whose default in fixture.env.example is
+nvidia/nemotron-3.5-lightning:free) or through the Claude Code CLI (GRADER_CLIENT claude, read from "cli" in old records;
+GRADER_MODEL default claude-fable-5-1, command GRADER_BIN default claude). GRADER_CLIENT empty, the default: the grader
+follows the agent, claude for a claude agent, else goose. Both are sandboxed like the agent: no tools, no MCP servers, no session,
 a temp cwd, the provider key by name only. Every label is cached in <batch>/grades.jsonl, keyed by
 sha256 of the grader's identity, prompt sha256, truth and text, so re-scoring reads the cache and
 never calls the model again. A re-score looks up the grader the batch's manifest recorded
@@ -26,13 +27,15 @@ import goose_client
 HARNESS = os.path.dirname(os.path.abspath(__file__))
 _CFG = config.load()
 
+VALIDATED = ("claude", "claude-fable-5-1")  # the one grader checked against human labels (docs/TUNING.md, Mechanism grader)
+
 
 def settings(cfg, agent=None):
-    """(client, provider, model) from fixture.env's settings; goose has no default model. With the agent's client the
-    grader follows it when GRADER_CLIENT is empty (config.grader_client)."""
+    """(client, provider, model) from fixture.env's settings; the goose model falls back to GOOSE_MODEL (empty only
+    when that is). With the agent's client the grader follows it when GRADER_CLIENT is empty (config.grader_client)."""
     client = config.grader_client(cfg, agent) if agent else config.client_name(cfg.get("GRADER_CLIENT") or "goose")
     return (client, cfg.get("GRADER_PROVIDER") or cfg.get("GOOSE_PROVIDER") or "",
-            cfg.get("GRADER_MODEL") or ("claude-fable-5-1" if client == "claude" else cfg.get("GOOSE_MODEL") or ""))
+            cfg.get("GRADER_MODEL") or (VALIDATED[1] if client == "claude" else cfg.get("GOOSE_MODEL") or ""))
 
 
 CLIENT, PROVIDER, GRADER_MODEL = settings(_CFG)  # see fixture.env.example
