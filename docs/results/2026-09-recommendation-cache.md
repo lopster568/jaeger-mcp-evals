@@ -110,7 +110,7 @@ Both arms used the same scenario version (3), prompt (`neutral`), tool set, fixt
 ## Caveats
 
 - One scenario. The change was written after failures on this scenario were observed, so a held-out scenario is needed before calling it general.
-- The baseline is the skill as shipped in 2.20.0. Jaeger's main branch has since rewritten this skill (#9263), so the change has not yet been measured against main.
+- The baseline is the skill as shipped in 2.20.0. Jaeger's main branch has since rewritten this skill (#9263). [The 2026-11 page](2026-11-skill-change-on-main.md) measures the change on Jaeger main builds.
 - The two edits were measured together. Baseline trials already called `search_traces` (10 of 10), so the allowed-tools line did not gate that tool in this client, and the experiment does not show which edit matters.
 - The mechanism is graded by one pinned model grader, validated against 21 human-labeled items ([docs/TUNING.md](../TUNING.md)).
 

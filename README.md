@@ -38,7 +38,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 
 ## Scenarios
 
-| Scenario | What breaks | Baseline PASS | At N=10 it can show |
+| Scenario | What breaks | Recorded PASS (Claude CLI) | At N=10 it can show |
 |---|---|---|---|
 | `recommendationCacheFailure` | a cache grows until the service OOM-restarts; the cause has no error span | 0/10 (all PARTIAL) | better (5/10 or more from 0/10, 8/10 from 2/10); worse is not possible |
 | `adFailure` | ad fails about 1 in 10 requests at random, by design | 6/10 | worse only (0/10) |
@@ -47,7 +47,7 @@ You need make, Python 3.11 or newer, git, curl, and Docker with Compose 2.24 or 
 | `paymentFailure` | payment rejects every charge with "invalid token" | 10/10 | worse only (5/10 or below) |
 | `paymentUnreachable` | checkout cannot resolve payment's address | 10/10 | worse only (5/10 or below) |
 
-Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 10 trials, 2026-11-05/06. Goose baselines are not measured. The last column holds for these baselines only: on another client or model the scenario's baseline may differ, and the baseline arm of your own measure is what the result compares against. [docs/SCENARIOS.md](docs/SCENARIOS.md) describes each scenario and how to choose one.
+Baselines: Jaeger main image main-d22c65b9, Claude Code CLI, claude-sonnet-5-5, 10 trials, 2026-11-05/06. A measure needs no recorded baseline, because its own baseline arm is the comparison. The last column holds for these recorded Claude baselines only: on another client or model the scenario's baseline may differ. [docs/SCENARIOS.md](docs/SCENARIOS.md) describes each scenario and how to choose one.
 
 ## Commands
 
@@ -90,7 +90,7 @@ With `CLIENT=claude`, `make smoke` uses your claude.ai login and `make measure` 
 
 ## Layout and documentation
 
-`Makefile` and `fixture/` bring the demo up. `harness/` holds `bench.py`, `measure.sh`, the scenarios, prompts and experiment files. `records/` holds checked-in results, `runs/` the raw trajectories (git-ignored). `docs/` holds the manual.
+`Makefile` and `fixture/` bring the demo up. `harness/` holds `bench.py`, `measure.sh`, the scenarios, prompts and experiment files. `records/` holds checked-in results, `runs/` the raw trajectories (git-ignored). `docs/` holds the manual; `docs/results/` the written-up experiment results.
 
 - [docs/USAGE.md](docs/USAGE.md): stop and restart, review a result, where results land, glossary, the experiment file, protocol
 - [docs/SCENARIOS.md](docs/SCENARIOS.md): the scenarios, choosing one, adding one; [docs/RECORD.md](docs/RECORD.md): every recorded key
